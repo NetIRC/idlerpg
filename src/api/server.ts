@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { config } from '../config.js';
 import { botPresenceFromDb, findByCharacter, getDb, leaderboard, recentRealmEvents } from '../db/index.js';
 import { durationIt } from '../game/duration.js';
+import { CHRONICLE_API_DEFAULT_LIMIT, CHRONICLE_API_MAX_LIMIT } from '../game/chronicle-omen.js';
 
 /** Optional Express API for local dev. Production can use PHP under public/api/. */
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -44,8 +45,10 @@ app.get('/api/leaderboard', (_req: Request, res: Response) => {
 
 app.get('/api/chronicle', (req: Request, res: Response) => {
   const raw = req.query.limit;
-  const n = typeof raw === 'string' ? parseInt(raw, 10) : 15;
-  const limit = Number.isFinite(n) ? Math.min(40, Math.max(1, n)) : 15;
+  const n = typeof raw === 'string' ? parseInt(raw, 10) : CHRONICLE_API_DEFAULT_LIMIT;
+  const limit = Number.isFinite(n)
+    ? Math.min(CHRONICLE_API_MAX_LIMIT, Math.max(1, n))
+    : CHRONICLE_API_DEFAULT_LIMIT;
   const db = getDb(config);
   const events = recentRealmEvents(db, limit);
   res.json({

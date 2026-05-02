@@ -9,12 +9,13 @@ irpg_json_headers();
 
 try {
     $pdo = irpg_pdo();
-    $lim = isset($_GET['limit']) ? (int) $_GET['limit'] : 14;
+    $lim = isset($_GET['limit']) ? (int) $_GET['limit'] : irpg_chronicle_default_limit();
     if ($lim < 1) {
         $lim = 1;
     }
-    if ($lim > 40) {
-        $lim = 40;
+    $max = irpg_chronicle_max_limit();
+    if ($lim > $max) {
+        $lim = $max;
     }
 
     $stmt = $pdo->prepare('SELECT ts, kind, detail FROM realm_events ORDER BY id DESC LIMIT ?');

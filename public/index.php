@@ -2,6 +2,8 @@
 declare(strict_types=1);
 $appCssPath = __DIR__ . '/assets/app.css';
 $appCssVer = is_file($appCssPath) ? (string) filemtime($appCssPath) : '0';
+/** Must match CHRONICLE_API_DEFAULT_LIMIT in src/game/chronicle-omen.ts */
+$irpgChronicleUiLimit = 16;
 ?><!DOCTYPE html>
 <html lang="en">
 <head>
@@ -113,10 +115,10 @@ $appCssVer = is_file($appCssPath) ? (string) filemtime($appCssPath) : '0';
         <div class="section-head section-head-row chronicle-head">
           <div>
             <h2 class="h2"><span class="h2-mark h2-mark-ember chronicle-h2-mark" aria-hidden="true"></span> Realm chronicle</h2>
-            <p class="lb-meta mono chronicle-sub">Duels, quests, omens, HoG — same SQLite stream as IRC <span class="rules-cmd">!chronicle</span></p>
+            <p class="lb-meta mono chronicle-sub">Last <?= (int) $irpgChronicleUiLimit ?> events (API max 40 via <span class="rules-cmd mono">?limit=</span>) · IRC <span class="rules-cmd">!chronicle</span> = compact (10)</p>
           </div>
         </div>
-        <div class="panel chronicle-panel" id="chronicle-root">
+        <div class="panel chronicle-panel" id="chronicle-root" data-chronicle-limit="<?= (int) $irpgChronicleUiLimit ?>">
           <p class="muted" id="chronicle-placeholder">Pulling realm_events…</p>
           <ul class="chronicle-list hidden" id="chronicle-list"></ul>
         </div>

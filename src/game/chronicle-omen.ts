@@ -2,6 +2,17 @@ import type Database from 'better-sqlite3';
 import { findOnlineByNick, insertRealmEvent, metaGetInt, metaSetInt, recentRealmEvents } from '../db/index.js';
 import { durationIt } from './duration.js';
 
+/** Events packed into one IRC/PM line (also capped by CHRONICLE_IRC_MAX_CHARS). */
+export const CHRONICLE_IRC_MAX_EVENTS = 10;
+export const CHRONICLE_IRC_MAX_CHARS = 480;
+
+/**
+ * Default / max rows for HTTP chronicle (PHP `api/chronicle.php`, Express `/api/chronicle`, dashboard).
+ * Keep PHP `irpg_chronicle_*()` in bootstrap in sync.
+ */
+export const CHRONICLE_API_DEFAULT_LIMIT = 16;
+export const CHRONICLE_API_MAX_LIMIT = 40;
+
 const OMEN_COOLDOWN_SEC = 8 * 3600;
 const OMEN_META_PREFIX = 'omen_cd_';
 
@@ -38,9 +49,9 @@ function chronicleKindLabel(kind: string): string {
   return CHRONICLE_KIND_LABEL[kind] ?? kind;
 }
 
-/** One line for IRC / PM: recent drama from `realm_events`. */
+/** One line for IRC / PM: recent drama from `realm_events` (shorter than web; see CHRONICLE_IRC_*). */
 export function formatChronicleLine(db: Database): string {
-  const rows = recentRealmEvents(db, 6);
+  const rows = recentRealmEvents(db, CHRONICLE_IRC_MAX_EVENTS);
   if (!rows.length) {
     return 'The chronicle is blank — quests, Hand of God, and records will write the first lines.';
   }
@@ -52,7 +63,12 @@ export function formatChronicleLine(db: Database): string {
     const det = (r.detail || '').trim() || '—';
     return `${label} (${t}): ${det}`.slice(0, 100);
   });
-  return `📜 Chronicle: ${parts.join(' │ ')}`.slice(0, 480);
+  const suffix = ` — web/api: last ${CHRONICLE_API_DEFAULT_LIMIT} (max ${CHRONICLE_API_MAX_LIMIT} ?limit=)`;
+  const prefix = `📜 Chronicle (IRC ${rows.length}/${CHRONICLE_IRC_MAX_EVENTS}): `;
+  const budget = Math.max(80, CHRONICLE_IRC_MAX_CHARS - prefix.length - suffix.length);
+  const joined = parts.join(' │ ');
+  const body = joined.length <= budget ? joined : `${joined.slice(0, Math.max(0, budget - 1))}…`;
+  return prefix + body + suffix;
 }
 
 export function consultOmen(

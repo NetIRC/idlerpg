@@ -68,6 +68,13 @@
 
   const chronicleList = document.getElementById('chronicle-list');
   const chroniclePlaceholder = document.getElementById('chronicle-placeholder');
+  const chronicleRoot = document.getElementById('chronicle-root');
+  /** Must match irpg_chronicle_max_limit() / chronicle-omen.ts CHRONICLE_API_MAX_LIMIT */
+  const CHRONICLE_API_MAX = 40;
+  const chronicleFetchLimit = Math.min(
+    CHRONICLE_API_MAX,
+    Math.max(1, parseInt(String(chronicleRoot?.getAttribute('data-chronicle-limit') ?? '16'), 10) || 16),
+  );
 
   const CHRONICLE_KIND = {
     quest_start: 'Quest',
@@ -123,7 +130,7 @@
   }
 
   async function fetchChronicle() {
-    const r = await fetch('api/chronicle.php?limit=14', { cache: 'no-store' });
+    const r = await fetch('api/chronicle.php?limit=' + encodeURIComponent(String(chronicleFetchLimit)), { cache: 'no-store' });
     const text = await r.text();
     const j = parseJsonSafe(text);
     if (!r.ok || !j || !Array.isArray(j.events)) {

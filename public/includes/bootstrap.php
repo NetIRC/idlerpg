@@ -79,6 +79,20 @@ function irpg_duration_it(float $totalSec): string
     return sprintf('%d %s, %02d:%02d:%02d', $days, $dayWord, $h, $m, $sec);
 }
 
+/**
+ * Realm chronicle JSON API — keep defaults in sync with src/game/chronicle-omen.ts
+ * (CHRONICLE_API_DEFAULT_LIMIT, CHRONICLE_API_MAX_LIMIT).
+ */
+function irpg_chronicle_default_limit(): int
+{
+    return 16;
+}
+
+function irpg_chronicle_max_limit(): int
+{
+    return 40;
+}
+
 function irpg_pdo(): PDO
 {
     global $dbPath;
