@@ -124,7 +124,7 @@ For production, set **`debug` ⇒ false** in `site.config.php`. Do not place the
 |----------|
 | `!help` · `!cmds` · `!rules` · `!top` · `!ping` · `!stats` [name] · `!time` [name] · `!whoami` · `!records` · `!quest` |
 
-Aliases: `!aiuto`, `!regole`, `!commands`. Other channel text can add time penalties; recognized `!` lines do not.
+Alias: `!commands` (same as `!cmds`). Other channel text can add time penalties; recognized `!` lines do not.
 
 ### Private messages (to the bot)
 

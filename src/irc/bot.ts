@@ -232,7 +232,6 @@ function tryPublicChannelCommand(fromNick: string, text: string): boolean {
 
   switch (sub) {
     case 'help':
-    case 'aiuto':
       bot.say(channel, `${echo} ${engine.helpChannel(1)}`);
       return true;
     case 'cmds':
@@ -240,7 +239,6 @@ function tryPublicChannelCommand(fromNick: string, text: string): boolean {
       bot.say(channel, `${echo} ${engine.helpChannel(2)}`);
       return true;
     case 'rules':
-    case 'regole':
       bot.say(
         channel,
         `${echo} Idle to level; talking costs time. PM bot REGISTER/LOGIN. Quests & Lucky Hours fire automatically with enough players.`,
@@ -325,7 +323,7 @@ bot.on('message', (event) => {
     return;
   }
 
-  if (cmd === 'help' || cmd === 'aiuto') {
+  if (cmd === 'help') {
     bot.notice(from, engine.helpPm(1));
     return;
   }
