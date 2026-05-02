@@ -115,7 +115,7 @@ $irpgChronicleUiLimit = 16;
         <div class="section-head section-head-row chronicle-head">
           <div>
             <h2 class="h2"><span class="h2-mark h2-mark-ember chronicle-h2-mark" aria-hidden="true"></span> Realm chronicle</h2>
-            <p class="lb-meta mono chronicle-sub">Last <?= (int) $irpgChronicleUiLimit ?> events (API max 40 via <span class="rules-cmd mono">?limit=</span>) · IRC <span class="rules-cmd">!chronicle</span> = compact (10)</p>
+            <p class="lb-meta mono chronicle-sub">Live feed from the bot&rsquo;s ledger &mdash; last <?= (int) $irpgChronicleUiLimit ?> lines. In IRC, <span class="rules-cmd">!chronicle</span> is a shorter one-liner.</p>
           </div>
         </div>
         <div class="panel chronicle-panel" id="chronicle-root" data-chronicle-limit="<?= (int) $irpgChronicleUiLimit ?>">
