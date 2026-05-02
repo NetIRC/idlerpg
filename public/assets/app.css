@@ -1047,3 +1047,63 @@ body {
     padding: 0.55rem 0.6rem;
   }
 }
+
+/* --- Realm chronicle (realm_events feed) --- */
+.chronicle-section {
+  padding-bottom: 2.75rem;
+}
+
+.chronicle-sub {
+  margin-top: 0.35rem;
+}
+
+.chronicle-panel {
+  padding: 1.1rem 1.2rem;
+}
+
+.chronicle-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.chronicle-list.hidden {
+  display: none;
+}
+
+.chronicle-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.chronicle-item:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.chronicle-meta {
+  font-family: var(--font-m);
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--arc);
+  opacity: 0.95;
+}
+
+.chronicle-ago {
+  opacity: 0.55;
+  font-weight: 400;
+}
+
+.chronicle-detail {
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: rgba(255, 248, 240, 0.92);
+  word-break: break-word;
+}

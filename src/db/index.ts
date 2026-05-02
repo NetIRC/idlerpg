@@ -198,10 +198,26 @@ export function findOnlineByNick(db: Database.Database, nick: string): PlayerRow
     .get(nick) as PlayerRow | undefined;
 }
 
+/** IRC nick match is case-insensitive (challenge / duel targets). */
+export function findOnlineByNickCi(db: Database.Database, nick: string): PlayerRow | undefined {
+  return db
+    .prepare('SELECT * FROM players WHERE online = 1 AND irc_nick COLLATE NOCASE = ?')
+    .get(nick) as PlayerRow | undefined;
+}
+
 export function leaderboard(db: Database.Database, limit = 50): PlayerRow[] {
   return db
     .prepare(
       `SELECT * FROM players ORDER BY level DESC, next_seconds ASC LIMIT ?`,
     )
     .all(limit) as PlayerRow[];
+}
+
+export type RealmEventRow = { ts: number; kind: string; detail: string };
+
+/** Recent rows from `realm_events` (newest first). */
+export function recentRealmEvents(db: Database.Database, limit: number): RealmEventRow[] {
+  return db
+    .prepare(`SELECT ts, kind, detail FROM realm_events ORDER BY id DESC LIMIT ?`)
+    .all(limit) as RealmEventRow[];
 }

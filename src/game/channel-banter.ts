@@ -24,7 +24,7 @@ const LINES = [
   'IdleRPG V1.0 NetIRC — where AFK is a competitive sport.',
   'Someone just tallied another idle minute. Was it you?',
   'The channel topic is optional. The timer is not.',
-  'Quest logs are out. Timer logs are in.',
+  'When words fail, try !duel — same channel, same ledger, different kind of quiet.',
 ];
 
 export function randomChannelBanter(): string {

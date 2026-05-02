@@ -66,6 +66,74 @@
     return parts.length ? parts.join(' — ') : fallback;
   }
 
+  const chronicleList = document.getElementById('chronicle-list');
+  const chroniclePlaceholder = document.getElementById('chronicle-placeholder');
+
+  const CHRONICLE_KIND = {
+    quest_start: 'Quest',
+    quest_end: 'Quest end',
+    lucky_hour: 'Lucky hr',
+    realm_record: 'Record',
+    hog_win: 'HoG+',
+    hog_lose: 'HoG−',
+    register: 'Join',
+    login: 'Login',
+    logout: 'Logout',
+    admin_resetpass: 'Admin',
+    admin_forcelogout: 'Admin',
+    lucky_hour_admin: 'Lucky',
+    omen_rare: 'Omen',
+    omen_boon: 'Omen+',
+    omen_curse: 'Omen−',
+    duel: 'Duel',
+  };
+
+  function chronicleKindLabel(k) {
+    return CHRONICLE_KIND[k] || k;
+  }
+
+  function formatAgoSec(tsSec) {
+    const now = Math.floor(Date.now() / 1000);
+    const ago = Math.max(0, now - tsSec);
+    if (ago < 3600) return `${Math.max(1, Math.floor(ago / 60))}m`;
+    if (ago < 86400) return `${Math.floor(ago / 3600)}h`;
+    return `${Math.floor(ago / 86400)}d`;
+  }
+
+  function renderChronicle(events) {
+    if (!chronicleList || !chroniclePlaceholder) return;
+    if (!events || !events.length) {
+      chroniclePlaceholder.textContent =
+        'No realm drama yet — run the bot; duels, quests, and omens will stream here.';
+      chroniclePlaceholder.classList.remove('hidden');
+      chronicleList.classList.add('hidden');
+      chronicleList.innerHTML = '';
+      return;
+    }
+    chroniclePlaceholder.classList.add('hidden');
+    chronicleList.classList.remove('hidden');
+    chronicleList.innerHTML = events
+      .map((e) => {
+        const kind = chronicleKindLabel(e.kind || '');
+        const ago = formatAgoSec(e.ts);
+        const det = escapeHtml((e.detail || '').trim() || '—');
+        return `<li class="chronicle-item"><div class="chronicle-meta">${escapeHtml(kind)} <span class="chronicle-ago">· ${ago} ago</span></div><div class="chronicle-detail">${det}</div></li>`;
+      })
+      .join('');
+  }
+
+  async function fetchChronicle() {
+    const r = await fetch('api/chronicle.php?limit=14', { cache: 'no-store' });
+    const text = await r.text();
+    const j = parseJsonSafe(text);
+    if (!r.ok || !j || !Array.isArray(j.events)) {
+      const err = new Error('chronicle');
+      err.detail = j || { hint: text.slice(0, 200) };
+      throw err;
+    }
+    return j.events;
+  }
+
   async function fetchLb() {
     const r = await fetch('api/leaderboard.php', { cache: 'no-store' });
     const text = await r.text();
@@ -243,6 +311,20 @@
       setErr(null);
       applyFilter();
       if (selName) openPlayer(selName);
+      try {
+        const events = await fetchChronicle();
+        renderChronicle(events);
+      } catch {
+        if (chroniclePlaceholder) {
+          chroniclePlaceholder.textContent =
+            'Chronicle offline — open api/chronicle.php in the browser to debug.';
+          chroniclePlaceholder.classList.remove('hidden');
+          if (chronicleList) {
+            chronicleList.classList.add('hidden');
+            chronicleList.innerHTML = '';
+          }
+        }
+      }
     } catch (e) {
       markStale();
       const msg = formatApiErr(

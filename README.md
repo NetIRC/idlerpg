@@ -122,16 +122,16 @@ For production, set **`debug` ⇒ false** in `site.config.php`. Do not place the
 
 | Commands |
 |----------|
-| `!help` · `!cmds` · `!rules` · `!top` · `!ping` · `!stats` [name] · `!time` [name] · `!whoami` · `!records` · `!quest` |
+| `!help` · `!cmds` · `!rules` · `!top` · `!ping` · `!stats` [name] · `!time` [name] · `!whoami` · `!records` · `!quest` · `!chronicle` · `!omen` · `!duel` `<irc_nick>` |
 
-Alias: `!commands` (same as `!cmds`). Other channel text can add time penalties; recognized `!` lines do not.
+Alias: `!commands` (same as `!cmds`). **`!chronicle`** = scroll of recent **realm events**. **`!omen`** = personal prophecy (~8h cooldown). **`!duel nick`** = arena fight vs another logged-in nick **in channel** (±11 levels; pair cooldown ~20h; your challenge cooldown ~5h; winner trims timer ~0.8–1.5%, loser gains ~0.6–1.4%; ~1/10 critical). No gold, no items — pure spectacle + small TTL swing. Other channel text can add time penalties; recognized `!` lines do not.
 
 ### Private messages (to the bot)
 
 | Topic | Commands |
 |-------|----------|
 | Account | `REGISTER name password class…` (password: one word) · `LOGIN` · `LOGOUT` |
-| Information | `HELP` · `CMDS` · `STATS` [name] · `TOP` · `PING` · `WHOAMI` · `TIME` [name] · `RECORDS` · `QUEST` |
+| Information | `HELP` · `CMDS` · `STATS` [name] · `TOP` · `PING` · `WHOAMI` · `TIME` [name] · `RECORDS` · `QUEST` · `CHRONICLE` · `OMEN` · `DUEL` `<irc_nick>` |
 
 ### Staff (after login)
 

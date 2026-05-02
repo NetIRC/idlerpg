@@ -24,7 +24,7 @@ $appCssVer = is_file($appCssPath) ? (string) filemtime($appCssPath) : '0';
       <span class="status-led" id="bot-status-led" aria-hidden="true"></span>
       <span class="status-text mono">SQLite stream</span>
       <span class="status-divider"></span>
-      <span class="status-text mono muted-strong">HTTP API: leaderboard stats only</span>
+      <span class="status-text mono muted-strong">HTTP API: leaderboard &amp; chronicle</span>
       <span class="status-divider"></span>
       <span class="status-text mono status-bot-line" id="bot-status-text">IRC bot: …</span>
     </div>
@@ -62,14 +62,15 @@ $appCssVer = is_file($appCssPath) ? (string) filemtime($appCssPath) : '0';
           <ul class="rules-list">
             <li><strong>Stay idle</strong> in the game channel to shrink your level timer. Silence levels you up.</li>
             <li><strong>Talking in the channel</strong> adds a time penalty (length matters). Lines starting with <span class="rules-cmd">!</span> (see below) are free.</li>
-            <li><strong>In-channel (no penalty):</strong> <span class="rules-cmd">!help</span> &middot; <span class="rules-cmd">!cmds</span> (extra) &middot; <span class="rules-cmd">!rules</span> &middot; <span class="rules-cmd">!top</span> &middot; <span class="rules-cmd">!ping</span> &middot; <span class="rules-cmd">!stats</span> [name] &middot; <span class="rules-cmd">!time</span> [name] &middot; <span class="rules-cmd">!whoami</span> &middot; <span class="rules-cmd">!records</span> &middot; <span class="rules-cmd">!quest</span>.</li>
+            <li><strong>In-channel (no penalty):</strong> <span class="rules-cmd">!help</span> &middot; <span class="rules-cmd">!cmds</span> (extra) &middot; <span class="rules-cmd">!rules</span> &middot; <span class="rules-cmd">!top</span> &middot; <span class="rules-cmd">!ping</span> &middot; <span class="rules-cmd">!stats</span> [name] &middot; <span class="rules-cmd">!time</span> [name] &middot; <span class="rules-cmd">!whoami</span> &middot; <span class="rules-cmd">!records</span> &middot; <span class="rules-cmd">!quest</span> &middot; <span class="rules-cmd">!chronicle</span> &middot; <span class="rules-cmd">!omen</span> &middot; <span class="rules-cmd">!duel</span> <span class="mono muted-strong">&lt;irc_nick&gt;</span>.</li>
             <li><strong>Private message</strong> the bot (from IRC) while <strong>your nick is in the game channel</strong>: <span class="rules-cmd mono">REGISTER Name Password Class…</span> &mdash; password one word; class can be several words. <span class="rules-cmd mono">LOGIN Name Password</span> to return. Also: <span class="rules-cmd mono">LOGOUT</span>, <span class="rules-cmd mono">STATS</span>, <span class="rules-cmd mono">TOP</span>, <span class="rules-cmd mono">HELP</span>, <span class="rules-cmd mono">CMDS</span>, etc.</li>
           </ul>
         </aside>
       </div>
     </header>
 
-    <main class="inner main-grid">
+    <main class="inner">
+      <div class="main-grid">
       <section class="section-rise">
         <div class="section-head section-head-row">
           <div>
@@ -106,6 +107,20 @@ $appCssVer = is_file($appCssPath) ? (string) filemtime($appCssPath) : '0';
           <p class="muted">Select a row to open the stat sheet.</p>
         </div>
       </aside>
+      </div>
+
+      <section class="section-rise chronicle-section" aria-label="Realm chronicle">
+        <div class="section-head section-head-row chronicle-head">
+          <div>
+            <h2 class="h2"><span class="h2-mark h2-mark-ember chronicle-h2-mark" aria-hidden="true"></span> Realm chronicle</h2>
+            <p class="lb-meta mono chronicle-sub">Duels, quests, omens, HoG — same SQLite stream as IRC <span class="rules-cmd">!chronicle</span></p>
+          </div>
+        </div>
+        <div class="panel chronicle-panel" id="chronicle-root">
+          <p class="muted" id="chronicle-placeholder">Pulling realm_events…</p>
+          <ul class="chronicle-list hidden" id="chronicle-list"></ul>
+        </div>
+      </section>
     </main>
 
     <footer class="footer inner">

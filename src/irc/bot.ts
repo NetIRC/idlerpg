@@ -266,6 +266,28 @@ function tryPublicChannelCommand(fromNick: string, text: string): boolean {
     case 'records':
       bot.say(channel, `${echo} ${engine.recordsLine()}`);
       return true;
+    case 'chronicle':
+      bot.say(channel, `${echo} ${engine.chronicleLine()}`);
+      return true;
+    case 'omen': {
+      const o = engine.omenLine(fromNick, namesInChannel);
+      bot.say(channel, `${echo} ${'err' in o ? o.err : o.text}`);
+      return true;
+    }
+    case 'duel': {
+      const foe = rest.split(/\s+/).filter(Boolean)[0];
+      if (!foe) {
+        bot.say(
+          channel,
+          `${echo} Usage: !duel <irc_nick> — arena duel (both logged in, in channel, within ±11 levels).`,
+        );
+        return true;
+      }
+      const r = engine.duelLine(fromNick, normNick(foe), namesInChannel);
+      if ('err' in r) bot.say(channel, `${echo} ${r.err}`);
+      else for (const line of r.lines) bot.say(channel, line);
+      return true;
+    }
     case 'quest':
       bot.say(channel, `${echo} ${engine.questLine()}`);
       return true;
@@ -414,6 +436,37 @@ bot.on('message', (event) => {
 
   if (cmd === 'records') {
     bot.notice(from, engine.recordsLine());
+    return;
+  }
+
+  if (cmd === 'chronicle') {
+    bot.notice(from, engine.chronicleLine());
+    return;
+  }
+
+  if (cmd === 'omen') {
+    if (!inChan) {
+      bot.notice(from, 'OMEN only works while your nick is in the game channel.');
+      return;
+    }
+    const o = engine.omenLine(from, namesInChannel);
+    bot.notice(from, 'err' in o ? o.err : o.text);
+    return;
+  }
+
+  if (cmd === 'duel') {
+    if (!inChan) {
+      bot.notice(from, 'DUEL only works while your nick is in the game channel.');
+      return;
+    }
+    const foe = rest[0];
+    if (!foe) {
+      bot.notice(from, 'Usage: DUEL <irc_nick> — same as !duel in channel.');
+      return;
+    }
+    const r = engine.duelLine(from, normNick(foe), namesInChannel);
+    if ('err' in r) bot.notice(from, r.err);
+    else for (const line of r.lines) bot.notice(from, line);
     return;
   }
 

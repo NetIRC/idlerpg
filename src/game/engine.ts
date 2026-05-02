@@ -14,6 +14,8 @@ import { reservedBotNicksLower } from '../nick-candidates.js';
 import { alignmentIdleHint, alignmentIdleRate, alignmentLabel } from './alignment.js';
 import { durationIt } from './duration.js';
 import { penttl, ttl } from './math.js';
+import { consultOmen, formatChronicleLine } from './chronicle-omen.js';
+import { runDuel } from './duel.js';
 import {
   adminForceLogout,
   adminForceLucky,
@@ -262,14 +264,14 @@ export class GameEngine {
 
   helpPm(page: number): string {
     if (page >= 2) {
-      return 'More: STATS [name] TOP PING. Channel: !time !whoami !records !quest (no penalty). Quests & Lucky Hours; charms (~0.3% idle). ADMIN (staff PM): FORCELOGOUT | RESETPASS char newpass | STARTQUEST | LUCKY | SAY';
+      return 'More: STATS [name] TOP PING. Channel: !time !whoami !records !quest !chronicle !omen !duel (no penalty). !duel <irc_nick> — arena; both in channel, logged in, ±11 levels. ADMIN: FORCELOGOUT | RESETPASS char newpass | STARTQUEST | LUCKY | SAY';
     }
-    return 'REGISTER <name> <password> <class…> — private message to this bot only; password must be one word (no spaces); class can be several words. LOGIN <name> <password> — same. You must be in the game channel. Then: REGISTER LOGIN LOGOUT STATS TOP HELP CMDS …';
+    return 'REGISTER <name> <password> <class…> — private message to this bot only; password must be one word (no spaces); class can be several words. LOGIN <name> <password> — same. You must be in the game channel. Then: REGISTER LOGIN LOGOUT STATS TOP HELP CMDS CHRONICLE OMEN DUEL …';
   }
 
   helpChannel(page: number): string {
     if (page >= 2) {
-      return 'Also: !time !whoami !records !quest (no penalty). Quests & Lucky Hours; charms speed idle slightly.';
+      return 'Also: !time !whoami !records !quest !chronicle !omen !duel (no penalty). !duel nick = dramatic arena — both logged in, in channel, ±11 levels.';
     }
     return 'New here? PM this bot: REGISTER YourName yourpassword Your Class — you must be in the game channel; password = one word. Back again? LOGIN YourName password. Then !help in channel.';
   }
@@ -280,6 +282,20 @@ export class GameEngine {
 
   recordsLine(): string {
     return realmRecordsLine(this.db);
+  }
+
+  chronicleLine(): string {
+    return formatChronicleLine(this.db);
+  }
+
+  /** Realm omen: flavour + rare tiny timer nudge; cooldown in consultOmen. */
+  omenLine(ircNick: string, channelNicks: Set<string>): { err: string } | { text: string } {
+    return consultOmen(this.db, ircNick, channelNicks);
+  }
+
+  /** In-channel duel vs another IRC nick (both logged in, present, level gap limited). */
+  duelLine(ircNick: string, targetIrcNick: string, channelNicks: Set<string>): { err: string } | { lines: string[] } {
+    return runDuel(this.db, ircNick, targetIrcNick, channelNicks);
   }
 
   canAdmin(ircNick: string): boolean {

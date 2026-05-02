@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { config } from '../config.js';
-import { botPresenceFromDb, findByCharacter, getDb, leaderboard } from '../db/index.js';
+import { botPresenceFromDb, findByCharacter, getDb, leaderboard, recentRealmEvents } from '../db/index.js';
 import { durationIt } from '../game/duration.js';
 
 /** Optional Express API for local dev. Production can use PHP under public/api/. */
@@ -39,6 +39,18 @@ app.get('/api/leaderboard', (_req: Request, res: Response) => {
     generatedAt: new Date().toISOString(),
     botOnline,
     botLastSeenMs,
+  });
+});
+
+app.get('/api/chronicle', (req: Request, res: Response) => {
+  const raw = req.query.limit;
+  const n = typeof raw === 'string' ? parseInt(raw, 10) : 15;
+  const limit = Number.isFinite(n) ? Math.min(40, Math.max(1, n)) : 15;
+  const db = getDb(config);
+  const events = recentRealmEvents(db, limit);
+  res.json({
+    events,
+    generatedAt: new Date().toISOString(),
   });
 });
 
