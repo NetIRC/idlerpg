@@ -1,0 +1,5 @@
+* text=auto
+
+# Linux/macOS scripts & Apache (avoid CRLF breaking shebang / rewrite on Unix)
+*.sh   text eol=lf
+.htaccess text eol=lf

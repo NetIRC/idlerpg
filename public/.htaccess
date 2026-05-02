@@ -1,0 +1,55 @@
+# IdleRPG — Apache 2.4+ (public/ as DocumentRoot)
+# Requires: AllowOverride All (or equivalent) for this directory; modules: rewrite, headers, authz_core.
+# Nginx: replicate redirect + headers in the server block (this file is ignored).
+
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  # If the site lives in a subdirectory, set e.g. RewriteBase /idlerpg/
+  # RewriteBase /
+
+  # Block Git metadata if ever exposed under document root
+  RewriteRule (^|/)\.git(/|$) - [F,L]
+
+  # Diagnostics script: exposes PHP version, ini path, extensions — allow only while debugging.
+  # Remove or comment out the next line when you need /api/php-diag.php during setup:
+  RewriteRule ^api/php-diag\.php$ - [F,L]
+
+  # includes/ is loaded only via require(); block direct HTTP access
+  RewriteRule ^includes/ - [F,L]
+
+  # --- Force HTTPS (skip on localhost / loopback for XAMPP dev) ---
+  RewriteCond %{HTTP_HOST} !^localhost(:\d+)?$ [NC]
+  RewriteCond %{HTTP_HOST} !^127\.0\.0\.1(:\d+)?$ [NC]
+  RewriteCond %{HTTPS} !=on
+  RewriteCond %{HTTP:X-Forwarded-Proto} !https [NC]
+  RewriteCond %{HTTP:X-Forwarded-Ssl} !on [NC]
+  RewriteCond %{HTTP:Front-End-Https} !on [NC]
+  RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301,QSA]
+</IfModule>
+
+# True HTTPS or common reverse-proxy TLS termination (used for HSTS)
+<IfModule mod_setenvif.c>
+  SetEnvIf HTTPS "^on$" IRPG_HTTPS=1
+  SetEnvIf X-Forwarded-Proto "^https$" IRPG_HTTPS=1
+  SetEnvIf X-Forwarded-Ssl "^on$" IRPG_HTTPS=1
+  SetEnvIf Front-End-Https "^on$" IRPG_HTTPS=1
+</IfModule>
+
+<IfModule mod_headers.c>
+  Header always set X-Content-Type-Options "nosniff"
+  Header always set X-Frame-Options "SAMEORIGIN"
+  Header always set Referrer-Policy "strict-origin-when-cross-origin"
+  Header always set Cross-Origin-Opener-Policy "same-origin"
+  # Send HSTS only when the request is HTTPS (direct or forwarded). Drop includeSubDomains if you have HTTP-only subdomains.
+  Header always set Strict-Transport-Security "max-age=15552000; includeSubDomains" env=IRPG_HTTPS
+</IfModule>
+
+# No directory listings
+Options -Indexes
+
+# Block downloads of typical sensitive filenames (DB should never be under public/; this is extra depth)
+<IfModule mod_authz_core.c>
+  <FilesMatch "(?i)\.(db|sqlite|sqlite3|sql|bak|old|env|log|ini)$">
+    Require all denied
+  </FilesMatch>
+</IfModule>

@@ -1,0 +1,27 @@
+<?php
+/**
+ * TEMPLATE: copy to site.config.php (gitignored). Keys and types must stay in sync with
+ * public/includes/bootstrap.php ($IRPG: db_path, case_sensitive_names, debug).
+ *
+ * Typical locations:
+ * - Next to public/: .../myproject/site.config.php (single tree).
+ * - Bot + config in ~/idlerpg, web root is ~/public_html: keep site.config.php in ~/idlerpg/
+ *   (bootstrap looks for ../idlerpg/site.config.php from public_html).
+ * - Or set public/includes/local-root.php (see local-root.php.example) to that folder path.
+ *
+ * PHP needs read access to the SQLite the Node bot writes (same path as IRPG_DB_PATH in .env).
+ */
+
+return [
+    // Use an ABSOLUTE path on the server (same file as IRPG_DB_PATH / bot .env).
+    // Relative paths are resolved from the directory that contains site.config.php.
+    // Linux example: '/home/youruser/idlerpg/data/iodlerpg.db',
+    // Windows XAMPP example: 'C:/xampp/idlerpg/data/iodlerpg.db',
+    'db_path' => __DIR__ . '/data/iodlerpg.db',
+
+    // Same as IRPG_CASE_SENSITIVE_NAMES in the bot .env (true/false)
+    'case_sensitive_names' => true,
+
+    // Production: false. Set true temporarily to see exact paths/errors in API JSON (then turn off).
+    'debug' => false,
+];

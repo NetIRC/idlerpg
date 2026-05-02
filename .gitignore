@@ -1,0 +1,47 @@
+# =============================================================================
+# SENSITIVE / LOCAL ONLY — never commit these (passwords, paths, database).
+# TEMPLATES stay in the repo: .env.example, site.config.php.example,
+# public/includes/local-root.php.example (no real secrets; copy → real filenames).
+# =============================================================================
+
+# --- Bot secrets & machine-local env ---
+.env
+.env.*
+!.env.example
+
+# --- PHP site config with real db_path (may reveal server layout) ---
+site.config.php
+site.config.local.php
+public/includes/local-root.php
+
+# --- Dependencies & build output ---
+node_modules/
+web/node_modules/
+dist/
+web/dist/
+
+# --- Runtime: SQLite + bot ---
+data/*.db
+data/*.db-journal
+data/*.db-wal
+data/*.db-shm
+data/bot.pid
+data/bot.log
+!data/.gitkeep
+
+# --- Accidental key material in repo root ---
+*.pem
+
+# --- Logs & OS noise ---
+*.log
+.DS_Store
+Thumbs.db
+
+# --- Local tooling ---
+.cursor/
+
+# --- Optional future tooling ---
+vendor/
+coverage/
+.nyc_output/
+*.tsbuildinfo

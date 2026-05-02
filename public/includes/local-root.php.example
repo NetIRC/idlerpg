@@ -1,0 +1,12 @@
+<?php
+declare(strict_types=1);
+
+/**
+ * TEMPLATE: copy to local-root.php (gitignored). Return string = absolute dir containing
+ * site.config.php when bootstrap cannot find it next to public/. Placeholders only here.
+ *
+ * Example Virtualmin: bot lives in /home/user/idlerpg but web is ~/public_html
+ *   return '/home/user/idlerpg';
+ */
+
+return '/absolute/path/to/folder/with/site.config.php';

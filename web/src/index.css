@@ -1,0 +1,26 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+body {
+  min-height: 100vh;
+  background-color: #07060c;
+}
+
+.glass {
+  background: rgba(18, 16, 28, 0.72);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(0, 229, 199, 0.12);
+}
+
+.glow-arc {
+  box-shadow: 0 0 40px rgba(0, 229, 199, 0.15);
+}
+
+.text-glow {
+  text-shadow: 0 0 24px rgba(0, 229, 199, 0.35);
+}
