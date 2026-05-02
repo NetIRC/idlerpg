@@ -63,12 +63,11 @@ export function formatChronicleLine(db: Database): string {
     const det = (r.detail || '').trim() || '—';
     return `${label} (${t}): ${det}`.slice(0, 100);
   });
-  const suffix = ` — web/api: last ${CHRONICLE_API_DEFAULT_LIMIT} (max ${CHRONICLE_API_MAX_LIMIT} ?limit=)`;
   const prefix = `📜 Chronicle (IRC ${rows.length}/${CHRONICLE_IRC_MAX_EVENTS}): `;
-  const budget = Math.max(80, CHRONICLE_IRC_MAX_CHARS - prefix.length - suffix.length);
+  const budget = Math.max(80, CHRONICLE_IRC_MAX_CHARS - prefix.length);
   const joined = parts.join(' │ ');
   const body = joined.length <= budget ? joined : `${joined.slice(0, Math.max(0, budget - 1))}…`;
-  return prefix + body + suffix;
+  return prefix + body;
 }
 
 export function consultOmen(
