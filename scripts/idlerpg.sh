@@ -14,7 +14,7 @@ usage() {
 
 ensure_deps() {
   if [[ ! -f package.json ]]; then
-    echo "error: package.json not found (expected iodlerpg repo root)" >&2
+    echo "error: package.json not found (expected idlerpg repo root)" >&2
     exit 1
   fi
   if [[ ! -d node_modules ]]; then
@@ -66,7 +66,7 @@ do_start() {
     rm -f "$PIDFILE"
     exit 1
   fi
-  echo "iodlerpg bot started in background (pid $(<"$PIDFILE")), log: $LOG"
+  echo "idlerpg bot started in background (pid $(<"$PIDFILE")), log: $LOG"
 }
 
 stop_bot() {
@@ -104,7 +104,7 @@ stop_bot() {
   else
     pkill -f 'src/irc/bot.ts' 2>/dev/null || true
   fi
-  echo "iodlerpg bot stopped"
+  echo "idlerpg bot stopped"
 }
 
 cmd="${1:-}"

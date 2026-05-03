@@ -7,7 +7,7 @@ Templates committed to the repo (safe to share):
 | `.env.example` | Copy to **`.env`** next to `package.json` (never commit `.env`). |
 | `site.config.php.example` | Copy to **`site.config.php`** in the **project root** (same folder as `public/`). Never commit real `site.config.php` if it has private paths. |
 
-The dashboard shows the API **hint** text when something breaks. Typical fixes: **`site.config.php`** `db_path` (absolute path = bot `IRPG_DB_PATH`), **`public/includes/local-root.php`** if config is not found, run the bot once so **`data/iodlerpg.db`** exists, and **readable** by the web user (`chmod` / `chgrp` — see DEPLOY). Open **`/api/health.php`** and **`/api/leaderboard.php`** in the browser to see JSON errors directly. If the JSON shows **`pdo_sqlite_missing`** / “could not find driver”, install **`php-sqlite3`** / **`pdo_sqlite`** for the **same** PHP version Apache uses. If it shows **`db_open`**, read **§ SQLite `db_open`** below.
+The dashboard shows the API **hint** text when something breaks. Typical fixes: **`site.config.php`** `db_path` (absolute path = bot `IRPG_DB_PATH`), **`public/includes/local-root.php`** if config is not found, run the bot once so **`data/idlerpg.db`** exists, and **readable** by the web user (`chmod` / `chgrp` — see DEPLOY). Open **`/api/health.php`** and **`/api/leaderboard.php`** in the browser to see JSON errors directly. If the JSON shows **`pdo_sqlite_missing`** / “could not find driver”, install **`php-sqlite3`** / **`pdo_sqlite`** for the **same** PHP version Apache uses. If it shows **`db_open`**, read **§ SQLite `db_open`** below.
 
 If **`php -m`** on the server shows **`pdo_sqlite`** but the site still says **could not find driver**, the **web** PHP is often different from **CLI**. Use **`/api/php-diag.php`** (see **§ HTTPS / hardening** below — that endpoint is blocked by default in production). When enabled, the JSON must list **`extension_pdo_sqlite: true`** and **`pdo_drivers`** containing **`sqlite`**. If not, enable **`pdo_sqlite`** for that PHP version in Virtualmin / FPM pool / `php.ini`, then restart **`php-fpm`** and **`apache2`**. Compare **`php_version`** and **`ini_loaded`** from the JSON with CLI: `php -v` and `php --ini`.
 
@@ -23,7 +23,7 @@ Ensure the vhost’s **DocumentRoot** is **`public/`**, and that Apache allows o
    If **`message`** is **could not find driver**, PHP has no **`pdo_sqlite`** — see the **`pdo_sqlite_missing`** hint in the API JSON and install the extension (this is not a file-permission issue).
 
 2. **`open_basedir` (shared hosting / Virtualmin / php.ini)**  
-   If PHP is jailed to e.g. `…/public_html:/tmp`, opening **`/home/you/idlerpg/data/iodlerpg.db`** is **blocked** even if the file exists. Fix one of:
+   If PHP is jailed to e.g. `…/public_html:/tmp`, opening **`/home/you/idlerpg/data/idlerpg.db`** is **blocked** even if the file exists. Fix one of:
    - Add the bot project (or at least **`…/idlerpg/data`**) to **`open_basedir`** in the domain’s PHP configuration / **php.ini** / pool file (e.g. `php_admin_value[open_basedir] = ...:/home/you/idlerpg/data`).
    - Or move/read the DB from a path already allowed (less ideal: duplicating the file).
 
@@ -38,7 +38,7 @@ Ensure the vhost’s **DocumentRoot** is **`public/`**, and that Apache allows o
    **`open_basedir`** is independent of mode bits: ensure the web user can **traverse** every parent directory (`x` on dirs) and **read** the `.db` file.
 
 5. **Corrupt or empty file**  
-   On the server: **`sqlite3 /path/to/iodlerpg.db ".tables"`** (package **`sqlite3`**). If it errors, stop the bot, back up the file, delete it, restart the bot to recreate a fresh DB (players lost unless you restore backup).
+   On the server: **`sqlite3 /path/to/idlerpg.db ".tables"`** (package **`sqlite3`**). If it errors, stop the bot, back up the file, delete it, restart the bot to recreate a fresh DB (players lost unless you restore backup).
 
 6. **Other PDO errors**  
    Set **`'debug' => true`** in **`site.config.php`** temporarily to see the raw PDO message, then turn it off again.
@@ -111,11 +111,11 @@ chmod +x scripts/idlerpg.sh
 1. **DNS:** point **`idlerpg.netirc.eu`** (A/AAAA) to your server’s public IP.
 2. **Repo on server:** clone/upload. **DocumentRoot = `public/`** (e.g. `/var/www/idlerpg/public`).  
 
-   **Virtualmin / `public_html`:** you may copy only the **contents of `public/`** into `~/public_html`. Leave the bot, `node_modules`, and **`site.config.php`** under **`~/idlerpg/`** (same folder as `.env`). PHP will load **`~/idlerpg/site.config.php`** automatically. Set **`db_path`** there to the real DB (e.g. `/home/youruser/idlerpg/data/iodlerpg.db`).
+   **Virtualmin / `public_html`:** you may copy only the **contents of `public/`** into `~/public_html`. Leave the bot, `node_modules`, and **`site.config.php`** under **`~/idlerpg/`** (same folder as `.env`). PHP will load **`~/idlerpg/site.config.php`** automatically. Set **`db_path`** there to the real DB (e.g. `/home/youruser/idlerpg/data/idlerpg.db`).
 3. **`site.config.php`:** copy from `site.config.php.example`; set **`db_path`** to the **same absolute path** as **`IRPG_DB_PATH`** in the bot’s `.env`. If the dashboard says **missing_config**, either copy `site.config.php` to one of the searched paths or add **`public/includes/local-root.php`** (see `local-root.php.example`) returning the folder that contains `site.config.php`.
-4. **SQLite permissions:** the web server user must **read** `iodlerpg.db` (and usually **execute** permission on each parent directory). Example:  
-   `chmod 640 data/iodlerpg.db && chmod 711 data`  
-   and either put the web user in the bot user’s group and `chgrp` the file, or use ACL/`chmod o+r` on the `.db` only (narrowest fix). Test: `sudo -u www-data cat /path/to/iodlerpg.db | head -c 1` (adjust user).
+4. **SQLite permissions:** the web server user must **read** `idlerpg.db` (and usually **execute** permission on each parent directory). Example:  
+   `chmod 640 data/idlerpg.db && chmod 711 data`  
+   and either put the web user in the bot user’s group and `chgrp` the file, or use ACL/`chmod o+r` on the `.db` only (narrowest fix). Test: `sudo -u www-data cat /path/to/idlerpg.db | head -c 1` (adjust user).
 5. **TLS (Let’s Encrypt):**
 
    ```bash
@@ -161,7 +161,7 @@ Same steps as above without a fixed hostname: DocumentRoot → **`public/`**, **
 4. Start with **`npm start`** or **`./scripts/idlerpg.sh start`** (after `chmod +x scripts/idlerpg.sh`). Stop / restart: **`./scripts/idlerpg.sh stop`**, **`./scripts/idlerpg.sh restart`**. Log: **`data/bot.log`**. Foreground: **`./scripts/idlerpg.sh start -f`**.
 5. With the script in the background, stop with **`./scripts/idlerpg.sh stop`**. Foreground: **Ctrl+C**.
 
-The PHP site runs separately: after the bot has created **`data/iodlerpg.db`**, set **`site.config.php`** `db_path` to that same file.
+The PHP site runs separately: after the bot has created **`data/idlerpg.db`**, set **`site.config.php`** `db_path` to that same file.
 
 ---
 

@@ -31,19 +31,113 @@ export type PlayerRow = {
   last_login: number;
   /** Cosmetic charm; tiny idle bonus when set. */
   trinket: string;
+  /** Total arena duel wins (PvP). */
+  duel_wins: number;
+  /** Shadow gauntlet victories (PvE). */
+  gauntlet_wins: number;
 };
 
 let _db: Database.Database | null = null;
+
+/** If only the legacy typo-named file exists, rename it (and -wal/-shm) to idlerpg.db. */
+function migrateLegacyIodlerpgFilename(canonicalResolved: string): void {
+  const typoPath = canonicalResolved.replace(/idlerpg\.db$/i, 'iodlerpg.db');
+  if (typoPath === canonicalResolved) return;
+  if (fs.existsSync(canonicalResolved)) return;
+  if (!fs.existsSync(typoPath)) return;
+  console.warn(`[db] Renaming legacy ${path.basename(typoPath)} -> ${path.basename(canonicalResolved)}`);
+  fs.renameSync(typoPath, canonicalResolved);
+  for (const suf of ['-wal', '-shm', '-journal'] as const) {
+    const from = typoPath + suf;
+    const to = canonicalResolved + suf;
+    if (fs.existsSync(from)) {
+      fs.renameSync(from, to);
+    }
+  }
+}
+
+/**
+ * If this process owns the DB file or WAL sidecars but mode lacks owner-write (e.g. 444 after a bad copy),
+ * add u+w. Does not help when the file is owned by another user — fix with chown on the server.
+ */
+function ensureOwnerRwForSqliteTree(resolvedDbPath: string): void {
+  if (typeof process.getuid !== 'function') return;
+  const uid = process.getuid();
+  const dir = path.dirname(resolvedDbPath);
+  try {
+    const dst = fs.statSync(dir);
+    if (dst.uid === uid) {
+      const dm = dst.mode & 0o777;
+      if ((dm & 0o200) === 0 || (dm & 0o100) === 0) {
+        fs.chmodSync(dir, dm | 0o700);
+        console.warn(`[db] Set directory u+rwx on ${dir} (required to create WAL files)`);
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+  const paths = [resolvedDbPath, `${resolvedDbPath}-wal`, `${resolvedDbPath}-shm`, `${resolvedDbPath}-journal`];
+  for (const p of paths) {
+    if (!fs.existsSync(p)) continue;
+    try {
+      const st = fs.statSync(p);
+      if (st.uid !== uid) continue;
+      const m = st.mode & 0o777;
+      if ((m & 0o200) === 0) {
+        fs.chmodSync(p, m | 0o200);
+        console.warn(`[db] Set owner-write on ${path.basename(p)}`);
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+function assertDbWritable(db: Database.Database, resolvedPath: string): void {
+  const probeKey = '__irpg_rw_probe__';
+  try {
+    db.prepare(
+      `INSERT INTO meta (key, int_value, text_value) VALUES (?, 0, NULL)
+       ON CONFLICT(key) DO UPDATE SET int_value = int_value`,
+    ).run(probeKey);
+    db.prepare('DELETE FROM meta WHERE key = ?').run(probeKey);
+  } catch (e) {
+    const code = (e as { code?: string }).code;
+    if (code === 'SQLITE_READONLY' || code === 'SQLITE_CANTOPEN') {
+      const dir = path.dirname(resolvedPath);
+      throw new Error(
+        `[db] Cannot write SQLite at ${resolvedPath} (${code}). ` +
+          `Run: ls -la ${dir} - owner UID must match the bot (check: id -u when the bot starts). ` +
+          `WAL needs write on the directory and the database file. ` +
+          `If the file is owned by another user (e.g. www-data from PHP), as root run e.g.: ` +
+          `chown -R idlerpg:idlerpg ${dir} && chmod u+rwX ${dir} && chmod u+rw ${resolvedPath} ` +
+          `(replace idlerpg with your bot user), or use a shared group: chown idlerpg:www-data ..., chmod 775 ${dir}, chmod 664 ${resolvedPath}.`,
+      );
+    }
+    throw e;
+  }
+}
 
 /** Open SQLite (WAL); creates tables. Shared path with site.config.php on the PHP host. */
 
 export function getDb(config: AppConfig): Database.Database {
   if (_db) return _db;
-  const dir = path.dirname(path.resolve(config.dbPath));
+  const resolved = path.resolve(config.dbPath);
+  const dir = path.dirname(resolved);
   fs.mkdirSync(dir, { recursive: true });
-  _db = new Database(config.dbPath);
+  try {
+    fs.accessSync(dir, fs.constants.W_OK);
+  } catch {
+    throw new Error(
+      `[db] Directory not writable: ${dir}. Create it or fix permissions (chmod/chown) before starting the bot.`,
+    );
+  }
+  migrateLegacyIodlerpgFilename(resolved);
+  ensureOwnerRwForSqliteTree(resolved);
+  _db = new Database(resolved);
   _db.pragma('journal_mode = WAL');
   initSchema(_db);
+  assertDbWritable(_db, resolved);
   return _db;
 }
 
@@ -85,6 +179,8 @@ function initSchema(db: Database.Database) {
   ensureMetaTextColumn(db);
   ensureTrinketColumn(db);
   ensureRealmEventsTable(db);
+  ensurePlayerMedalsTable(db);
+  ensureCombatStatColumns(db);
 }
 
 export function metaGetInt(db: Database.Database, key: string): number | null {
@@ -148,6 +244,28 @@ export function insertRealmEvent(db: Database.Database, kind: string, detail: st
   );
 }
 
+function ensurePlayerMedalsTable(db: Database.Database) {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS player_medals (
+      player_id INTEGER NOT NULL,
+      medal_key TEXT NOT NULL,
+      ts INTEGER NOT NULL,
+      PRIMARY KEY (player_id, medal_key)
+    );
+    CREATE INDEX IF NOT EXISTS idx_player_medals_player ON player_medals(player_id);
+  `);
+}
+
+function ensureCombatStatColumns(db: Database.Database) {
+  const cols = db.prepare('PRAGMA table_info(players)').all() as { name: string }[];
+  if (!cols.some((c) => c.name === 'duel_wins')) {
+    db.exec('ALTER TABLE players ADD COLUMN duel_wins INTEGER NOT NULL DEFAULT 0');
+  }
+  if (!cols.some((c) => c.name === 'gauntlet_wins')) {
+    db.exec('ALTER TABLE players ADD COLUMN gauntlet_wins INTEGER NOT NULL DEFAULT 0');
+  }
+}
+
 /** Written by the IRC bot while connected; web tier treats stale rows as offline. */
 export const META_KEY_BOT_LAST_SEEN_MS = 'bot_last_seen_ms';
 
@@ -205,6 +323,15 @@ export function findOnlineByNickCi(db: Database.Database, nick: string): PlayerR
     .get(nick) as PlayerRow | undefined;
 }
 
+/** Last IRC nick on file but not logged in (e.g. after LOGOUT / PART) — for LOGIN reminders on join. */
+export function findLoggedOutByIrcNickCi(db: Database.Database, nick: string): PlayerRow | undefined {
+  return db
+    .prepare(
+      `SELECT * FROM players WHERE online = 0 AND session_open = 0 AND irc_nick != '' AND irc_nick COLLATE NOCASE = ? LIMIT 1`,
+    )
+    .get(nick) as PlayerRow | undefined;
+}
+
 export function leaderboard(db: Database.Database, limit = 50): PlayerRow[] {
   return db
     .prepare(
@@ -220,4 +347,29 @@ export function recentRealmEvents(db: Database.Database, limit: number): RealmEv
   return db
     .prepare(`SELECT ts, kind, detail FROM realm_events ORDER BY id DESC LIMIT ?`)
     .all(limit) as RealmEventRow[];
+}
+
+/**
+ * Events that mention a hero in `detail` (omens store the character name alone;
+ * medals use "Name: medal label"). Space-prefix matches realm records (`Name L10`), HoG, gauntlet, etc.
+ */
+export function recentRealmEventsForCharacter(
+  db: Database.Database,
+  characterName: string,
+  limit: number,
+): RealmEventRow[] {
+  const lim = Math.min(40, Math.max(1, limit));
+  const name = characterName.trim();
+  if (!name) return [];
+  const likeColon = `${name}:%`;
+  const likeSpace = `${name} %`;
+  return db
+    .prepare(
+      `SELECT ts, kind, detail FROM realm_events
+       WHERE detail COLLATE NOCASE = ?
+          OR detail COLLATE NOCASE LIKE ?
+          OR detail COLLATE NOCASE LIKE ?
+       ORDER BY id DESC LIMIT ?`,
+    )
+    .all(name, likeColon, likeSpace, lim) as RealmEventRow[];
 }

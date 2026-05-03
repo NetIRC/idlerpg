@@ -1,6 +1,9 @@
 import 'dotenv/config';
 import { z } from 'zod';
 
+/** Human-readable release id: CTCP VERSION, !ping, default GECOS, banter. Bump when shipping. */
+export const IDLE_RPG_VERSION = 'IdleRPG V2.0 NetIRC';
+
 /** Environment loaded from process.env (IRPG_*), validated with zod. */
 
 /** Strip CR from values (Windows CRLF in `.env` breaks hostnames, numbers, booleans on Linux). */
@@ -31,6 +34,19 @@ function normalizeIpcBracket(raw: string): string {
   return t;
 }
 
+/** Legacy typo in DB filename: iodlerpg.db → idlerpg.db. */
+function normalizeSqliteDbFilename(p: string): string {
+  const t = p.trim();
+  if (t === '') return t;
+  const fixed = t.replace(/iodlerpg\.db$/i, 'idlerpg.db');
+  if (fixed !== t) {
+    console.warn(
+      '[config] IRPG_DB_PATH used legacy filename "iodlerpg.db"; using idlerpg.db. Update .env when convenient.',
+    );
+  }
+  return fixed;
+}
+
 const schema = z.object({
   ircHost: z
     .string()
@@ -59,7 +75,7 @@ const schema = z.object({
   /** Truncate generated / configured nicks to this length (network limit is often ~30). */
   ircNickMaxLen: z.coerce.number().min(9).max(32).default(27),
   ircUser: z.string().default('idle'),
-  ircGecos: z.string().default('IdleRPG V1.0 NetIRC'),
+  ircGecos: z.string().default(IDLE_RPG_VERSION),
   ircChannel: z
     .string()
     .default('#IdleRPG')
@@ -76,7 +92,10 @@ const schema = z.object({
   limitpen: z.coerce.number().default(604800),
   selfClockMs: z.coerce.number().default(1000),
   caseSensitiveNames: z.boolean().default(true),
-  dbPath: z.string().default('./data/iodlerpg.db'),
+  dbPath: z
+    .string()
+    .default('./data/idlerpg.db')
+    .transform((s: string) => normalizeSqliteDbFilename(s)),
   apiPort: z.coerce.number().default(3847),
   apiHost: z.string().default('127.0.0.1'),
   corsOrigin: z.string().default('http://localhost:5173'),

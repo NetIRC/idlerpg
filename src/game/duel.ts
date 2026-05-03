@@ -2,14 +2,16 @@ import type Database from 'better-sqlite3';
 import type { PlayerRow } from '../db/index.js';
 import { findOnlineByNickCi, insertRealmEvent, metaGetInt, metaSetInt } from '../db/index.js';
 import { durationIt } from './duration.js';
+import { ircNickInChannel } from './irc-presence.js';
+import { medalsAfterDuelWin } from './medals.js';
 
 /** Challenger cooldown (seconds). */
-const INITIATOR_COOLDOWN_SEC = 5 * 3600;
+export const DUEL_INITIATOR_COOLDOWN_SEC = 5 * 3600;
 /** Same pair cannot duel again this soon. */
-const PAIR_COOLDOWN_SEC = 20 * 3600;
-const MAX_LEVEL_GAP = 11;
+export const DUEL_PAIR_COOLDOWN_SEC = 20 * 3600;
+export const DUEL_MAX_LEVEL_GAP = 11;
 
-function pairMetaKey(idA: number, idB: number): string {
+export function duelPairMetaKey(idA: number, idB: number): string {
   const lo = Math.min(idA, idB);
   const hi = Math.max(idA, idB);
   return `duel_pair_${lo}_${hi}`;
@@ -56,28 +58,28 @@ export function runDuel(
   if (!tgt) return { err: 'No logged-in hero holds that IRC nick — check spelling or they are away.' };
   if (ini.id === tgt.id) return { err: 'You cannot duel yourself.' };
 
-  const ircSeen = (p: PlayerRow) => !!(p.irc_nick && channelNicks.has(p.irc_nick.replace(/^@|%|\+/, '')));
+  const ircSeen = (p: PlayerRow) => ircNickInChannel(p.irc_nick, channelNicks);
 
   if (!ircSeen(ini)) return { err: 'Stay visible in the game channel to fight.' };
   if (!ircSeen(tgt)) return { err: 'Your rival must stand in this channel (idle presence, real nick).' };
 
   const now = Math.floor(Date.now() / 1000);
   const lastInit = metaGetInt(db, `duel_cd_${ini.id}`) ?? 0;
-  if (lastInit > 0 && now - lastInit < INITIATOR_COOLDOWN_SEC) {
+  if (lastInit > 0 && now - lastInit < DUEL_INITIATOR_COOLDOWN_SEC) {
     return {
-      err: `You challenged someone recently. Next opening in ${durationIt(INITIATOR_COOLDOWN_SEC - (now - lastInit))}.`,
+      err: `You challenged someone recently. Next opening in ${durationIt(DUEL_INITIATOR_COOLDOWN_SEC - (now - lastInit))}.`,
     };
   }
-  const pk = pairMetaKey(ini.id, tgt.id);
+  const pk = duelPairMetaKey(ini.id, tgt.id);
   const lastPair = metaGetInt(db, pk) ?? 0;
-  if (lastPair > 0 && now - lastPair < PAIR_COOLDOWN_SEC) {
+  if (lastPair > 0 && now - lastPair < DUEL_PAIR_COOLDOWN_SEC) {
     return {
-      err: `This pairing needs more cooldown — ${durationIt(PAIR_COOLDOWN_SEC - (now - lastPair))} left.`,
+      err: `This pairing needs more cooldown — ${durationIt(DUEL_PAIR_COOLDOWN_SEC - (now - lastPair))} left.`,
     };
   }
 
-  if (Math.abs(ini.level - tgt.level) > MAX_LEVEL_GAP) {
-    return { err: `Level gap too cruel — pick someone within ±${MAX_LEVEL_GAP} levels.` };
+  if (Math.abs(ini.level - tgt.level) > DUEL_MAX_LEVEL_GAP) {
+    return { err: `Level gap too cruel — pick someone within ±${DUEL_MAX_LEVEL_GAP} levels.` };
   }
 
   let a = combatPower(ini);
@@ -121,6 +123,51 @@ export function runDuel(
 
   const line1 = pickEpic(winner, loser, crit);
   const line2 = `⚡ Fates: ${winner.character_name} trims the clock (~${durationIt(wNs)}); ${loser.character_name} eats dust (~${durationIt(lNs)}).`;
+  const medalLines = medalsAfterDuelWin(db, winner);
 
-  return { lines: [line1, line2] };
+  return { lines: [line1, line2, ...medalLines] };
+}
+
+/**
+ * If a duel suggestion is valid right now, return a foe's IRC nick (read-only; does not run a duel).
+ */
+export function pickDuelHintFoe(
+  db: Database,
+  initiatorIrcNick: string,
+  channelNicks: Set<string>,
+  caseEq: (a: string, b: string) => boolean,
+): string | null {
+  const ini = findOnlineByNickCi(db, initiatorIrcNick);
+  if (!ini) return null;
+
+  const seen = (p: PlayerRow) => {
+    if (!p.irc_nick) return false;
+    const raw = p.irc_nick.replace(/^@|%|\+/, '');
+    for (const n of channelNicks) {
+      if (caseEq(n, raw)) return true;
+    }
+    return false;
+  };
+
+  if (!seen(ini)) return null;
+
+  const now = Math.floor(Date.now() / 1000);
+  const lastInit = metaGetInt(db, `duel_cd_${ini.id}`) ?? 0;
+  if (lastInit > 0 && now - lastInit < DUEL_INITIATOR_COOLDOWN_SEC) return null;
+
+  const others = db.prepare(`SELECT * FROM players WHERE online = 1 AND id != ?`).all(ini.id) as PlayerRow[];
+  for (let i = others.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [others[i], others[j]] = [others[j]!, others[i]!];
+  }
+
+  for (const tgt of others) {
+    if (!seen(tgt) || !tgt.irc_nick) continue;
+    if (Math.abs(ini.level - tgt.level) > DUEL_MAX_LEVEL_GAP) continue;
+    const pk = duelPairMetaKey(ini.id, tgt.id);
+    const lastPair = metaGetInt(db, pk) ?? 0;
+    if (lastPair > 0 && now - lastPair < DUEL_PAIR_COOLDOWN_SEC) continue;
+    return tgt.irc_nick;
+  }
+  return null;
 }

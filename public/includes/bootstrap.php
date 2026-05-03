@@ -64,6 +64,64 @@ if ($dbPath === '' || ($dbPath[0] !== '/' && !preg_match('#^[A-Za-z]:[\\\\/]#', 
     $dbPath = $ROOT . '/' . ltrim(str_replace('\\', '/', $dbPath), '/');
 }
 
+/**
+ * Use the first readable SQLite file among the config path, standard data/ locations,
+ * and IRPG_DB_PATH — fixes mismatches when site.config.php lives in a different tree than
+ * the bot cwd (e.g. db under web project root but db_path resolved next to config only).
+ *
+ * @return array{0: string, 1: list<string>} chosen path (may still be missing), paths tried in order
+ */
+function irpg_pick_readable_sqlite(string $resolvedPrimary, string $configRoot, string $webProjectRoot): array
+{
+    $norm = static function (string $p): string {
+        return str_replace('\\', '/', $p);
+    };
+    /** @var list<string> $candidates */
+    $candidates = [];
+    $add = static function (string $p) use (&$candidates, $norm): void {
+        $p = trim($norm($p));
+        if ($p === '') {
+            return;
+        }
+        $candidates[] = $p;
+    };
+
+    $add($resolvedPrimary);
+    $add($configRoot . '/data/idlerpg.db');
+    $add($webProjectRoot . '/data/idlerpg.db');
+    $parentWeb = dirname(rtrim($norm($webProjectRoot), '/'));
+    if ($parentWeb !== '' && $parentWeb !== '/' && $parentWeb !== $norm($webProjectRoot)) {
+        $add($parentWeb . '/data/idlerpg.db');
+    }
+
+    $env = getenv('IRPG_DB_PATH');
+    if ($env !== false && ($env = trim($env)) !== '') {
+        $ev = $norm($env);
+        if ($ev !== '' && ($ev[0] === '/' || preg_match('#^[A-Za-z]:/#', $ev))) {
+            $add($ev);
+        } else {
+            $add(rtrim($webProjectRoot, '/') . '/' . ltrim($ev, '/'));
+            $add(rtrim($configRoot, '/') . '/' . ltrim($ev, '/'));
+        }
+    }
+
+    /** @var list<string> $tried */
+    $tried = [];
+    foreach ($candidates as $c) {
+        if (in_array($c, $tried, true)) {
+            continue;
+        }
+        $tried[] = $c;
+        if (is_file($c) && is_readable($c)) {
+            return [$c, $tried];
+        }
+    }
+
+    return [$resolvedPrimary, $tried];
+}
+
+[$dbPath, $GLOBALS['irpg_db_tried_paths']] = irpg_pick_readable_sqlite($dbPath, $ROOT, $publicParent);
+
 function irpg_duration_it(float $totalSec): string
 {
     if (!is_finite($totalSec) || $totalSec < 0) {
@@ -79,18 +137,162 @@ function irpg_duration_it(float $totalSec): string
     return sprintf('%d %s, %02d:%02d:%02d', $days, $dayWord, $h, $m, $sec);
 }
 
+/** Display labels for `player_medals.medal_key` — keep in sync with `src/game/medals.ts` MEDAL_DEF. */
+function irpg_medal_label(string $key): string
+{
+    static $map = [
+        'quest_crest' => 'Quest Crest',
+        'first_duel' => 'First Blood',
+        'duel_blade_5' => 'Fivefold Blade',
+        'duel_blade_15' => 'Fifteen Strikes',
+        'gauntlet_shade' => 'Shade Walker',
+        'gauntlet_void' => 'Void Dancer',
+        'ascendant_10' => 'Ascendant X',
+        'storm_25' => 'Storm of Stillness',
+        'myth_idle_50' => 'Myth-Idle',
+        'century_100' => 'Century Mark',
+    ];
+
+    return $map[$key] ?? $key;
+}
+
+/** Tier for medal chip styling — keep in sync with `src/game/medals.ts` MEDAL_DEF.tier */
+function irpg_medal_tier(string $key): string
+{
+    static $map = [
+        'quest_crest' => 'silver',
+        'first_duel' => 'bronze',
+        'duel_blade_5' => 'silver',
+        'duel_blade_15' => 'gold',
+        'gauntlet_shade' => 'bronze',
+        'gauntlet_void' => 'gold',
+        'ascendant_10' => 'bronze',
+        'storm_25' => 'silver',
+        'myth_idle_50' => 'gold',
+        'century_100' => 'mythic',
+    ];
+
+    return $map[$key] ?? 'bronze';
+}
+
+/**
+ * Apply additive schema for production DBs that predate medals / combat stats.
+ * Idempotent; safe with existing rows (new columns default to 0). Keep in sync with
+ * `ensurePlayerMedalsTable` + `ensureCombatStatColumns` in src/db/index.ts.
+ */
+function irpg_ensure_db_schema(PDO $pdo): void
+{
+    $pdo->exec(
+        'CREATE TABLE IF NOT EXISTS player_medals (
+            player_id INTEGER NOT NULL,
+            medal_key TEXT NOT NULL,
+            ts INTEGER NOT NULL,
+            PRIMARY KEY (player_id, medal_key)
+        );
+        CREATE INDEX IF NOT EXISTS idx_player_medals_player ON player_medals(player_id);'
+    );
+
+    $stmt = $pdo->query('PRAGMA table_info(players)');
+    if ($stmt === false) {
+        return;
+    }
+    /** @var list<array{name?: string}> $cols */
+    $cols = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $names = [];
+    foreach ($cols as $c) {
+        if (isset($c['name'])) {
+            $names[(string) $c['name']] = true;
+        }
+    }
+    if (!isset($names['duel_wins'])) {
+        $pdo->exec('ALTER TABLE players ADD COLUMN duel_wins INTEGER NOT NULL DEFAULT 0');
+    }
+    if (!isset($names['gauntlet_wins'])) {
+        $pdo->exec('ALTER TABLE players ADD COLUMN gauntlet_wins INTEGER NOT NULL DEFAULT 0');
+    }
+}
+
 /**
  * Realm chronicle JSON API — keep defaults in sync with src/game/chronicle-omen.ts
  * (CHRONICLE_API_DEFAULT_LIMIT, CHRONICLE_API_MAX_LIMIT).
  */
 function irpg_chronicle_default_limit(): int
 {
-    return 16;
+    return 15;
 }
 
 function irpg_chronicle_max_limit(): int
 {
     return 40;
+}
+
+/** Meta int helper for realm pulse (same keys as Node `realm.ts`). */
+function irpg_meta_int(PDO $pdo, string $key): ?int
+{
+    $st = $pdo->prepare('SELECT int_value FROM meta WHERE key = ? LIMIT 1');
+    $st->execute([$key]);
+    $row = $st->fetch(PDO::FETCH_ASSOC);
+    if ($row === false) {
+        return null;
+    }
+
+    return (int) $row['int_value'];
+}
+
+/**
+ * Realm snapshot for dashboard / IRC !realm — keep strings in line with src/game/realm.ts realmPulseData.
+ *
+ * @return array{display: string, onlineHeroes: int, questActive: bool, questShort: ?string, luckySecondsLeft: int, recordName: ?string, recordLevel: ?int}
+ */
+function irpg_realm_pulse(PDO $pdo): array
+{
+    $stmt = $pdo->query('SELECT COUNT(*) FROM players WHERE online = 1');
+    $onlineHeroes = (int) $stmt->fetchColumn();
+    $now = time();
+    $qActive = irpg_meta_int($pdo, 'quest_active') === 1;
+    $questShort = null;
+    if ($qActive) {
+        $ends = irpg_meta_int($pdo, 'quest_ends_at') ?? 0;
+        $left = max(0, $ends - $now);
+        $s0 = irpg_meta_int($pdo, 'quest_t0') ?? 0;
+        $s1 = irpg_meta_int($pdo, 'quest_t1') ?? 0;
+        $questShort = 'Sunbound ' . $s0 . ' vs Moonveil ' . $s1 . ' · ' . irpg_duration_it((float) $left);
+    }
+    $luckyUntil = irpg_meta_int($pdo, 'lucky_until') ?? 0;
+    $luckyLeft = max(0, $luckyUntil - $now);
+    $recLv = irpg_meta_int($pdo, 'realm_record_level');
+    $st = $pdo->prepare('SELECT text_value FROM meta WHERE key = ? LIMIT 1');
+    $st->execute(['realm_record_name']);
+    $row = $st->fetch(PDO::FETCH_ASSOC);
+    $recName = null;
+    if ($row !== false && $row['text_value'] !== null && $row['text_value'] !== '') {
+        $recName = (string) $row['text_value'];
+    }
+
+    $segments = [];
+    $segments[] = $onlineHeroes . ' hero' . ($onlineHeroes !== 1 ? 'es' : '') . ' online';
+    $segments[] = $qActive && $questShort !== null ? ('Quest live: ' . $questShort) : 'Quest dormant';
+    if ($luckyLeft > 0) {
+        $segments[] = 'Lucky hour ' . irpg_duration_it((float) $luckyLeft);
+    } else {
+        $segments[] = 'Lucky quiet';
+    }
+    if ($recName !== null && $recLv !== null && $recLv > 0) {
+        $segments[] = 'Peak ' . $recName . ' L' . $recLv;
+    } else {
+        $segments[] = 'No realm peak yet';
+    }
+    $display = '◆ ' . implode(' · ', $segments);
+
+    return [
+        'onlineHeroes' => $onlineHeroes,
+        'questActive' => $qActive,
+        'questShort' => $questShort,
+        'luckySecondsLeft' => $luckyLeft,
+        'recordName' => $recName,
+        'recordLevel' => $recLv,
+        'display' => $display,
+    ];
 }
 
 function irpg_pdo(): PDO
@@ -113,6 +315,7 @@ function irpg_pdo(): PDO
         $pdo = new PDO('sqlite:' . $dbPath, null, null, [
             PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
         ]);
+        irpg_ensure_db_schema($pdo);
     } catch (PDOException $e) {
         throw new RuntimeException('irpg_db_open:' . $e->getMessage(), 0, $e);
     }
@@ -188,8 +391,9 @@ function irpg_server_error(Throwable $e): void
         irpg_json_headers();
         echo json_encode([
             'error' => 'db_missing',
-            'hint' => 'SQLite file not found. In site.config.php set db_path to the same absolute path as IRPG_DB_PATH in the bot .env (e.g. /home/you/idlerpg/data/iodlerpg.db). Run the bot once to create the file.',
-            'path' => $debug ? $p : null,
+            'hint' => 'SQLite file not found. Set db_path in site.config.php to the real file (same as the bot’s IRPG_DB_PATH / .env), or place idlerpg.db in projectRoot/data/. If the bot runs with another cwd, use an absolute path for both. Run the bot once to create the database.',
+            'path' => $p,
+            'tried' => $GLOBALS['irpg_db_tried_paths'] ?? [],
         ], JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
         return;
     }
@@ -200,8 +404,8 @@ function irpg_server_error(Throwable $e): void
         irpg_json_headers();
         echo json_encode([
             'error' => 'db_unreadable',
-            'hint' => 'PHP cannot read the SQLite file. Fix permissions: group-read for the web user (e.g. chgrp apache data && chmod 640 iodlerpg.db && chmod 711 data) or chmod o+r on the .db (see DEPLOY.md).',
-            'path' => $debug ? $p : null,
+            'hint' => 'PHP cannot read the SQLite file. Fix permissions: group-read for the web user (e.g. chgrp apache data && chmod 640 idlerpg.db && chmod 711 data) or chmod o+r on the .db (see DEPLOY.md).',
+            'path' => $p,
         ], JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
         return;
     }

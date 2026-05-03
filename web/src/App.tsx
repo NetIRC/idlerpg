@@ -126,7 +126,7 @@ export default function App() {
           <div>
             <p className="font-mono text-xs uppercase tracking-[0.35em] text-arc/80">IdleRPG reimagined</p>
             <h1 className="font-display text-4xl font-bold tracking-tight text-white md:text-5xl">
-              <span className="text-glow text-arc">iodlerpg</span>
+              <span className="text-glow text-arc">idlerpg</span>
             </h1>
             <p className="mt-2 max-w-xl text-sm text-dust/90">
               Inspired by the original{' '}

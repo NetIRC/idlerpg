@@ -10,6 +10,7 @@ irpg_json_headers();
 try {
     $pdo = irpg_pdo();
     $presence = irpg_bot_presence($pdo);
+    $pulse = irpg_realm_pulse($pdo);
     $stmt = $pdo->query(
         'SELECT character_name, class, level, next_seconds, idled, online
          FROM players
@@ -37,6 +38,7 @@ try {
             'generatedAt' => gmdate('c'),
             'botOnline' => $presence['botOnline'],
             'botLastSeenMs' => $presence['botLastSeenMs'],
+            'realmPulse' => $pulse,
         ],
         JSON_THROW_ON_ERROR,
     );

@@ -22,6 +22,10 @@
 - [Getting started](#getting-started)
 - [Configuration](#configuration)
 - [IRC reference](#irc-reference)
+  - [Game rules](#game-rules)
+  - [Channel commands](#channel-commands-)
+  - [Private messages (PM)](#private-messages-to-the-bot)
+  - [Staff (ADMIN)](#staff-after-login)
 - [Optional components](#optional-components)
 - [License](#license)
 
@@ -34,7 +38,7 @@
 | **IRC bot** (`src/`) | Normal client connection (not server / P10). Registration, login, idle ticks, channel penalties, optional quests, lucky hour, Hand of God, alignment, charms. |
 | **Web UI** (`public/`) | `index.php` leaderboard, detail pane, rules, bot online/offline banner. [`public/.htaccess`](public/.htaccess): HTTPS (non-local), security headers. |
 | **HTTP API** | Read-only JSON: `/api/health.php`, `/api/leaderboard.php`, `/api/player.php?name=…`. |
-| **Data** | Single SQLite file (e.g. `data/iodlerpg.db`). The bot and `site.config.php` must resolve to the **same path**. |
+| **Data** | Single SQLite file (e.g. `data/idlerpg.db`). The bot and `site.config.php` must use the **same** path. |
 
 ---
 
@@ -107,8 +111,10 @@ Point the virtual host **document root** at **`public/`**. Enable **mod_rewrite*
 
 | Concern | File |
 |---------|------|
-| Bot: IRC, database path, timers, quests, lucky hour, owner account, … | [`.env`](.env.example) (copy from `.env.example`) |
+| Bot: IRC, database path, timers, quests, lucky hour, owner account, … | [`.env.example`](.env.example) → copy to `.env` (the real `.env` is not in the repo). |
 | Site: database path, `debug` | `site.config.php` (copy from `site.config.php.example`) |
+
+**Release branding:** `IDLE_RPG_VERSION` in [`src/config.ts`](src/config.ts) drives CTCP `VERSION`, channel `!ping`, and the default `IRPG_IRC_GECOS` real name. Keep it in step with `.env` / [`.env.example`](.env.example) and bump [`package.json`](package.json) `version` when you tag a release.
 
 For production, set **`debug` ⇒ false** in `site.config.php`. Do not place the SQLite file under the public document root.
 
@@ -116,28 +122,111 @@ For production, set **`debug` ⇒ false** in `site.config.php`. Do not place the
 
 ## IRC reference
 
-**Game channel** is `IRPG_IRC_CHANNEL` (default `#IdleRPG`). For **REGISTER** and **LOGIN**, the user’s nick must be **in that channel** while they message the bot. Private commands are rate-limited per nick via `IRPG_PM_FLOOD_MAX` and `IRPG_PM_FLOOD_WINDOW_MS` (see `.env.example`; set max to `0` to disable). **CTCP VERSION** replies do not count toward that limit.
+**Game channel** is `IRPG_IRC_CHANNEL` (default `#IdleRPG`). For **REGISTER** and **LOGIN**, your IRC nick must be **in that channel** while you message the bot.
 
-### Channel commands (no idle penalty if matched)
+Private commands are rate-limited per nick via `IRPG_PM_FLOOD_MAX` and `IRPG_PM_FLOOD_WINDOW_MS` (see `.env.example`; set max to `0` to disable). **CTCP VERSION** does not count toward that limit.
 
-| Commands |
-|----------|
-| `!help` · `!cmds` · `!rules` · `!top` · `!ping` · `!stats` [name] · `!time` [name] · `!whoami` · `!records` · `!quest` · `!chronicle` · `!omen` · `!duel` `<irc_nick>` |
+If **`IRPG_IRC_CHAN_BANTER_MS`** is set **`> 0`**, the bot also posts occasional ambient lines and **contextual tips** (REGISTER / LOGIN / `!` commands you can actually use right then). Set to **`0`** to disable.
 
-Alias: `!commands` (same as `!cmds`). **`!chronicle`** = scroll of recent **realm events** (IRC: **10** newest, one line ~480 chars). **Web / `api/chronicle.php`**: default **16** rows, **`?limit=`** up to **40**. **`!omen`** = personal prophecy (~8h cooldown). **`!duel nick`** = arena fight vs another logged-in nick **in channel** (±11 levels; pair cooldown ~20h; your challenge cooldown ~5h; winner trims timer ~0.8–1.5%, loser gains ~0.6–1.4%; ~1/10 critical). No gold, no items — pure spectacle + small TTL swing. Other channel text can add time penalties; recognized `!` lines do not.
+---
+
+### Game rules
+
+| Topic | Detail |
+|-------|--------|
+| **Goal** | Gain **levels** by idling: your **next level timer** (`next_seconds`) counts down while you are **logged in** and your nick is **present in the game channel**. |
+| **Silence** | Staying quiet in channel is the main loop; the bot ticks once per `IRPG_SELF_CLOCK_MS` (default 1s). |
+| **Talking in channel** | Normal channel lines add a **time penalty** when you are logged in: scales roughly with **message length** and level (via `penttl` / `rpbase`). You get a **NOTICE** with the penalty amount. |
+| **`!` commands** | Recognized lines that start with `!` (commands below) **do not** add that speaking penalty. Unrecognized `!foo` still counts as normal speech. |
+| **Alignment** | `n` / `g` / `e` affects idle rate slightly and duel power; **Hand of God** events can nudge alignment. |
+| **Charm / trinket** | Milestone levels may grant a cosmetic trinket (~0.3% faster idle while set). |
+| **Quests** | If enabled, party quests start automatically when enough heroes are online (see `IRPG_QUEST_*` in `.env`). |
+| **Lucky hour** | If enabled, random windows where Hand-of-God odds are boosted. |
+| **REGISTER** | PM the bot: one-word **password**; **class** can be multiple words. **Character name** must be unique in the database. |
+| **LOGIN / LOGOUT** | **LOGIN** / **LOGOUT** via PM. **LOGOUT** applies a **logout penalty** (timer increase). |
+| **PART** (leave channel) while logged in | **Suspended session:** `online` clears and **PART penalty** applies; **`session_open` stays 1**. **Rejoin the channel** → session resumes (**no second LOGIN**). Idle time did not advance while you were gone. |
+| **QUIT** (leave IRC) while logged in | **Session ends** (`session_open = 0`); **QUIT penalty**; you must **LOGIN** again next time. |
+| **KICK** | Logged-out + **kick** penalty (strong). |
+| **NICK change** while logged in | Penalty + DB `irc_nick` updated to the new nick. |
+| **Not in channel** | If you are logged in but your nick is not in the game channel, **idle time does not advance** for that character. |
+| **Bot offline** | Timers do not advance while the bot is disconnected. |
+| **Password recovery** | No self-service reset: ask a **game admin** (see [Staff](#staff-after-login)). |
+| **Privacy** | Do not paste passwords in the channel; use **PM** only. |
+
+The site sidebar **Rules** panel is a short summary; this section matches the bot behaviour in code.
+
+---
+
+### Channel commands (`!…`, no idle penalty if matched)
+
+All commands are case-insensitive on the `!word` token (e.g. `!HELP`). Optional arguments are in `[brackets]`; literals in `⟨angle brackets⟩`.
+
+| Command | Arguments | Description |
+|---------|-----------|-------------|
+| **!help** | — | Short help (registration / login); use **!cmds** for the full channel list. |
+| **!cmds** | — | Longer list of channel commands. Alias: **!commands**. |
+| **!rules** | — | One-line summary (idle, penalties, PM register/login, quests/lucky). |
+| **!ping** | — | Bot check (`pong — IdleRPG V2.0 NetIRC`). |
+| **!top** | — | Top **3** heroes (name, level, class, time to level). |
+| **!stats** | `[character name]` | Your stats if omitted; otherwise lookup by character name (may be case-sensitive; see `IRPG_CASE_SENSITIVE_NAMES`). |
+| **!time** | `[character name]` | Time to next level (self or named character). |
+| **!whoami** | — | Logged-in identity: character, level, class, alignment, timer. |
+| **!records** | — | Realm records / highs (same source as the site). |
+| **!quest** | — | Quest status line (team quest window, etc.). |
+| **!realm** | — | One-line **realm pulse**: heroes online, quest, lucky hour, peak level. Alias: **!pulse**. |
+| **!chronicle** | — | Recent **realm events** on one IRC line (newest **15** events, same default count as the web feed; ~480 chars max). |
+| **!omen** | — | Personal omen (~**8h** cooldown); must be **logged in** and in channel; **can change your timer** (boon/curse/rare). |
+| **!duel** | `⟨irc_nick⟩` | Arena **PvP** vs another **logged-in** hero **in channel**; **±11** levels; initiator cooldown ~**5h**; same pair ~**20h**; timer shifts + flair; medals possible. |
+| **!gauntlet** | — | **PvE** shadow trial; **~16h** cooldown after a run; timer swing + medals at milestones. |
+| **!medals** | `[character name]` | Medal rack + duel/gauntlet win counts (self if omitted; otherwise by **character** look‑up). Alias: **!badges**. |
+
+---
 
 ### Private messages (to the bot)
 
-| Topic | Commands |
-|-------|----------|
-| Account | `REGISTER name password class…` (password: one word) · `LOGIN` · `LOGOUT` |
-| Information | `HELP` · `CMDS` · `STATS` [name] · `TOP` · `PING` · `WHOAMI` · `TIME` [name] · `RECORDS` · `QUEST` · `CHRONICLE` · `OMEN` · `DUEL` `<irc_nick>` |
+Send as **PM** (private message) to the bot nick. For **REGISTER**, **LOGIN**, and combat-read commands, you must be **in the game channel** on that IRC session (the bot checks `namesInChannel`).
+
+| Command | Arguments | Description |
+|---------|-----------|-------------|
+| **HELP** | — | Page 1: register/login syntax, recovery note. |
+| **CMDS** | — | Page 2: extra commands + ADMIN summary. Aliases: **COMMANDS**. |
+| **REGISTER** | `Name Password Class…` | Create account; password = **one word**; class phrase allowed. |
+| **LOGIN** | `Name Password` | Start session (must be in game channel). |
+| **LOGOUT** | — | End session + logout penalty. |
+| **PING** | — | Bot check (same build id as **!ping** / CTCP **VERSION**). |
+| **STATS** | `[name]` | Same idea as **!stats**. |
+| **TOP** | — | Top **5** (PM uses wider list than **!top**). |
+| **WHOAMI** | — | Same as **!whoami**. |
+| **TIME** | `[name]` | Same as **!time**. |
+| **RECORDS** | — | Same as **!records**. |
+| **QUEST** | — | Same as **!quest**. |
+| **REALM** / **PULSE** | — | Same as **!realm**. |
+| **CHRONICLE** | — | Same as **!chronicle**. |
+| **OMEN** | — | Same as **!omen** (must be in game channel). |
+| **DUEL** | `irc_nick` | Same rules as **!duel** (must be in game channel). |
+| **GAUNTLET** | — | Same as **!gauntlet** (must be in game channel). |
+| **MEDALS** / **BADGES** | `[name]` | Same as **!medals**. |
+| **ADMIN** | `subcommand …` | [Staff](#staff-after-login) only. Try **`ADMIN HELP`**. |
+
+When you **join the game channel** logged out but your IRC nick is still tied to a hero on file, the bot may send a **NOTICE** reminding you to **LOGIN** (throttled).
+
+---
 
 ### Staff (after login)
 
-Eligible if the character is DB **`is_admin`** or matches **`IRPG_OWNER_ACCOUNT`** in `.env`. Message **`ADMIN HELP`** for syntax. Capabilities include: `FORCELOGOUT`, `RESETPASS`, `STARTQUEST`, `LUCKY`, `SAY` (channel line).
+Eligible if the character is **`is_admin`** in the database **or** matches **`IRPG_OWNER_ACCOUNT`** in `.env` (character name, same case rules as config).
 
-The site **Rules** panel summarizes the same flows for players.
+Message the bot: **`ADMIN HELP`**
+
+| ADMIN subcommand | Syntax | Effect |
+|------------------|--------|--------|
+| **FORCELOGOUT** | `ADMIN FORCELOGOUT CharacterName` | Clears online session for that character. |
+| **RESETPASS** | `ADMIN RESETPASS CharacterName newpassword` | Sets new password (max 128 chars), clears session; player must **LOGIN** again. Alias: **SETPASS**. |
+| **STARTQUEST** | `ADMIN STARTQUEST` | Force-start a quest (if configuration allows). |
+| **LUCKY** | `ADMIN LUCKY` | Starts staff **lucky hour** broadcast window. |
+| **SAY** | `ADMIN SAY …text…` | Bot says the text in the game channel. |
+
+Do **not** publish admin syntax to players for password resets; players should ask staff in channel.
 
 ### Development
 

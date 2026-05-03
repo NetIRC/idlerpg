@@ -3,7 +3,8 @@ import type Database from 'better-sqlite3';
 import {
   clearBotHeartbeat as dbClearBotHeartbeat,
   findByCharacter,
-  findOnlineByNick,
+  findLoggedOutByIrcNickCi,
+  findOnlineByNickCi,
   getDb,
   insertRealmEvent,
   touchBotHeartbeat as dbTouchBotHeartbeat,
@@ -15,7 +16,11 @@ import { alignmentIdleHint, alignmentIdleRate, alignmentLabel } from './alignmen
 import { durationIt } from './duration.js';
 import { penttl, ttl } from './math.js';
 import { consultOmen, formatChronicleLine } from './chronicle-omen.js';
+import { pickChannelHint } from './channel-hint.js';
+import { ircNickInChannel } from './irc-presence.js';
 import { runDuel } from './duel.js';
+import { runGauntlet } from './gauntlet.js';
+import { medalsDisplayLine, medalsForLevel } from './medals.js';
 import {
   adminForceLogout,
   adminForceLucky,
@@ -25,6 +30,7 @@ import {
   hogChanceMultiplier,
   nudgeAlignmentAfterHog,
   questPublicLine,
+  realmPulseLine as computeRealmPulseLine,
   realmRecordsLine,
   realmTick,
 } from './realm.js';
@@ -86,7 +92,7 @@ export class GameEngine {
         ok: false,
         err: `REGISTER only works while your nick is in ${this.cfg.ircChannel}. Join that channel, then send REGISTER again here (private message to this bot).`,
       };
-    if (findOnlineByNick(this.db, ircNick))
+    if (findOnlineByNickCi(this.db, ircNick))
       return {
         ok: false,
         err: 'This IRC nick already has a character logged in. Send LOGOUT first, then REGISTER a different account or use another nick.',
@@ -145,7 +151,7 @@ export class GameEngine {
         ok: false,
         err: `LOGIN only works while your nick is in ${this.cfg.ircChannel}. Join the channel, then send LOGIN again (private message to this bot).`,
       };
-    if (findOnlineByNick(this.db, ircNick))
+    if (findOnlineByNickCi(this.db, ircNick))
       return {
         ok: false,
         err: 'Already logged in on this IRC nick. Send LOGOUT first if you want to switch character.',
@@ -155,7 +161,7 @@ export class GameEngine {
       const hint = this.cfg.caseSensitiveNames ? ' Character names are case-sensitive.' : '';
       return {
         ok: false,
-        err: `LOGIN failed: check character name and password.${hint} New player? REGISTER first. PM HELP for syntax.`,
+        err: `LOGIN failed: check character name and password.${hint} New player? REGISTER first. Forgot password? Ask a game admin in the channel — they can reset it for you.`,
       };
     }
 
@@ -178,7 +184,7 @@ export class GameEngine {
   }
 
   logout(ircNick: string): { ok: true; announcements: GameAnnouncement[] } | { ok: false; err: string } {
-    const p = findOnlineByNick(this.db, ircNick);
+    const p = findOnlineByNickCi(this.db, ircNick);
     if (!p) return { ok: false, err: 'Not logged in — send LOGIN CharacterName Password first.' };
     insertRealmEvent(this.db, 'logout', p.character_name);
     const pen = this.applyPenaltyAmount(p, 20);
@@ -200,9 +206,27 @@ export class GameEngine {
   }
 
   /**
+   * NOTICE when someone joins with a stored IRC nick but is fully logged out (LOGOUT / QUIT / KICK / etc.).
+   */
+  joinLoginReminderNotice(ircNick: string): string | null {
+    const nick = ircNick.replace(/^@|%|\+/, '');
+    if (!nick || this.reservedBotNicks.has(nick.toLowerCase())) return null;
+    const p = findLoggedOutByIrcNickCi(this.db, nick);
+    if (!p) return null;
+    const name = p.character_name;
+    const ch = this.cfg.ircChannel;
+    const caseHint = this.cfg.caseSensitiveNames ? ' Character name must match exactly (case-sensitive).' : '';
+    return (
+      `IdleRPG — "${name}" is not logged in.${caseHint} Stay in ${ch}, then PM me: LOGIN ${name} YourPassword (one word, no spaces). ` +
+      `Forgot password? Ask a game admin in ${ch} — they will help you recover your account. PM HELP for other commands.`
+    );
+  }
+
+  /**
    * After bot reconnect and NAMES: restore `online` for players who still have LOGIN session
    * (`session_open`) and are present in the game channel — no second LOGIN required.
-   * LOGOUT / PART / QUIT / KICK clear `session_open`, so those are not revived.
+   * Same state is used when a player PARTed the channel (session suspended, not ended).
+   * LOGOUT / QUIT / KICK / explicit closes clear `session_open`, so those are not revived.
    */
   reconcileOpenSessionsInChannel(channelNicks: Set<string>, nickEquals: (a: string, b: string) => boolean): number {
     const rows = this.db
@@ -210,12 +234,12 @@ export class GameEngine {
         `SELECT id, irc_nick FROM players WHERE session_open = 1 AND online = 0 AND irc_nick != ''`,
       )
       .all() as { id: number; irc_nick: string }[];
-    const upd = this.db.prepare('UPDATE players SET online = 1 WHERE id = ?');
+    const upd = this.db.prepare('UPDATE players SET online = 1, irc_nick = ? WHERE id = ?');
     let restored = 0;
     for (const r of rows) {
       for (const inChan of channelNicks) {
         if (nickEquals(r.irc_nick, inChan)) {
-          upd.run(r.id);
+          upd.run(inChan, r.id);
           restored += 1;
           break;
         }
@@ -224,13 +248,27 @@ export class GameEngine {
     return restored;
   }
 
+  /**
+   * When a player rejoins the game channel after PART: restore `online` if their session was only suspended.
+   */
+  resumeSuspendedSessionOnJoin(ircNick: string): boolean {
+    const row = this.db
+      .prepare(
+        `SELECT id FROM players WHERE session_open = 1 AND online = 0 AND irc_nick != '' AND irc_nick COLLATE NOCASE = ?`,
+      )
+      .get(ircNick) as { id: number } | undefined;
+    if (!row) return false;
+    this.db.prepare(`UPDATE players SET online = 1, irc_nick = ? WHERE id = ?`).run(ircNick, row.id);
+    return true;
+  }
+
   stats(ircNick: string, who?: string): { text: string } | { err: string } {
     let p: PlayerRow | undefined;
     if (who) {
       p = findByCharacter(this.db, this.resolveNameLookup(who), this.cfg.caseSensitiveNames);
       if (!p) return { err: 'Player not found.' };
     } else {
-      p = findOnlineByNick(this.db, ircNick);
+      p = findOnlineByNickCi(this.db, ircNick);
       if (!p) return { err: 'Not logged in; use STATS <name>.' };
     }
     const idleH = (p.idled / 3600).toFixed(1);
@@ -241,7 +279,7 @@ export class GameEngine {
   }
 
   whoami(ircNick: string): { text: string } | { err: string } {
-    const p = findOnlineByNick(this.db, ircNick);
+    const p = findOnlineByNickCi(this.db, ircNick);
     if (!p) return { err: 'Not logged in.' };
     return {
       text: `You are ${p.character_name}, level ${p.level} ${p.class} (${alignmentLabel(p.alignment)}). Next level in ${durationIt(p.next_seconds)}.`,
@@ -254,7 +292,7 @@ export class GameEngine {
       p = findByCharacter(this.db, this.resolveNameLookup(who), this.cfg.caseSensitiveNames);
       if (!p) return { err: 'Player not found.' };
     } else {
-      p = findOnlineByNick(this.db, ircNick);
+      p = findOnlineByNickCi(this.db, ircNick);
       if (!p) return { err: 'Not logged in; use STATS <name>.' };
     }
     return {
@@ -264,14 +302,33 @@ export class GameEngine {
 
   helpPm(page: number): string {
     if (page >= 2) {
-      return 'More: STATS [name] TOP PING. Channel: !time !whoami !records !quest !chronicle !omen !duel (no penalty). !duel <irc_nick> — arena; both in channel, logged in, ±11 levels. ADMIN: FORCELOGOUT | RESETPASS char newpass | STARTQUEST | LUCKY | SAY';
+      return 'More: STATS [name] TOP PING. Channel: !time !whoami !records !quest !realm !chronicle !omen !duel !gauntlet !medals (no penalty). !realm = live realm pulse. ADMIN: FORCELOGOUT | RESETPASS char newpass | STARTQUEST | LUCKY | SAY';
     }
-    return 'REGISTER <name> <password> <class…> — private message to this bot only; password must be one word (no spaces); class can be several words. LOGIN <name> <password> — same. You must be in the game channel. Then: REGISTER LOGIN LOGOUT STATS TOP HELP CMDS CHRONICLE OMEN DUEL …';
+    return 'REGISTER <name> <password> <class…> — PM this bot only; password = one word (no spaces); class can be several words. LOGIN <name> <password> — same. You must be in the game channel. Forgot password? Ask a game admin in the channel. Then: LOGOUT STATS TOP HELP CMDS REALM CHRONICLE OMEN DUEL …';
   }
 
-  helpChannel(page: number): string {
+  helpChannel(page: number, viewerIrcNick?: string): string {
     if (page >= 2) {
-      return 'Also: !time !whoami !records !quest !chronicle !omen !duel (no penalty). !duel nick = dramatic arena — both logged in, in channel, ±11 levels.';
+      return 'Also: !time !whoami !records !quest !realm !chronicle !omen !duel !gauntlet !medals (no penalty). !realm = heartbeat of the shard (online, quest, lucky, peak).';
+    }
+    const viewer = viewerIrcNick?.trim();
+    if (viewer) {
+      const p = findOnlineByNickCi(this.db, viewer);
+      if (p) {
+        return (
+          `You are logged in as ${p.character_name} (lv.${p.level} ${p.class}). ` +
+          `Channel (no idle penalty): !time !whoami !stats !records !quest !realm !chronicle !omen !duel !gauntlet !medals !top — ` +
+          `!help 2 for the full line. PM HELP for LOGOUT, TOP, account help. To onboard someone else: PM this bot REGISTER or LOGIN.`
+        );
+      }
+      const loggedOut = findLoggedOutByIrcNickCi(this.db, viewer);
+      if (loggedOut) {
+        const ch = this.cfg.ircChannel;
+        return (
+          `You are not logged in. This nick matches "${loggedOut.character_name}" — PM me LOGIN ${loggedOut.character_name} <password> while you stay in ${ch}. ` +
+          `New player instead? PM REGISTER <name> <password> <class> (password = one word). Then !help.`
+        );
+      }
     }
     return 'New here? PM this bot: REGISTER YourName yourpassword Your Class — you must be in the game channel; password = one word. Back again? LOGIN YourName password. Then !help in channel.';
   }
@@ -288,9 +345,18 @@ export class GameEngine {
     return formatChronicleLine(this.db);
   }
 
+  /** One-line realm snapshot (heroes online, quest, lucky, peak level). */
+  realmPulseLine(): string {
+    return computeRealmPulseLine(this.db, this.cfg);
+  }
+
   /** Realm omen: flavour + rare tiny timer nudge; cooldown in consultOmen. */
-  omenLine(ircNick: string, channelNicks: Set<string>): { err: string } | { text: string } {
-    return consultOmen(this.db, ircNick, channelNicks);
+  omenLine(
+    ircNick: string,
+    channelNicks: Set<string>,
+    nickEquals: (a: string, b: string) => boolean,
+  ): { err: string } | { text: string } {
+    return consultOmen(this.db, ircNick, channelNicks, nickEquals);
   }
 
   /** In-channel duel vs another IRC nick (both logged in, present, level gap limited). */
@@ -298,8 +364,38 @@ export class GameEngine {
     return runDuel(this.db, ircNick, targetIrcNick, channelNicks);
   }
 
+  /** Shadow gauntlet (PvE); long cooldown; must be in channel. */
+  gauntletLine(
+    ircNick: string,
+    channelNicks: Set<string>,
+  ): { err: string } | { lines: string[] } {
+    return runGauntlet(this.db, ircNick, channelNicks);
+  }
+
+  /** Medals / arena & gauntlet win counts (self or named character). */
+  medalsLine(ircNick: string, who?: string): { text: string } | { err: string } {
+    let p: PlayerRow | undefined;
+    if (who) {
+      p = findByCharacter(this.db, this.resolveNameLookup(who), this.cfg.caseSensitiveNames);
+      if (!p) return { err: 'Player not found.' };
+    } else {
+      p = findOnlineByNickCi(this.db, ircNick);
+      if (!p) return { err: 'Not logged in; use MEDALS <name>.' };
+    }
+    return { text: medalsDisplayLine(this.db, p) };
+  }
+
+  /** Targeted channel tip (REGISTER / LOGIN / !commands) only when it applies to that nick. */
+  channelHint(
+    channelNicks: Set<string>,
+    ircCaseEqual: (a: string, b: string) => boolean,
+    botIrcNick: string,
+  ): { nick: string; body: string } | null {
+    return pickChannelHint(this.db, this.cfg, channelNicks, ircCaseEqual, botIrcNick);
+  }
+
   canAdmin(ircNick: string): boolean {
-    const p = findOnlineByNick(this.db, ircNick);
+    const p = findOnlineByNickCi(this.db, ircNick);
     if (!p) return false;
     if (p.is_admin) return true;
     if (this.cfg.ownerAccount && this.caseName(p.character_name) === this.caseName(this.cfg.ownerAccount)) {
@@ -406,7 +502,7 @@ export class GameEngine {
   }
 
   onChannelMessage(ircNick: string, msgLen: number): GameAnnouncement[] {
-    const p = findOnlineByNick(this.db, ircNick);
+    const p = findOnlineByNickCi(this.db, ircNick);
     if (!p || msgLen <= 0) return [];
     const pen = this.capPen(Math.floor((msgLen * penttl(p.level, this.cfg)) / this.cfg.rpbase));
     if (pen <= 0) return [];
@@ -423,7 +519,7 @@ export class GameEngine {
   }
 
   onNick(oldNick: string, newNick: string): GameAnnouncement[] {
-    const p = findOnlineByNick(this.db, oldNick);
+    const p = findOnlineByNickCi(this.db, oldNick);
     if (!p) return [];
     const pen = this.applyPenaltyAmount(p, 30);
     const uh = p.userhost ? p.userhost.replace(/^[^!]+/, newNick) : '';
@@ -436,21 +532,29 @@ export class GameEngine {
   }
 
   onPartQuit(ircNick: string, kind: 'part' | 'quit'): GameAnnouncement[] {
-    const p = findOnlineByNick(this.db, ircNick);
+    const p = findOnlineByNickCi(this.db, ircNick);
     if (!p) return [];
     const mult = kind === 'part' ? 200 : 20;
     const pen = this.applyPenaltyAmount(p, mult);
     const col = kind === 'part' ? 'pen_part' : 'pen_quit';
-    this.db
-      .prepare(
-        `UPDATE players SET online = 0, session_open = 0, ${col} = ${col} + ?, next_seconds = next_seconds + ? WHERE id = ?`,
-      )
-      .run(pen, pen, p.id);
+    if (kind === 'part') {
+      this.db
+        .prepare(
+          `UPDATE players SET online = 0, session_open = 1, ${col} = ${col} + ?, next_seconds = next_seconds + ? WHERE id = ?`,
+        )
+        .run(pen, pen, p.id);
+    } else {
+      this.db
+        .prepare(
+          `UPDATE players SET online = 0, session_open = 0, ${col} = ${col} + ?, next_seconds = next_seconds + ? WHERE id = ?`,
+        )
+        .run(pen, pen, p.id);
+    }
     return [];
   }
 
   onKick(ircNick: string): GameAnnouncement[] {
-    const p = findOnlineByNick(this.db, ircNick);
+    const p = findOnlineByNickCi(this.db, ircNick);
     if (!p) return [];
     const pen = this.applyPenaltyAmount(p, 250);
     this.db
@@ -489,7 +593,7 @@ export class GameEngine {
     const hogMult = hogChanceMultiplier(this.db, now);
 
     for (const p of online) {
-      if (!p.irc_nick || !channelNicks.has(p.irc_nick)) continue;
+      if (!p.irc_nick || !ircNickInChannel(p.irc_nick, channelNicks)) continue;
 
       const rate =
         alignmentIdleRate(p.alignment) * ((p.trinket ?? '').trim() ? 1.003 : 1);
@@ -517,6 +621,9 @@ export class GameEngine {
           }
         }
         checkNewRealmRecord(this.db, p.character_name, level, p.id, announcements);
+        for (const mline of medalsForLevel(this.db, p, level)) {
+          announcements.push({ target: 'chan', text: mline });
+        }
       }
 
       this.db
@@ -610,7 +717,7 @@ function maybeHandOfGod(
 ) {
   if (Math.random() > cfg.hogChance * hogChanceMult) return;
   const online = db.prepare(`SELECT * FROM players WHERE online = 1`).all() as PlayerRow[];
-  const inChan = online.filter((p) => p.irc_nick && channelNicks.has(p.irc_nick));
+  const inChan = online.filter((p) => p.irc_nick && ircNickInChannel(p.irc_nick, channelNicks));
   if (!inChan.length) return;
   const p = inChan[Math.floor(Math.random() * inChan.length)]!;
   const win = Math.random() < 0.8;

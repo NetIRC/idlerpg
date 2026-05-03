@@ -1,16 +1,23 @@
 import type Database from 'better-sqlite3';
-import { findOnlineByNick, insertRealmEvent, metaGetInt, metaSetInt, recentRealmEvents } from '../db/index.js';
+import {
+  findOnlineByNickCi,
+  insertRealmEvent,
+  metaGetInt,
+  metaSetInt,
+  recentRealmEvents,
+} from '../db/index.js';
 import { durationIt } from './duration.js';
 
-/** Events packed into one IRC/PM line (also capped by CHRONICLE_IRC_MAX_CHARS). */
-export const CHRONICLE_IRC_MAX_EVENTS = 10;
+/** Events packed into one IRC/PM line (also capped by CHRONICLE_IRC_MAX_CHARS). Same count as default web feed. */
+export const CHRONICLE_IRC_MAX_EVENTS = 15;
 export const CHRONICLE_IRC_MAX_CHARS = 480;
 
 /**
  * Default / max rows for HTTP chronicle (PHP `api/chronicle.php`, Express `/api/chronicle`, dashboard).
+ * Also used for per-hero `recentFinds` in `api/player.php` / `/api/player/:name`.
  * Keep PHP `irpg_chronicle_*()` in bootstrap in sync.
  */
-export const CHRONICLE_API_DEFAULT_LIMIT = 16;
+export const CHRONICLE_API_DEFAULT_LIMIT = 15;
 export const CHRONICLE_API_MAX_LIMIT = 40;
 
 const OMEN_COOLDOWN_SEC = 8 * 3600;
@@ -33,6 +40,9 @@ const CHRONICLE_KIND_LABEL: Record<string, string> = {
   omen_boon: 'Omen+',
   omen_curse: 'Omen−',
   duel: 'Duel',
+  medal: 'Medal',
+  gauntlet_win: 'Gauntlet',
+  gauntlet_lose: 'Gauntlet',
 };
 
 const OMEN_FLUFF = [
@@ -74,10 +84,19 @@ export function consultOmen(
   db: Database,
   ircNick: string,
   channelNicks: Set<string>,
+  nickEquals: (a: string, b: string) => boolean,
 ): { err: string } | { text: string } {
-  const p = findOnlineByNick(db, ircNick);
+  const p = findOnlineByNickCi(db, ircNick);
   if (!p) return { err: 'Log in (LOGIN via PM) before consulting the omen.' };
-  if (!p.irc_nick || !channelNicks.has(p.irc_nick)) {
+  const raw = (p.irc_nick || '').replace(/^@|%|\+/, '');
+  let seen = false;
+  for (const n of channelNicks) {
+    if (nickEquals(n, raw)) {
+      seen = true;
+      break;
+    }
+  }
+  if (!seen) {
     return { err: 'Stand in the game channel — the omen reads who is present.' };
   }
 
@@ -112,4 +131,28 @@ export function consultOmen(
   return {
     text: `🜁 Rare omen — ${p.character_name} is etched into the chronicle. The realm notices.`,
   };
+}
+
+/** True if !omen would run (read-only; does not consume cooldown or roll). */
+export function omenHintEligible(
+  db: Database,
+  ircNick: string,
+  channelNicks: Set<string>,
+  caseEq: (a: string, b: string) => boolean,
+): boolean {
+  const p = findOnlineByNickCi(db, ircNick);
+  if (!p || !p.irc_nick) return false;
+  const raw = p.irc_nick.replace(/^@|%|\+/, '');
+  let seen = false;
+  for (const n of channelNicks) {
+    if (caseEq(n, raw)) {
+      seen = true;
+      break;
+    }
+  }
+  if (!seen) return false;
+  const now = Math.floor(Date.now() / 1000);
+  const key = `${OMEN_META_PREFIX}${p.id}`;
+  const last = metaGetInt(db, key) ?? 0;
+  return !(last > 0 && now - last < OMEN_COOLDOWN_SEC);
 }

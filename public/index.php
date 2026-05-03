@@ -2,8 +2,16 @@
 declare(strict_types=1);
 $appCssPath = __DIR__ . '/assets/app.css';
 $appCssVer = is_file($appCssPath) ? (string) filemtime($appCssPath) : '0';
+$atlasTopPath = __DIR__ . '/assets/realm-atlas-top.png';
+$atlasBgPath = __DIR__ . '/assets/realm-atlas-bg.png';
+$atlasMapUsesZenith = is_file($atlasTopPath);
+$atlasMapFsPath = $atlasMapUsesZenith ? $atlasTopPath : $atlasBgPath;
+$atlasMapImgHref = 'assets/' . ($atlasMapUsesZenith ? 'realm-atlas-top.png' : 'realm-atlas-bg.png');
+if (is_file($atlasMapFsPath)) {
+    $atlasMapImgHref .= '?v=' . rawurlencode((string) filemtime($atlasMapFsPath));
+}
 /** Must match CHRONICLE_API_DEFAULT_LIMIT in src/game/chronicle-omen.ts */
-$irpgChronicleUiLimit = 16;
+$irpgChronicleUiLimit = 15;
 ?><!DOCTYPE html>
 <html lang="en">
 <head>
@@ -41,6 +49,10 @@ $irpgChronicleUiLimit = 16;
       </div>
     </div>
 
+    <div class="realm-pulse-bar inner" aria-label="Realm pulse">
+      <p class="realm-pulse mono" id="realm-pulse">Syncing realm pulse…</p>
+    </div>
+
     <header class="header">
       <div class="inner header-grid">
         <div class="hero">
@@ -64,7 +76,7 @@ $irpgChronicleUiLimit = 16;
           <ul class="rules-list">
             <li><strong>Stay idle</strong> in the game channel to shrink your level timer. Silence levels you up.</li>
             <li><strong>Talking in the channel</strong> adds a time penalty (length matters). Lines starting with <span class="rules-cmd">!</span> (see below) are free.</li>
-            <li><strong>In-channel (no penalty):</strong> <span class="rules-cmd">!help</span> &middot; <span class="rules-cmd">!cmds</span> (extra) &middot; <span class="rules-cmd">!rules</span> &middot; <span class="rules-cmd">!top</span> &middot; <span class="rules-cmd">!ping</span> &middot; <span class="rules-cmd">!stats</span> [name] &middot; <span class="rules-cmd">!time</span> [name] &middot; <span class="rules-cmd">!whoami</span> &middot; <span class="rules-cmd">!records</span> &middot; <span class="rules-cmd">!quest</span> &middot; <span class="rules-cmd">!chronicle</span> &middot; <span class="rules-cmd">!omen</span> &middot; <span class="rules-cmd">!duel</span> <span class="mono muted-strong">&lt;irc_nick&gt;</span>.</li>
+            <li><strong>In-channel (no penalty):</strong> <span class="rules-cmd">!help</span> &middot; <span class="rules-cmd">!cmds</span> (extra) &middot; <span class="rules-cmd">!rules</span> &middot; <span class="rules-cmd">!top</span> &middot; <span class="rules-cmd">!ping</span> &middot; <span class="rules-cmd">!stats</span> [name] &middot; <span class="rules-cmd">!time</span> [name] &middot; <span class="rules-cmd">!whoami</span> &middot; <span class="rules-cmd">!records</span> &middot; <span class="rules-cmd">!quest</span> &middot; <span class="rules-cmd">!realm</span> &middot; <span class="rules-cmd">!chronicle</span> &middot; <span class="rules-cmd">!omen</span> &middot; <span class="rules-cmd">!duel</span> <span class="mono muted-strong">&lt;irc_nick&gt;</span> &middot; <span class="rules-cmd">!gauntlet</span> &middot; <span class="rules-cmd">!medals</span> [name].</li>
             <li><strong>Private message</strong> the bot (from IRC) while <strong>your nick is in the game channel</strong>: <span class="rules-cmd mono">REGISTER Name Password Class…</span> &mdash; password one word; class can be several words. <span class="rules-cmd mono">LOGIN Name Password</span> to return. Also: <span class="rules-cmd mono">LOGOUT</span>, <span class="rules-cmd mono">STATS</span>, <span class="rules-cmd mono">TOP</span>, <span class="rules-cmd mono">HELP</span>, <span class="rules-cmd mono">CMDS</span>, etc.</li>
           </ul>
         </aside>
@@ -73,7 +85,7 @@ $irpgChronicleUiLimit = 16;
 
     <main class="inner">
       <div class="main-grid">
-      <section class="section-rise">
+      <header class="main-grid-header-lb">
         <div class="section-head section-head-row">
           <div>
             <h2 class="h2"><span class="h2-mark" aria-hidden="true"></span> Leaderboard</h2>
@@ -85,6 +97,8 @@ $irpgChronicleUiLimit = 16;
           </div>
           <input type="search" id="q" class="search" placeholder="Filter by name or class..." autocomplete="off" />
         </div>
+      </header>
+      <section class="section-rise main-grid-body-lb">
         <p id="err" class="alert hidden" role="alert"></p>
         <div class="panel panel-table table-wrap">
           <table class="table">
@@ -101,15 +115,118 @@ $irpgChronicleUiLimit = 16;
           </table>
         </div>
       </section>
-      <aside class="section-rise">
+      <header class="main-grid-header-hero">
         <div class="section-head">
           <h2 class="h2"><span class="h2-mark h2-mark-ember" aria-hidden="true"></span> Hero sheet</h2>
         </div>
+      </header>
+      <aside class="section-rise main-grid-body-hero">
         <div class="panel panel-detail detail" id="detail">
-          <p class="muted">Select a row to open the stat sheet.</p>
+          <div class="detail-content" id="detail-content">
+            <div class="detail-empty">
+              <div class="detail-empty-frame" aria-hidden="true">
+                <span class="detail-empty-glyph"></span>
+              </div>
+              <p class="detail-empty-eyebrow mono">Live ledger</p>
+              <h3 class="detail-empty-title">Summon a hero</h3>
+              <p class="detail-empty-lead">
+                Choose a name on the leaderboard &mdash; this panel fills with level, timer, alignment,
+                <strong>medals</strong>, <strong>charm</strong>, and your personal <strong>ledger strip</strong>.
+              </p>
+              <p class="detail-empty-hint mono">Click a row &middot; silence compounds</p>
+            </div>
+          </div>
+          <div id="detail-loading" class="detail-loading-overlay hidden" aria-hidden="true">
+            <div class="detail-loading-inner">
+              <div class="detail-spinner" role="status" aria-label="Loading hero"></div>
+              <p class="detail-loading-text mono">Syncing hero…</p>
+            </div>
+          </div>
         </div>
       </aside>
       </div>
+
+      <section class="section-rise realm-atlas-section" id="realm-atlas" aria-label="Interactive realm map">
+        <div class="section-head section-head-row atlas-section-head">
+          <div>
+            <h2 class="h2"><span class="h2-mark h2-mark-ember" aria-hidden="true"></span> Realm atlas</h2>
+            <p class="lb-meta mono atlas-sub">
+              Map is <strong>fixed</strong> · artwork is <strong>zoomed out</strong> with the <strong>lower area</strong> favored · <strong>scroll</strong> works when the pointer is on the map. Higher level = north. Names sit beside pins; <strong>hover</strong> opens the card. Online = cyan pulse.
+            </p>
+          </div>
+        </div>
+        <div class="panel realm-atlas-panel" id="realm-atlas-root">
+          <div class="atlas-svg-frame" id="atlas-svg-frame">
+            <svg
+              id="realm-atlas-svg"
+              class="realm-atlas-svg"
+              viewBox="0 0 1000 600"
+              xmlns="http://www.w3.org/2000/svg"
+              role="img"
+              aria-label="Realm map of heroes"
+            >
+              <defs id="atlas-defs"></defs>
+              <g id="atlas-world">
+                <g id="atlas-scenery">
+                  <image
+                    id="atlas-map-photo"
+                    class="<?= $atlasMapUsesZenith ? 'atlas-map-photo atlas-map-photo--zenith' : 'atlas-map-photo' ?>"
+                    href="<?= htmlspecialchars($atlasMapImgHref, ENT_QUOTES, 'UTF-8') ?>"
+                    x="-397"
+                    y="-367"
+                    width="1794"
+                    height="1334"
+                    preserveAspectRatio="xMidYMax slice"
+                    pointer-events="none"
+                  />
+                  <g id="atlas-routes" aria-hidden="true"></g>
+                  <g id="atlas-regions"></g>
+                  <g id="atlas-quest-layer"></g>
+                </g>
+                <g id="atlas-markers"></g>
+              </g>
+            </svg>
+          </div>
+          <div id="atlas-tooltip" class="atlas-tooltip hidden" role="tooltip" hidden></div>
+        </div>
+      </section>
+
+      <section class="section-rise treasures-section" aria-label="Treasures and omen">
+        <div class="section-head section-head-row treasures-head">
+          <div>
+            <h2 class="h2"><span class="h2-mark h2-mark-omen" aria-hidden="true"></span> Treasures &amp; omen</h2>
+            <p class="lb-meta mono treasures-sub">
+              <strong>Medals</strong> are permanent badges (quest crests, duel streaks, gauntlet, level milestones).
+              <strong>Charm</strong> is a rare trinket on your hero: tiny idle boost while equipped.
+              <strong>Omen</strong> is the IRC command <span class="rules-cmd">!omen</span> (or <span class="rules-cmd mono">OMEN</span> in PM)&mdash;read below.
+            </p>
+          </div>
+        </div>
+        <div class="panel treasures-panel">
+          <div class="treasures-grid">
+            <div class="treasure-card treasure-card--omen">
+              <h3 class="treasure-h3">How <span class="mono">!omen</span> works</h3>
+              <ul class="treasure-list">
+                <li>Must be <strong>logged in</strong> and physically <strong>in the game channel</strong> (same as earning idle time).</li>
+                <li><strong>Cooldown 8 hours</strong> per hero &mdash; no spamming fate.</li>
+                <li><strong class="omen-odds omen-odds--fluff">~55%</strong> &mdash; mood text only, timer unchanged.</li>
+                <li><strong class="omen-odds omen-odds--boon">~23%</strong> &mdash; kind omen: next level timer nudged slightly shorter (~0.2% &times; current wait, min 30s).</li>
+                <li><strong class="omen-odds omen-odds--curse">~15%</strong> &mdash; heavy omen: timer swells a little (~+0.4%).</li>
+                <li><strong class="omen-odds omen-odds--rare">~7%</strong> &mdash; rare omen: your name is written into the realm <strong>chronicle</strong> (show-off line for the shard).</li>
+              </ul>
+              <p class="treasure-foot mono muted-strong">Boon/curse/rare also write a line to the realm ledger; the web feed highlights them.</p>
+            </div>
+            <div class="treasure-card treasure-card--finds">
+              <h3 class="treasure-h3">Realm finds on this site</h3>
+              <p class="treasure-p">
+                Open a hero on the leaderboard: the side panel shows <strong>medal vault</strong> (tiered chips), <strong>charm</strong> if any, and a
+                <strong>recent chronicle</strong> strip of ledger lines for that character (omens, medals, gauntlet, etc.).
+              </p>
+              <p class="treasure-p mono muted-strong">Every player&rsquo;s story compounds in the scroll &mdash; check the chronicle for live drops.</p>
+            </div>
+          </div>
+        </div>
+      </section>
 
       <section class="section-rise chronicle-section" aria-label="Realm chronicle">
         <div class="section-head section-head-row chronicle-head">
@@ -120,7 +237,21 @@ $irpgChronicleUiLimit = 16;
         </div>
         <div class="panel chronicle-panel" id="chronicle-root" data-chronicle-limit="<?= (int) $irpgChronicleUiLimit ?>">
           <p class="muted" id="chronicle-placeholder">Pulling realm_events…</p>
-          <ul class="chronicle-list hidden" id="chronicle-list"></ul>
+          <div id="chronicle-collapsible" class="chronicle-collapsible hidden">
+            <button
+              type="button"
+              class="chronicle-strip-toggle finds-strip-toggle"
+              aria-expanded="false"
+              aria-controls="chronicle-list-wrap"
+            >
+              <span class="finds-chevron" aria-hidden="true"></span>
+              <span class="finds-strip-label">Ledger feed <span class="finds-strip-scope">(last <?= (int) $irpgChronicleUiLimit ?>)</span></span>
+              <span class="finds-count mono" id="chronicle-count">0</span>
+            </button>
+            <div class="finds-list-wrap chronicle-list-outer" id="chronicle-list-wrap" hidden>
+              <ul class="chronicle-list" id="chronicle-list"></ul>
+            </div>
+          </div>
         </div>
       </section>
     </main>

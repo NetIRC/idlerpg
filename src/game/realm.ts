@@ -3,6 +3,8 @@ import type { AppConfig } from '../config.js';
 import type { PlayerRow } from '../db/index.js';
 import { insertRealmEvent, metaGetInt, metaGetText, metaSetInt, metaSetText } from '../db/index.js';
 import { durationIt } from './duration.js';
+import { ircNickInChannel } from './irc-presence.js';
+import { grantQuestCrest } from './medals.js';
 
 type Ann = { target: 'chan' | 'notice'; nick?: string; text: string };
 
@@ -56,7 +58,7 @@ function tickQuestScores(db: Database, channelNicks: Set<string>): void {
   }
   const online = db.prepare('SELECT * FROM players WHERE online = 1').all() as PlayerRow[];
   for (const p of online) {
-    if (!p.irc_nick || !channelNicks.has(p.irc_nick)) continue;
+    if (!p.irc_nick || !ircNickInChannel(p.irc_nick, channelNicks)) continue;
     const t = teams[p.character_name];
     if (t !== 0 && t !== 1) continue;
     const key = t === 0 ? MK_QUEST_T0 : MK_QUEST_T1;
@@ -86,7 +88,7 @@ function tryStartQuest(
 
   const candidates = (
     db.prepare('SELECT * FROM players WHERE online = 1').all() as PlayerRow[]
-  ).filter((p) => p.irc_nick && channelNicks.has(p.irc_nick));
+  ).filter((p) => p.irc_nick && ircNickInChannel(p.irc_nick, channelNicks));
   if (candidates.length < cfg.questMinPlayers) {
     if (!force) {
       metaSetInt(db, MK_QUEST_NEXT, now + Math.min(600, Math.floor(cfg.questCooldownSec / 3)));
@@ -141,7 +143,7 @@ function finishQuest(db: Database, cfg: AppConfig, channelNicks: Set<string>, an
   for (const [charName, team] of Object.entries(teams)) {
     const p = findByCharacterName(db, charName, cfg.caseSensitiveNames);
     if (!p || !p.online) continue;
-    if (!p.irc_nick || !channelNicks.has(p.irc_nick)) continue;
+    if (!p.irc_nick || !ircNickInChannel(p.irc_nick, channelNicks)) continue;
     if (team === winner) winners.push(charName);
     else losers.push(charName);
   }
@@ -154,6 +156,9 @@ function finishQuest(db: Database, cfg: AppConfig, channelNicks: Set<string>, an
     if (!p) continue;
     const nn = Math.max(1, p.next_seconds - bonusWin);
     db.prepare('UPDATE players SET next_seconds = ? WHERE id = ?').run(nn, p.id);
+    for (const line of grantQuestCrest(db, p.id, p.character_name)) {
+      an.push({ target: 'chan', text: line });
+    }
   }
   for (const name of losers) {
     const p = findByCharacterName(db, name, cfg.caseSensitiveNames);
@@ -315,4 +320,70 @@ export function adminForceLucky(db: Database, cfg: AppConfig, an: Ann[]): void {
     text: `✦ LUCKY HOUR (staff): Hand-of-God odds triple for ${durationIt(cfg.luckyHourDurationSec)}.`,
   });
   insertRealmEvent(db, 'lucky_hour_admin', '');
+}
+
+/** Snapshot for IRC `!realm`, API, and dashboard — same math everywhere. */
+export type RealmPulseJson = {
+  onlineHeroes: number;
+  questActive: boolean;
+  questShort: string | null;
+  luckySecondsLeft: number;
+  recordName: string | null;
+  recordLevel: number | null;
+  /** Single headline line (already includes ◆). */
+  display: string;
+};
+
+export function realmPulseData(db: Database, cfg: AppConfig): RealmPulseJson {
+  const onlineRow = db.prepare('SELECT COUNT(*) AS c FROM players WHERE online = 1').get() as { c: number };
+  const onlineHeroes = Number(onlineRow.c ?? 0);
+  const now = Math.floor(Date.now() / 1000);
+
+  let questActive = cfg.questEnabled && (metaGetInt(db, MK_QUEST_ACTIVE) ?? 0) === 1;
+  let questShort: string | null = null;
+  if (cfg.questEnabled && questActive) {
+    const ends = metaGetInt(db, MK_QUEST_ENDS) ?? 0;
+    const left = Math.max(0, ends - now);
+    const s0 = metaGetInt(db, MK_QUEST_T0) ?? 0;
+    const s1 = metaGetInt(db, MK_QUEST_T1) ?? 0;
+    questShort = `${TEAM_NAMES[0]} ${s0} vs ${TEAM_NAMES[1]} ${s1} · ${durationIt(left)}`;
+  }
+
+  const luckyUntil = metaGetInt(db, MK_LUCKY_UNTIL) ?? 0;
+  const luckySecondsLeft = cfg.luckyHourEnabled ? Math.max(0, luckyUntil - now) : 0;
+
+  const recLv = metaGetInt(db, 'realm_record_level');
+  const recNameRaw = metaGetText(db, 'realm_record_name');
+  const recordLevel = recLv != null && recLv > 0 ? recLv : null;
+  const recordName = recNameRaw?.trim() ? recNameRaw.trim() : null;
+
+  const segments: string[] = [];
+  segments.push(`${onlineHeroes} hero${onlineHeroes !== 1 ? 'es' : ''} online`);
+  if (cfg.questEnabled) {
+    segments.push(questActive && questShort ? `Quest live: ${questShort}` : 'Quest dormant');
+  }
+  if (cfg.luckyHourEnabled) {
+    segments.push(luckySecondsLeft > 0 ? `Lucky hour ${durationIt(luckySecondsLeft)}` : 'Lucky quiet');
+  }
+  if (recordName && recordLevel) {
+    segments.push(`Peak ${recordName} L${recordLevel}`);
+  } else {
+    segments.push('No realm peak yet');
+  }
+
+  const display = `◆ ${segments.join(' · ')}`;
+
+  return {
+    onlineHeroes,
+    questActive,
+    questShort,
+    luckySecondsLeft,
+    recordName,
+    recordLevel,
+    display,
+  };
+}
+
+export function realmPulseLine(db: Database, cfg: AppConfig): string {
+  return realmPulseData(db, cfg).display;
 }

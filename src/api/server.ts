@@ -4,9 +4,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { config } from '../config.js';
-import { botPresenceFromDb, findByCharacter, getDb, leaderboard, recentRealmEvents } from '../db/index.js';
+import { botPresenceFromDb, findByCharacter, getDb, leaderboard, recentRealmEvents, recentRealmEventsForCharacter } from '../db/index.js';
 import { durationIt } from '../game/duration.js';
 import { CHRONICLE_API_DEFAULT_LIMIT, CHRONICLE_API_MAX_LIMIT } from '../game/chronicle-omen.js';
+import { listMedalKeys, MEDAL_DEF } from '../game/medals.js';
+import { realmPulseData } from '../game/realm.js';
 
 /** Optional Express API for local dev. Production can use PHP under public/api/. */
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -20,7 +22,7 @@ app.use(
 app.use(express.json());
 
 app.get('/api/health', (_req: Request, res: Response) => {
-  res.json({ ok: true, name: 'iodlerpg' });
+  res.json({ ok: true, name: 'idlerpg' });
 });
 
 app.get('/api/leaderboard', (_req: Request, res: Response) => {
@@ -35,11 +37,13 @@ app.get('/api/leaderboard', (_req: Request, res: Response) => {
     online: !!p.online,
     idledHours: Math.round((p.idled / 3600) * 10) / 10,
   }));
+  const pulse = realmPulseData(db, config);
   res.json({
     players: rows,
     generatedAt: new Date().toISOString(),
     botOnline,
     botLastSeenMs,
+    realmPulse: pulse,
   });
 });
 
@@ -64,7 +68,10 @@ app.get('/api/player/:name', (req: Request, res: Response) => {
     res.status(404).json({ error: 'not_found' });
     return;
   }
+  const medalKeys = listMedalKeys(db, r.id);
+  const recentFinds = recentRealmEventsForCharacter(db, r.character_name, CHRONICLE_API_DEFAULT_LIMIT);
   res.json({
+    id: r.id,
     name: r.character_name,
     level: r.level,
     class: r.class,
@@ -73,6 +80,14 @@ app.get('/api/player/:name', (req: Request, res: Response) => {
     online: !!r.online,
     alignment: r.alignment,
     trinket: r.trinket?.trim() ? r.trinket.trim() : null,
+    duelWins: r.duel_wins ?? 0,
+    gauntletWins: r.gauntlet_wins ?? 0,
+    medals: medalKeys.map((key) => ({
+      key,
+      label: MEDAL_DEF[key]?.label ?? key,
+      tier: MEDAL_DEF[key]?.tier ?? 'bronze',
+    })),
+    recentFinds,
     idledHours: Math.round((r.idled / 3600) * 10) / 10,
     ircNick: r.online ? r.irc_nick : null,
     stats: {
@@ -98,5 +113,5 @@ if (fs.existsSync(webIndex)) {
 }
 
 app.listen(config.apiPort, config.apiHost, () => {
-  console.log(`iodlerpg API http://${config.apiHost}:${config.apiPort}`);
+  console.log(`idlerpg API http://${config.apiHost}:${config.apiPort}`);
 });

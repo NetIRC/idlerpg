@@ -112,6 +112,25 @@ body {
   z-index: 1;
 }
 
+.realm-pulse-bar {
+  position: relative;
+  z-index: 1;
+  padding: 0.35rem 0 0.15rem;
+}
+
+.realm-pulse {
+  margin: 0;
+  font-size: 0.78rem;
+  line-height: 1.55;
+  color: rgba(255, 248, 240, 0.9);
+  letter-spacing: 0.02em;
+  padding: 0.7rem 1rem;
+  border-radius: 12px;
+  border: 1px solid rgba(0, 229, 199, 0.22);
+  background: linear-gradient(145deg, rgba(0, 229, 199, 0.07) 0%, rgba(255, 145, 77, 0.06) 100%);
+  box-shadow: 0 6px 28px rgba(0, 0, 0, 0.18);
+}
+
 .status-led {
   width: 8px;
   height: 8px;
@@ -466,8 +485,21 @@ body {
 
 .main-grid {
   display: grid;
-  gap: 2.25rem;
+  grid-template-columns: 1fr;
+  row-gap: 1rem;
+  column-gap: 0;
   padding: 2.5rem 0 3rem;
+}
+
+.main-grid-header-lb .section-head,
+.main-grid-header-hero .section-head {
+  margin-bottom: 0;
+}
+
+@media (max-width: 1023px) {
+  .main-grid-header-hero {
+    margin-top: 0.75rem;
+  }
 }
 
 @media (min-width: 1024px) {
@@ -477,9 +509,31 @@ body {
 
   .main-grid {
     grid-template-columns: 1.12fr 0.88fr;
-    align-items: start;
+    grid-template-rows: auto auto;
+    column-gap: 2.25rem;
+    row-gap: 1rem;
     padding-top: 0.75rem;
     padding-bottom: 2.25rem;
+  }
+
+  .main-grid-header-lb {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .main-grid-header-hero {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .main-grid-body-lb {
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  .main-grid-body-hero {
+    grid-column: 2;
+    grid-row: 2;
   }
 
   .footer {
@@ -492,7 +546,7 @@ body {
   animation: rise-in 0.8s ease-out both;
 }
 
-.section-rise:nth-child(2) {
+.main-grid-body-hero.section-rise {
   animation-delay: 0.12s;
 }
 
@@ -591,6 +645,15 @@ body {
 .h2-mark-ember {
   background: var(--ember);
   box-shadow: 0 0 12px var(--ember-glow);
+}
+
+.h2-mark-omen {
+  width: 8px;
+  height: 8px;
+  background: linear-gradient(135deg, #a78bfa, #00e5c7);
+  box-shadow:
+    0 0 14px rgba(167, 139, 250, 0.55),
+    0 0 20px rgba(0, 229, 199, 0.35);
 }
 
 .h2 {
@@ -737,8 +800,169 @@ body {
 }
 
 .detail {
+  position: relative;
   min-height: 300px;
   padding: 1.65rem;
+}
+
+.detail-content {
+  transition: opacity 0.2s ease;
+}
+
+.detail-empty {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  min-height: 240px;
+  padding: 1.5rem 1rem 1.75rem;
+}
+
+.detail-empty-frame {
+  position: relative;
+  width: 3.5rem;
+  height: 3.5rem;
+  margin-bottom: 1rem;
+  border-radius: 0.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(0, 229, 199, 0.22);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.25) inset;
+}
+
+.detail-empty-glyph {
+  display: block;
+  width: 1.15rem;
+  height: 1.15rem;
+  border: 2px solid rgba(0, 229, 199, 0.65);
+  border-radius: 0.3rem;
+  transform: rotate(45deg);
+}
+
+.detail-empty-eyebrow {
+  position: relative;
+  margin: 0 0 0.35rem;
+  font-size: 0.62rem;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: rgba(0, 229, 199, 0.65);
+}
+
+.detail-empty-title {
+  position: relative;
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(1.05rem, 2.8vw, 1.35rem);
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  background: linear-gradient(105deg, #fff 0%, #b8fff0 38%, #ffc9a8 72%, #fff 100%);
+  background-size: 160% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: detail-empty-shine 7s ease-in-out infinite;
+}
+
+@keyframes detail-empty-shine {
+  0%,
+  100% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+}
+
+.detail-empty-lead {
+  position: relative;
+  margin: 0.75rem 0 0;
+  max-width: 22rem;
+  font-size: 0.88rem;
+  line-height: 1.55;
+  color: rgba(220, 210, 232, 0.82);
+}
+
+.detail-empty-lead strong {
+  color: rgba(255, 248, 240, 0.92);
+  font-weight: 600;
+}
+
+.detail-empty-hint {
+  position: relative;
+  margin: 1rem 0 0;
+  font-size: 0.68rem;
+  letter-spacing: 0.1em;
+  color: rgba(196, 184, 212, 0.45);
+}
+
+.detail--busy .detail-empty-title,
+.detail--busy .detail-empty-lead,
+.detail--busy .detail-empty-hint,
+.detail--busy .detail-empty-eyebrow {
+  opacity: 0.5;
+}
+
+.detail--busy .detail-empty-frame {
+  opacity: 0.55;
+}
+
+.detail--busy .detail-content {
+  opacity: 0.38;
+  pointer-events: none;
+}
+
+.detail-loading-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  background: rgba(5, 4, 10, 0.72);
+  backdrop-filter: blur(5px);
+  border-radius: inherit;
+}
+
+.detail-loading-overlay.hidden {
+  display: none !important;
+}
+
+.detail-loading-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.85rem;
+}
+
+.detail-spinner {
+  width: 2.25rem;
+  height: 2.25rem;
+  border: 3px solid rgba(0, 229, 199, 0.18);
+  border-top-color: var(--arc);
+  border-radius: 50%;
+  animation: detail-spin 0.7s linear infinite;
+  box-shadow: 0 0 20px rgba(0, 229, 199, 0.2);
+}
+
+@keyframes detail-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.detail-loading-text {
+  margin: 0;
+  font-size: 0.74rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0.8;
+  color: rgba(255, 248, 240, 0.9);
 }
 
 .muted {
@@ -817,6 +1041,53 @@ body {
   color: rgba(220, 210, 232, 0.9);
 }
 
+.medal-chips {
+  margin-top: 0.55rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.medal-chip {
+  display: inline-block;
+  border-radius: 999px;
+  background: linear-gradient(135deg, rgba(255, 196, 72, 0.12), rgba(168, 92, 255, 0.1));
+  border: 1px solid rgba(255, 210, 120, 0.2);
+  padding: 0.22rem 0.65rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: rgba(255, 236, 200, 0.95);
+}
+
+.medal-chip--bronze {
+  border-color: rgba(205, 127, 50, 0.45);
+  background: linear-gradient(135deg, rgba(205, 127, 50, 0.18), rgba(80, 50, 24, 0.35));
+  box-shadow: 0 0 12px rgba(205, 127, 50, 0.15);
+}
+
+.medal-chip--silver {
+  border-color: rgba(192, 210, 224, 0.45);
+  background: linear-gradient(135deg, rgba(192, 210, 224, 0.14), rgba(60, 70, 90, 0.4));
+  color: rgba(240, 248, 255, 0.95);
+  box-shadow: 0 0 14px rgba(192, 210, 224, 0.12);
+}
+
+.medal-chip--gold {
+  border-color: rgba(255, 215, 96, 0.55);
+  background: linear-gradient(135deg, rgba(255, 215, 96, 0.22), rgba(180, 100, 20, 0.3));
+  box-shadow: 0 0 16px rgba(255, 200, 80, 0.22);
+}
+
+.medal-chip--mythic {
+  border-color: rgba(186, 104, 255, 0.55);
+  background: linear-gradient(135deg, rgba(186, 104, 255, 0.25), rgba(255, 107, 53, 0.15));
+  color: #f5e8ff;
+  box-shadow:
+    0 0 18px rgba(186, 104, 255, 0.25),
+    0 0 28px rgba(255, 107, 53, 0.12);
+}
+
 .footer {
   padding: 2rem 0 2.5rem;
   text-align: center;
@@ -883,7 +1154,8 @@ body {
   }
 
   /* Align Leaderboard / Hero sheet titles + search + alerts with inset panels */
-  .main-grid .section-rise > .section-head,
+  .main-grid .main-grid-header-lb .section-head,
+  .main-grid .main-grid-header-hero .section-head,
   .main-grid .section-rise > .alert {
     margin-left: 0.65rem;
     margin-right: 0.65rem;
@@ -923,7 +1195,8 @@ body {
   }
 
   .main-grid {
-    gap: 1.75rem;
+    row-gap: 1rem;
+    column-gap: 0;
     padding: 1.75rem 0 2.25rem;
   }
 
@@ -1048,6 +1321,524 @@ body {
   }
 }
 
+/* --- Realm atlas (interactive world map) --- */
+.realm-atlas-section {
+  padding-bottom: 0.5rem;
+}
+
+.atlas-section-head {
+  align-items: flex-start;
+}
+
+.atlas-sub {
+  margin-top: 0.35rem;
+  max-width: 42rem;
+  line-height: 1.45;
+}
+
+.atlas-btn {
+  flex-shrink: 0;
+  margin-top: 0.15rem;
+  font-family: var(--font-m);
+  font-size: 0.65rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 0.45rem 0.85rem;
+  border-radius: 0.45rem;
+  border: 1px solid rgba(0, 229, 199, 0.35);
+  background: rgba(0, 229, 199, 0.08);
+  color: var(--arc);
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.atlas-btn:hover {
+  background: rgba(0, 229, 199, 0.16);
+  border-color: rgba(0, 229, 199, 0.55);
+  color: #fff;
+}
+
+.realm-atlas-panel {
+  position: relative;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.realm-atlas-panel.realm-atlas-panel--lucky::before {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  pointer-events: none;
+  background: linear-gradient(
+    115deg,
+    transparent 35%,
+    rgba(255, 196, 72, 0.07) 48%,
+    rgba(168, 92, 255, 0.06) 62%,
+    transparent 75%
+  );
+  background-size: 200% 200%;
+  animation: atlas-lucky-veil 8s ease-in-out infinite;
+  z-index: 1;
+}
+
+@keyframes atlas-lucky-veil {
+  0%,
+  100% {
+    background-position: 0% 40%;
+  }
+  50% {
+    background-position: 100% 60%;
+  }
+}
+
+.realm-atlas-panel.realm-atlas-panel--quest #realm-atlas-svg {
+  filter: drop-shadow(0 0 20px rgba(255, 120, 80, 0.12));
+}
+
+.atlas-svg-frame {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  aspect-ratio: 5 / 3;
+  max-height: min(72vh, 640px);
+  min-height: 220px;
+  cursor: default;
+  touch-action: auto;
+  overflow: hidden;
+  border-radius: 0.45rem;
+  background-color: #06030e;
+  box-shadow: inset 0 0 80px rgba(0, 0, 0, 0.35);
+  /* Photo in SVG: oversized vs viewBox so pan never exposes empty frame. */
+  isolation: isolate;
+}
+
+.realm-atlas-svg .atlas-map-photo--zenith {
+  filter: saturate(0.9) contrast(1.12) brightness(1.05);
+}
+
+.realm-atlas-svg .atlas-map-photo {
+  display: block;
+}
+
+.realm-atlas-svg .atlas-marker-g {
+  cursor: pointer;
+}
+
+.realm-atlas-svg .atlas-marker-hit {
+  fill: rgba(255, 255, 255, 0.001);
+  stroke: none;
+  pointer-events: all;
+}
+
+.realm-atlas-svg .atlas-marker-label {
+  font-family: var(--font-m);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  fill: rgba(248, 244, 255, 0.9);
+  paint-order: stroke fill;
+  stroke: rgba(0, 0, 0, 0.62);
+  stroke-width: 3px;
+  pointer-events: none;
+}
+
+.realm-atlas-svg .atlas-marker-g.is-online .atlas-marker-label {
+  fill: rgba(170, 255, 236, 0.95);
+  stroke: rgba(0, 0, 0, 0.55);
+}
+
+.realm-atlas-svg .atlas-marker-g.is-selected .atlas-marker-label {
+  fill: #fff;
+}
+
+.realm-atlas-svg .atlas-marker-core {
+  cursor: inherit;
+  transition:
+    r 0.15s ease,
+    filter 0.2s ease;
+  pointer-events: none;
+}
+
+/* Readability veil — stay under the SVG map layer */
+.atlas-svg-frame::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  background: radial-gradient(
+    ellipse 95% 85% at 50% 40%,
+    rgba(6, 4, 18, 0.08) 0%,
+    rgba(4, 2, 12, 0.28) 50%,
+    rgba(2, 0, 8, 0.48) 100%
+  );
+}
+
+.atlas-svg-frame::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  opacity: 0.35;
+  background: linear-gradient(180deg, rgba(0, 229, 199, 0.04) 0%, transparent 35%, transparent 65%, rgba(120, 80, 200, 0.06) 100%);
+}
+
+/* Fill the frame reliably (percentage height alone can collapse with aspect-ratio) */
+.realm-atlas-svg {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  user-select: none;
+  z-index: 1;
+  pointer-events: auto;
+}
+
+.realm-atlas-svg .atlas-region {
+  stroke: rgba(255, 255, 255, 0.12);
+  stroke-width: 1;
+  transition: opacity 0.3s ease;
+}
+
+.realm-atlas-svg .atlas-region-label {
+  font-family: var(--font-display);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  fill: rgba(235, 230, 255, 0.5);
+  paint-order: stroke fill;
+  stroke: rgba(0, 0, 0, 0.55);
+  stroke-width: 2px;
+  pointer-events: none;
+}
+
+.realm-atlas-svg .atlas-quest-path {
+  fill: none;
+  stroke: url(#atlas-quest-grad);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-dasharray: 10 14;
+  animation: atlas-quest-dash 2.2s linear infinite;
+  opacity: 0.75;
+  filter: drop-shadow(0 0 6px rgba(255, 140, 90, 0.45));
+}
+
+@keyframes atlas-quest-dash {
+  to {
+    stroke-dashoffset: -48;
+  }
+}
+
+/* Campaign trails (pan with map — storytelling, not click targets) */
+.realm-atlas-svg .atlas-trail-path {
+  fill: none;
+  pointer-events: none;
+}
+
+.realm-atlas-svg .atlas-trail-march {
+  stroke: url(#atlas-trail-grad);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.62;
+  filter: drop-shadow(0 0 5px rgba(255, 100, 70, 0.28));
+}
+
+.realm-atlas-svg .atlas-trail-front {
+  stroke: url(#atlas-front-grad);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 14 12;
+  opacity: 0.52;
+  animation: atlas-trail-front-dash 2.8s linear infinite;
+}
+
+.realm-atlas-svg .atlas-trail-supply {
+  stroke: rgba(200, 190, 255, 0.38);
+  stroke-width: 1.5;
+  stroke-dasharray: 5 9;
+  opacity: 0.48;
+}
+
+@keyframes atlas-trail-front-dash {
+  to {
+    stroke-dashoffset: -52;
+  }
+}
+
+.realm-atlas-svg .atlas-route-label--trail {
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  fill: rgba(255, 210, 185, 0.45);
+  paint-order: stroke fill;
+  stroke: rgba(0, 0, 0, 0.5);
+  stroke-width: 1.5px;
+  pointer-events: none;
+}
+
+.realm-atlas-svg .atlas-marker-halo {
+  fill: rgba(3, 2, 10, 0.62);
+  pointer-events: none;
+}
+
+.realm-atlas-svg .atlas-marker-g.is-online .atlas-marker-halo {
+  fill: rgba(0, 45, 40, 0.45);
+}
+
+.realm-atlas-svg .atlas-marker-g.is-online .atlas-marker-core {
+  fill: url(#atlas-online-grad);
+  filter: drop-shadow(0 0 8px rgba(0, 255, 210, 0.65)) drop-shadow(0 0 2px rgba(0, 0, 0, 0.9));
+  animation: atlas-pulse 2.4s ease-in-out infinite;
+}
+
+/* Offline heroes: high contrast on photo background (were nearly invisible before) */
+.realm-atlas-svg .atlas-marker-g:not(.is-online) .atlas-marker-core {
+  fill: rgba(245, 238, 255, 0.98);
+  stroke: rgba(8, 6, 20, 0.95);
+  stroke-width: 1.65;
+  filter: drop-shadow(0 0 4px rgba(0, 0, 0, 0.95)) drop-shadow(0 0 14px rgba(255, 255, 255, 0.35));
+}
+
+.realm-atlas-svg .atlas-marker-g.is-selected .atlas-marker-ring {
+  opacity: 1;
+}
+
+.realm-atlas-svg .atlas-marker-ring {
+  fill: none;
+  stroke: rgba(255, 210, 120, 0.9);
+  stroke-width: 1.6;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+  animation: atlas-selected-glow 1.8s ease-in-out infinite;
+}
+
+@keyframes atlas-pulse {
+  0%,
+  100% {
+    filter: drop-shadow(0 0 5px rgba(0, 255, 210, 0.45));
+  }
+  50% {
+    filter: drop-shadow(0 0 12px rgba(0, 255, 210, 0.85));
+  }
+}
+
+@keyframes atlas-selected-glow {
+  0%,
+  100% {
+    stroke-opacity: 0.65;
+  }
+  50% {
+    stroke-opacity: 1;
+  }
+}
+
+.atlas-tooltip {
+  position: fixed;
+  z-index: 9999;
+  pointer-events: none;
+  max-width: min(300px, calc(100vw - 1rem));
+  padding: 0;
+  border-radius: 0.65rem;
+  font-family: var(--font-m);
+  font-size: 0.72rem;
+  line-height: 1.45;
+  color: rgba(255, 250, 245, 0.95);
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  margin: 0;
+  overflow: visible;
+}
+
+/* Pointer notch toward cursor */
+.atlas-tooltip::before {
+  content: '';
+  position: absolute;
+  width: 11px;
+  height: 11px;
+  background: linear-gradient(135deg, rgba(26, 20, 48, 0.98), rgba(14, 10, 28, 0.98));
+  border-left: 1px solid rgba(0, 229, 199, 0.45);
+  border-top: 1px solid rgba(0, 229, 199, 0.45);
+  transform: rotate(45deg);
+  z-index: 1;
+  box-shadow: -2px -2px 10px rgba(0, 229, 199, 0.15);
+}
+
+.atlas-tooltip[data-arrow='nw']::before {
+  top: -5px;
+  left: 8px;
+}
+
+.atlas-tooltip[data-arrow='ne']::before {
+  top: -5px;
+  right: 8px;
+  left: auto;
+}
+
+.atlas-tooltip[data-arrow='sw']::before {
+  bottom: -5px;
+  left: 8px;
+  top: auto;
+  transform: rotate(225deg);
+}
+
+.atlas-tooltip[data-arrow='se']::before {
+  bottom: -5px;
+  right: 8px;
+  left: auto;
+  top: auto;
+  transform: rotate(225deg);
+}
+
+.atlas-tooltip-card {
+  position: relative;
+  z-index: 2;
+  padding: 0.65rem 0.85rem 0.55rem;
+  border-radius: inherit;
+  background: linear-gradient(155deg, rgba(22, 16, 42, 0.94) 0%, rgba(10, 8, 22, 0.92) 100%);
+  backdrop-filter: blur(16px) saturate(1.25);
+  -webkit-backdrop-filter: blur(16px) saturate(1.25);
+  border: 1px solid rgba(0, 229, 199, 0.28);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.05) inset,
+    0 0 48px rgba(120, 90, 200, 0.08),
+    0 16px 40px rgba(0, 0, 0, 0.45),
+    0 0 32px rgba(0, 229, 199, 0.1);
+  overflow: hidden;
+}
+
+.atlas-tooltip-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, rgba(0, 229, 199, 0.65), rgba(168, 92, 255, 0.45), transparent);
+  opacity: 0.9;
+  pointer-events: none;
+}
+
+.atlas-tooltip--pop {
+  animation: atlas-tooltip-pop 0.22s ease-out both;
+}
+
+@keyframes atlas-tooltip-pop {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.atlas-tooltip.hidden {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.atlas-tooltip.hidden::before {
+  opacity: 0;
+}
+
+.atlas-tooltip .tt-name {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 0.88rem;
+  letter-spacing: 0.04em;
+  color: #fff;
+  margin: 0 0 0.4rem;
+  text-shadow: 0 0 20px rgba(0, 229, 199, 0.25);
+}
+
+.atlas-tooltip .tt-row {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.25rem;
+}
+
+.atlas-tooltip .tt-pill {
+  display: inline-block;
+  font-size: 0.58rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.atlas-tooltip .tt-pill--online {
+  color: #7fffea;
+  background: rgba(0, 229, 199, 0.12);
+  border-color: rgba(0, 229, 199, 0.35);
+  box-shadow: 0 0 12px rgba(0, 229, 199, 0.2);
+}
+
+.atlas-tooltip .tt-pill--offline {
+  color: rgba(200, 190, 220, 0.85);
+  background: rgba(80, 70, 120, 0.2);
+}
+
+.atlas-tooltip .tt-level {
+  font-size: 0.68rem;
+  color: var(--arc);
+  font-weight: 600;
+}
+
+.atlas-tooltip .tt-class {
+  font-size: 0.68rem;
+  opacity: 0.88;
+  margin-bottom: 0.35rem;
+  line-height: 1.35;
+}
+
+.atlas-tooltip .tt-timer {
+  font-size: 0.65rem;
+  color: rgba(180, 220, 255, 0.9);
+  opacity: 0.92;
+}
+
+.atlas-tooltip .tt-hint {
+  margin-top: 0.45rem;
+  padding-top: 0.4rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 0.58rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(0, 229, 199, 0.55);
+}
+
+@media (max-width: 639px) {
+  .atlas-section-head {
+    flex-direction: column;
+    gap: 0.65rem;
+  }
+
+  .atlas-btn {
+    align-self: flex-start;
+  }
+}
+
 /* --- Realm chronicle (realm_events feed) --- */
 .chronicle-section {
   padding-bottom: 2.75rem;
@@ -1059,6 +1850,14 @@ body {
 
 .chronicle-panel {
   padding: 1.1rem 1.2rem;
+}
+
+.chronicle-collapsible {
+  margin-top: 0.2rem;
+}
+
+.chronicle-list-outer {
+  margin-top: 0.55rem;
 }
 
 .chronicle-list {
@@ -1106,4 +1905,354 @@ body {
   line-height: 1.5;
   color: rgba(255, 248, 240, 0.92);
   word-break: break-word;
+}
+
+/* Chronicle row emphasis by event kind */
+.chronicle-item--omen_boon .chronicle-meta {
+  color: #5cffc8;
+}
+
+.chronicle-item--omen_boon {
+  padding-left: 0.65rem;
+  border-left: 3px solid rgba(0, 229, 199, 0.55);
+}
+
+.chronicle-item--omen_curse .chronicle-meta {
+  color: #ff8a8a;
+}
+
+.chronicle-item--omen_curse {
+  padding-left: 0.65rem;
+  border-left: 3px solid rgba(255, 100, 100, 0.45);
+}
+
+.chronicle-item--omen_rare .chronicle-meta {
+  color: #e9b949;
+}
+
+.chronicle-item--omen_rare {
+  padding-left: 0.65rem;
+  border-left: 3px solid rgba(233, 185, 73, 0.65);
+  background: linear-gradient(90deg, rgba(233, 185, 73, 0.06), transparent);
+  border-radius: 0 0.5rem 0.5rem 0;
+}
+
+.chronicle-item--medal .chronicle-meta {
+  color: #ffc878;
+}
+
+.chronicle-item--medal {
+  padding-left: 0.65rem;
+  border-left: 3px solid rgba(255, 200, 120, 0.4);
+}
+
+.chronicle-item--gauntlet_win .chronicle-meta,
+.chronicle-item--gauntlet_lose .chronicle-meta {
+  color: #b794f6;
+}
+
+.chronicle-item--realm_record .chronicle-meta {
+  color: #ffd36e;
+}
+
+.chronicle-item--duel .chronicle-meta {
+  color: #7dd3fc;
+}
+
+.chronicle-item--hog_win .chronicle-meta,
+.chronicle-item--hog_lose .chronicle-meta {
+  color: #f0abfc;
+}
+
+/* Treasures & omen explainer */
+.treasures-section {
+  padding-bottom: 0.5rem;
+}
+
+.treasures-sub {
+  margin-top: 0.35rem;
+  max-width: 52rem;
+  line-height: 1.55;
+}
+
+.treasures-panel {
+  padding: 1.2rem 1.25rem 1.35rem;
+  border: 1px solid rgba(167, 139, 250, 0.18);
+  background:
+    linear-gradient(155deg, rgba(167, 139, 250, 0.08) 0%, transparent 45%),
+    linear-gradient(330deg, rgba(0, 229, 199, 0.06) 0%, transparent 40%),
+    var(--panel);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
+}
+
+.treasures-grid {
+  display: grid;
+  gap: 1.25rem;
+}
+
+@media (min-width: 800px) {
+  .treasures-grid {
+    grid-template-columns: 1.1fr 0.9fr;
+    align-items: start;
+  }
+}
+
+.treasure-card {
+  border-radius: 1rem;
+  padding: 1rem 1.1rem 1.1rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.28);
+}
+
+.treasure-card--omen {
+  border-color: rgba(0, 229, 199, 0.22);
+  box-shadow: inset 0 1px 0 rgba(0, 229, 199, 0.08);
+}
+
+.treasure-card--finds {
+  border-color: rgba(255, 165, 90, 0.2);
+}
+
+.treasure-h3 {
+  margin: 0 0 0.75rem;
+  font-family: var(--font-display);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #fff;
+}
+
+.treasure-list {
+  margin: 0;
+  padding: 0 0 0 1.1rem;
+  font-size: 0.88rem;
+  line-height: 1.55;
+  color: rgba(255, 248, 240, 0.88);
+}
+
+.treasure-list li {
+  margin-bottom: 0.45rem;
+}
+
+.treasure-foot {
+  margin: 0.85rem 0 0;
+  font-size: 0.72rem;
+  line-height: 1.45;
+}
+
+.treasure-p {
+  margin: 0 0 0.65rem;
+  font-size: 0.88rem;
+  line-height: 1.55;
+  color: rgba(255, 248, 240, 0.88);
+}
+
+.treasure-p:last-child {
+  margin-bottom: 0;
+}
+
+.omen-odds {
+  font-family: var(--font-m);
+}
+
+.omen-odds--fluff {
+  color: rgba(196, 184, 212, 0.95);
+}
+
+.omen-odds--boon {
+  color: #5cffc8;
+}
+
+.omen-odds--curse {
+  color: #ff9a9a;
+}
+
+.omen-odds--rare {
+  color: #ffd36e;
+}
+
+/* Hero sheet: charm + recent ledger finds */
+.detail-charm {
+  margin: 0;
+  padding: 0.75rem 0.85rem;
+  border-radius: 0.85rem;
+  border: 1px solid rgba(0, 229, 199, 0.28);
+  background: linear-gradient(135deg, rgba(0, 229, 199, 0.12), rgba(167, 139, 250, 0.08));
+  box-shadow: 0 0 20px rgba(0, 229, 199, 0.08);
+  grid-column: 1 / -1;
+}
+
+.detail-charm dt {
+  font-size: 0.58rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: rgba(0, 229, 199, 0.75);
+  margin-bottom: 0.2rem;
+}
+
+.detail-charm dd {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #fff;
+}
+
+.finds-strip {
+  margin-top: 0.85rem;
+}
+
+.finds-strip-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  margin: 0;
+  padding: 0.5rem 0.65rem;
+  border-radius: 0.65rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.35);
+  color: rgba(255, 248, 240, 0.92);
+  font-family: var(--font-d);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+  text-align: left;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.finds-strip-toggle:hover {
+  border-color: rgba(0, 229, 199, 0.35);
+  background: rgba(0, 229, 199, 0.06);
+}
+
+.finds-strip-toggle:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(0, 229, 199, 0.45);
+}
+
+.finds-chevron {
+  flex-shrink: 0;
+  width: 0;
+  height: 0;
+  border-top: 5px solid transparent;
+  border-bottom: 5px solid transparent;
+  border-left: 7px solid var(--arc);
+  opacity: 0.85;
+  transform: rotate(0deg);
+  transition: transform 0.2s ease;
+}
+
+.finds-strip-toggle.is-open .finds-chevron {
+  transform: rotate(90deg);
+}
+
+.finds-strip-label {
+  flex: 1;
+  min-width: 0;
+}
+
+.finds-strip-scope {
+  text-transform: none;
+  letter-spacing: 0.02em;
+  font-weight: 500;
+  opacity: 0.75;
+}
+
+.finds-count {
+  flex-shrink: 0;
+  font-size: 0.68rem;
+  opacity: 0.65;
+  color: var(--arc);
+}
+
+.finds-list-wrap {
+  margin-top: 0.55rem;
+}
+
+.finds-list-wrap[hidden] {
+  display: none !important;
+}
+
+.finds-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.finds-item {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.35rem 0.65rem;
+  font-size: 0.78rem;
+  line-height: 1.35;
+  padding: 0.45rem 0.55rem;
+  border-radius: 0.55rem;
+  background: rgba(0, 0, 0, 0.22);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.finds-kind {
+  font-family: var(--font-m);
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--arc);
+  grid-column: 1 / -1;
+}
+
+.finds-detail {
+  grid-column: 1 / -1;
+  color: rgba(255, 248, 240, 0.86);
+  word-break: break-word;
+}
+
+.finds-ago {
+  font-family: var(--font-m);
+  font-size: 0.62rem;
+  color: rgba(196, 184, 212, 0.45);
+  grid-column: 1 / -1;
+}
+
+.finds-item--omen_boon .finds-kind {
+  color: #5cffc8;
+}
+
+.finds-item--omen_curse .finds-kind {
+  color: #ff9a9a;
+}
+
+.finds-item--omen_rare .finds-kind {
+  color: #e9b949;
+}
+
+.finds-item--medal .finds-kind {
+  color: #ffc878;
+}
+
+.finds-item--realm_record .finds-kind {
+  color: #ffd36e;
+}
+
+.finds-item--duel .finds-kind {
+  color: #7dd3fc;
+}
+
+.finds-item--hog_win .finds-kind,
+.finds-item--hog_lose .finds-kind {
+  color: #f0abfc;
+}
+
+.finds-item--gauntlet_win .finds-kind,
+.finds-item--gauntlet_lose .finds-kind {
+  color: #b794f6;
 }

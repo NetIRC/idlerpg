@@ -13,4 +13,4 @@ try {
     return;
 }
 
-echo json_encode(['ok' => true, 'name' => 'iodlerpg', 'db' => $db], JSON_THROW_ON_ERROR);
+echo json_encode(['ok' => true, 'name' => 'idlerpg', 'db' => $db], JSON_THROW_ON_ERROR);

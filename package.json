@@ -1,6 +1,6 @@
 {
-  "name": "iodlerpg",
-  "version": "1.0.0",
+  "name": "idlerpg",
+  "version": "2.0.0",
   "private": true,
   "license": "MIT",
   "description": "IdleRPG bot + dashboard — inspired by the original IdleRPG (http://idlerpg.net) for IRC networks",

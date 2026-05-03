@@ -22,11 +22,13 @@ if (strlen($name) > 32) {
 
 $case = !empty($IRPG['case_sensitive_names']);
 $sql = $case
-    ? 'SELECT character_name, class, level, next_seconds, idled, online, alignment, irc_nick,
-              pen_mesg, pen_nick, pen_part, pen_quit, pen_kick, pen_quest, pen_logout, trinket
+    ? 'SELECT id, character_name, class, level, next_seconds, idled, online, alignment, irc_nick,
+              pen_mesg, pen_nick, pen_part, pen_quit, pen_kick, pen_quest, pen_logout, trinket,
+              COALESCE(duel_wins, 0) AS duel_wins, COALESCE(gauntlet_wins, 0) AS gauntlet_wins
        FROM players WHERE character_name = ? LIMIT 1'
-    : 'SELECT character_name, class, level, next_seconds, idled, online, alignment, irc_nick,
-              pen_mesg, pen_nick, pen_part, pen_quit, pen_kick, pen_quest, pen_logout, trinket
+    : 'SELECT id, character_name, class, level, next_seconds, idled, online, alignment, irc_nick,
+              pen_mesg, pen_nick, pen_part, pen_quit, pen_kick, pen_quest, pen_logout, trinket,
+              COALESCE(duel_wins, 0) AS duel_wins, COALESCE(gauntlet_wins, 0) AS gauntlet_wins
        FROM players WHERE character_name COLLATE NOCASE = ? LIMIT 1';
 
 try {
@@ -39,9 +41,49 @@ try {
         echo json_encode(['error' => 'not_found'], JSON_THROW_ON_ERROR);
         exit;
     }
+    $charName = (string) $r['character_name'];
     $next = (float) $r['next_seconds'];
     $online = (bool) $r['online'];
+    $pid = (int) $r['id'];
+    $medals = [];
+    $recentFinds = [];
+    try {
+        $mstmt = $pdo->prepare('SELECT medal_key FROM player_medals WHERE player_id = ? ORDER BY ts ASC');
+        $mstmt->execute([$pid]);
+        $medals = $mstmt->fetchAll(PDO::FETCH_COLUMN);
+        if (!is_array($medals)) {
+            $medals = [];
+        }
+    } catch (Throwable $ignore) {
+        $medals = [];
+    }
+    try {
+        $likeColon = $charName . ':%';
+        $likeSpace = $charName . ' %';
+        $ledgerLim = irpg_chronicle_default_limit();
+        $fstmt = $pdo->prepare(
+            'SELECT ts, kind, detail FROM realm_events
+             WHERE detail COLLATE NOCASE = ?
+                OR detail COLLATE NOCASE LIKE ?
+                OR detail COLLATE NOCASE LIKE ?
+             ORDER BY id DESC LIMIT ?',
+        );
+        $fstmt->execute([$charName, $likeColon, $likeSpace, $ledgerLim]);
+        $rows = $fstmt->fetchAll(PDO::FETCH_ASSOC);
+        if (is_array($rows)) {
+            foreach ($rows as $row) {
+                $recentFinds[] = [
+                    'ts' => (int) $row['ts'],
+                    'kind' => (string) $row['kind'],
+                    'detail' => (string) $row['detail'],
+                ];
+            }
+        }
+    } catch (Throwable $ignore) {
+        $recentFinds = [];
+    }
     echo json_encode([
+        'id' => $pid,
         'name' => $r['character_name'],
         'level' => (int) $r['level'],
         'class' => $r['class'],
@@ -50,6 +92,16 @@ try {
         'online' => $online,
         'alignment' => $r['alignment'],
         'trinket' => isset($r['trinket']) && (string) $r['trinket'] !== '' ? (string) $r['trinket'] : null,
+        'duelWins' => (int) $r['duel_wins'],
+        'gauntletWins' => (int) $r['gauntlet_wins'],
+        'medals' => array_map(static function ($key) {
+            return [
+                'key' => (string) $key,
+                'label' => irpg_medal_label((string) $key),
+                'tier' => irpg_medal_tier((string) $key),
+            ];
+        }, $medals),
+        'recentFinds' => $recentFinds,
         'idledHours' => round(((int) $r['idled'] / 3600) * 10) / 10,
         'ircNick' => $online ? $r['irc_nick'] : null,
         'stats' => [
