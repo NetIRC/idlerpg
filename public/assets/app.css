@@ -9,6 +9,8 @@
   --arc-glow: rgba(0, 229, 199, 0.5);
   --dust: #c4b8d4;
   --panel: rgba(12, 10, 22, 0.82);
+  /* Shared with .panel; atlas clip-path must match or iOS shows square map corners */
+  --panel-radius: 1.125rem;
   --font-d: "Outfit", system-ui, sans-serif;
   --font-display: "Orbitron", sans-serif;
   --font-m: "JetBrains Mono", ui-monospace, monospace;
@@ -463,7 +465,7 @@ body {
   background: var(--panel);
   backdrop-filter: blur(20px) saturate(1.2);
   border: 1px solid rgba(0, 229, 199, 0.15);
-  border-radius: 1.125rem;
+  border-radius: var(--panel-radius);
   box-shadow:
     0 0 0 1px rgba(0, 0, 0, 0.35) inset,
     0 24px 48px rgba(0, 0, 0, 0.35),
@@ -710,9 +712,87 @@ body {
   display: none !important;
 }
 
-.panel-table {
-  border-radius: 1.125rem;
+/* Auto-refresh: blur entire viewport, spinner centered (above atlas tooltip z-index). */
+.full-page-sync {
+  position: fixed;
+  inset: 0;
+  z-index: 20000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: max(1.25rem, env(safe-area-inset-top)) max(1.25rem, env(safe-area-inset-right))
+    max(1.25rem, env(safe-area-inset-bottom)) max(1.25rem, env(safe-area-inset-left));
+  background: rgba(4, 2, 12, 0.42);
+  backdrop-filter: blur(14px) saturate(0.88);
+  -webkit-backdrop-filter: blur(14px) saturate(0.88);
+}
+
+.full-page-sync-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  padding: 1.75rem 2.25rem;
+  border-radius: var(--panel-radius);
+  background: rgba(8, 6, 18, 0.78);
+  border: 1px solid rgba(0, 229, 199, 0.22);
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.45) inset,
+    0 24px 56px rgba(0, 0, 0, 0.55),
+    0 0 48px rgba(0, 229, 199, 0.12);
+}
+
+.full-page-sync .detail-spinner {
+  width: 2.65rem;
+  height: 2.65rem;
+  border-width: 3px;
+}
+
+.full-page-sync-label {
+  margin: 0;
+}
+
+body.full-page-sync--locked {
   overflow: hidden;
+  touch-action: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .full-page-sync {
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+  }
+}
+
+.panel-table {
+  position: relative;
+  border-radius: var(--panel-radius);
+  overflow: hidden;
+}
+
+/* Full-panel shimmer during leaderboard + map sync (initial load, countdown refresh, manual F5). */
+.ledger-sync-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  background: rgba(4, 2, 12, 0.88);
+  backdrop-filter: blur(8px);
+  border-radius: inherit;
+  mix-blend-mode: normal;
+  isolation: isolate;
+}
+
+/* Above SVG + FX layers (SVG can paint over in-flow siblings inside .atlas-svg-frame). */
+.realm-atlas-panel > .ledger-sync-overlay {
+  z-index: 40;
+}
+
+.ledger-sync-overlay.hidden {
+  display: none !important;
 }
 
 /* Horizontal scroll on narrow screens (table has min-width) */
@@ -1366,6 +1446,30 @@ body {
   padding: 0;
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.08);
+  animation: atlas-panel-border-glow 12s ease-in-out infinite alternate;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .realm-atlas-panel {
+    animation: none;
+  }
+}
+
+@keyframes atlas-panel-border-glow {
+  0% {
+    box-shadow:
+      0 0 0 1px rgba(0, 229, 199, 0.18),
+      0 0 40px rgba(0, 229, 199, 0.14),
+      0 0 72px rgba(100, 60, 180, 0.12),
+      inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+  }
+  100% {
+    box-shadow:
+      0 0 0 1px rgba(0, 255, 220, 0.45),
+      0 0 64px rgba(0, 229, 199, 0.28),
+      0 0 120px rgba(160, 100, 255, 0.2),
+      inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  }
 }
 
 .realm-atlas-panel.realm-atlas-panel--lucky::before {
@@ -1396,7 +1500,9 @@ body {
 }
 
 .realm-atlas-panel.realm-atlas-panel--quest #realm-atlas-svg {
-  filter: drop-shadow(0 0 20px rgba(255, 120, 80, 0.12));
+  filter:
+    drop-shadow(0 0 18px rgba(255, 100, 60, 0.18)) drop-shadow(0 0 40px rgba(255, 140, 90, 0.12))
+    drop-shadow(0 0 22px rgba(0, 229, 199, 0.05));
 }
 
 .atlas-svg-frame {
@@ -1409,11 +1515,121 @@ body {
   cursor: default;
   touch-action: auto;
   overflow: hidden;
-  border-radius: 0.45rem;
+  /* Same curve as .realm-atlas-panel (.panel); inner 0.45rem was visibly square on iOS. */
+  border-radius: inherit;
+  -webkit-clip-path: inset(0 round var(--panel-radius));
+  clip-path: inset(0 round var(--panel-radius));
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
   background-color: #06030e;
   box-shadow: inset 0 0 80px rgba(0, 0, 0, 0.35);
   /* Photo in SVG: oversized vs viewBox so pan never exposes empty frame. */
   isolation: isolate;
+}
+
+/* Full-frame overlay ON TOP of the map (pointer-events none). Without blend modes it was hidden behind opaque PNG. */
+.atlas-fx {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  border-radius: inherit;
+  pointer-events: none;
+  overflow: hidden;
+  mix-blend-mode: normal;
+}
+
+.atlas-fx-aurora {
+  position: absolute;
+  width: 170%;
+  height: 170%;
+  left: -35%;
+  top: -35%;
+  background: conic-gradient(
+    from 18deg at 48% 42%,
+    transparent 0deg,
+    rgba(0, 229, 199, 0.38) 38deg,
+    transparent 82deg,
+    rgba(167, 110, 255, 0.42) 140deg,
+    transparent 200deg,
+    rgba(255, 120, 80, 0.22) 255deg,
+    transparent 310deg,
+    rgba(0, 200, 185, 0.32) 360deg
+  );
+  animation: atlas-fx-aurora-spin 20s linear infinite;
+  filter: blur(22px);
+  opacity: 1;
+  mix-blend-mode: soft-light;
+}
+
+.atlas-fx-shimmer {
+  position: absolute;
+  inset: -45%;
+  background: linear-gradient(
+    118deg,
+    transparent 38%,
+    rgba(255, 255, 255, 0.14) 48.5%,
+    rgba(0, 229, 199, 0.2) 50%,
+    rgba(255, 255, 255, 0.1) 51.5%,
+    transparent 62%
+  );
+  background-size: 220% 220%;
+  animation: atlas-fx-shimmer-move 8s ease-in-out infinite;
+  opacity: 1;
+  mix-blend-mode: overlay;
+}
+
+.atlas-fx-vignette {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(
+    ellipse 78% 72% at 50% 44%,
+    transparent 35%,
+    transparent 58%,
+    rgba(3, 0, 12, 0.65) 100%
+  );
+  opacity: 0.75;
+  mix-blend-mode: multiply;
+}
+
+@keyframes atlas-fx-aurora-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes atlas-fx-shimmer-move {
+  0%,
+  100% {
+    background-position: 0% 15%;
+    opacity: 0.55;
+    transform: rotate(0deg);
+  }
+  50% {
+    background-position: 100% 85%;
+    opacity: 0.95;
+    transform: rotate(0.5deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .atlas-fx-aurora,
+  .atlas-fx-shimmer {
+    animation: none !important;
+  }
+
+  .atlas-fx-aurora {
+    transform: rotate(22deg);
+  }
+
+  .atlas-fx-shimmer {
+    opacity: 0.65;
+    transform: none;
+  }
+
+  .realm-atlas-panel.realm-atlas-panel--lucky::before {
+    animation: none !important;
+  }
 }
 
 .realm-atlas-svg .atlas-map-photo--zenith {
@@ -1422,6 +1638,94 @@ body {
 
 .realm-atlas-svg .atlas-map-photo {
   display: block;
+}
+
+.realm-atlas-svg .realm-atlas-legend {
+  pointer-events: none;
+}
+
+.realm-atlas-svg .atlas-legend-ns {
+  font-family: var(--font-m);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  fill: rgba(200, 190, 230, 0.5);
+  paint-order: stroke fill;
+  stroke: rgba(0, 0, 0, 0.55);
+  stroke-width: 2.5px;
+  animation: atlas-legend-pulse 5s ease-in-out infinite alternate;
+}
+
+@keyframes atlas-legend-pulse {
+  0% {
+    fill: rgba(185, 175, 225, 0.42);
+    filter: drop-shadow(0 0 3px rgba(0, 229, 199, 0.15));
+  }
+  100% {
+    fill: rgba(230, 220, 255, 0.65);
+    filter: drop-shadow(0 0 8px rgba(0, 229, 199, 0.35));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .realm-atlas-svg .atlas-legend-ns {
+    animation: none;
+    filter: none;
+  }
+}
+
+.realm-atlas-svg .realm-atlas-stars {
+  pointer-events: none;
+}
+
+.realm-atlas-svg .atlas-star {
+  fill: rgba(255, 255, 255, 0.92);
+  pointer-events: none;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: atlas-star-twinkle 3.5s ease-in-out infinite;
+  filter: drop-shadow(0 0 3px rgba(0, 229, 199, 0.85)) drop-shadow(0 0 1px rgba(255, 255, 255, 0.6));
+}
+
+.realm-atlas-svg .atlas-star:nth-child(4n + 1) {
+  animation-duration: 2.8s;
+  animation-delay: -0.4s;
+}
+
+.realm-atlas-svg .atlas-star:nth-child(4n + 2) {
+  animation-duration: 4.2s;
+  animation-delay: -1.1s;
+}
+
+.realm-atlas-svg .atlas-star:nth-child(4n + 3) {
+  animation-duration: 3.2s;
+  animation-delay: -0.8s;
+}
+
+.realm-atlas-svg .atlas-star:nth-child(4n) {
+  animation-duration: 5s;
+  animation-delay: -2s;
+}
+
+@keyframes atlas-star-twinkle {
+  0%,
+  100% {
+    opacity: 0.25;
+    transform: scale(0.75);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.25);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .realm-atlas-svg .atlas-star {
+    animation: none;
+    opacity: 0.55;
+    transform: scale(1);
+  }
 }
 
 .realm-atlas-svg .atlas-marker-g {
@@ -1499,8 +1803,11 @@ body {
   height: 100%;
   display: block;
   user-select: none;
-  z-index: 1;
+  z-index: 2;
   pointer-events: auto;
+  border-radius: inherit;
+  overflow: hidden;
+  filter: drop-shadow(0 0 22px rgba(0, 229, 199, 0.06)) drop-shadow(0 0 50px rgba(90, 50, 140, 0.07));
 }
 
 .realm-atlas-svg .atlas-region {

@@ -1,9 +1,14 @@
 (() => {
   const REFRESH_SEC = 30;
+  /** Minimum time the full-page blur overlay stays visible (auto-refresh); avoids sub-second flashes on fast LAN. */
+  const FULL_PAGE_SYNC_MIN_MS = 1000;
   const tbody = document.getElementById('tbody');
   const detail = document.getElementById('detail');
   const detailContent = document.getElementById('detail-content');
   const detailLoading = document.getElementById('detail-loading');
+  const atlasLedgerLoading = document.getElementById('atlas-ledger-loading');
+  const lbLedgerLoading = document.getElementById('lb-ledger-loading');
+  const fullPageSyncEl = document.getElementById('full-page-sync');
   const qEl = document.getElementById('q');
   const errEl = document.getElementById('err');
   const lastUpdatedEl = document.getElementById('last-updated');
@@ -61,6 +66,37 @@
       detailLoading.classList.toggle('hidden', !busy);
       detailLoading.setAttribute('aria-hidden', busy ? 'false' : 'true');
     }
+  }
+
+  /** Leaderboard fetch + map + chronicle (every auto / initial refresh). */
+  function setLedgerSyncBusy(busy) {
+    const hide = !busy;
+    if (atlasLedgerLoading) {
+      atlasLedgerLoading.classList.toggle('hidden', hide);
+      atlasLedgerLoading.setAttribute('aria-hidden', hide ? 'true' : 'false');
+    }
+    if (lbLedgerLoading) {
+      lbLedgerLoading.classList.toggle('hidden', hide);
+      lbLedgerLoading.setAttribute('aria-hidden', hide ? 'true' : 'false');
+    }
+    const atlasFrame = document.getElementById('atlas-svg-frame');
+    if (atlasFrame) {
+      if (busy) atlasFrame.setAttribute('aria-busy', 'true');
+      else atlasFrame.removeAttribute('aria-busy');
+    }
+    const lbPanel = document.getElementById('lb-table-panel');
+    if (lbPanel) {
+      if (busy) lbPanel.setAttribute('aria-busy', 'true');
+      else lbPanel.removeAttribute('aria-busy');
+    }
+  }
+
+  /** Full viewport blur + spinner (timed auto-refresh only). */
+  function setFullPageSyncBusy(busy) {
+    if (!fullPageSyncEl) return;
+    fullPageSyncEl.classList.toggle('hidden', !busy);
+    fullPageSyncEl.setAttribute('aria-hidden', busy ? 'false' : 'true');
+    document.body.classList.toggle('full-page-sync--locked', busy);
   }
 
   function detailWrite(html) {
@@ -123,6 +159,12 @@
 
   function clamp(n, lo, hi) {
     return Math.min(hi, Math.max(lo, n));
+  }
+
+  /** Leaderboard `level` must be a finite number for sort + latitude (avoids NaN sort glitches). */
+  function atlasSafeLevel(pl) {
+    const n = Number(pl && pl.level);
+    return Number.isFinite(n) ? n : 0;
   }
 
   function ensureAtlasDefs() {
@@ -377,24 +419,54 @@
       return;
     }
 
-    const sorted = players.slice().sort((a, b) => Number(a.level) - Number(b.level));
+    const sorted = players.slice().sort((a, b) => atlasSafeLevel(a) - atlasSafeLevel(b));
+    const levels = sorted.map(atlasSafeLevel);
+    const minL = Math.min(...levels);
+    const maxL = Math.max(...levels);
+
+    /** North (high level) = small y. Integer steps: ≥ N px between L and L+1 when the on-map span allows it. */
+    const ATLAS_Y_NORTH = 90;
+    const ATLAS_Y_SOUTH = 540;
+    const ATLAS_MIN_PX_PER_LEVEL = 52;
+    const ATLAS_SAME_LEVEL_STACK = 15;
+    const latSpan = ATLAS_Y_SOUTH - ATLAS_Y_NORTH;
+
+    const countAtLevel = Object.create(null);
+    for (const pl of sorted) {
+      const L = atlasSafeLevel(pl);
+      countAtLevel[L] = (countAtLevel[L] || 0) + 1;
+    }
+    const idxAtLevel = Object.create(null);
 
     sorted.forEach((p, rank) => {
-      const n = sorted.length;
-      const tn = n <= 1 ? 0.5 : rank / (n - 1);
-      const yBand = 510 - tn * 378;
+      const lv = atlasSafeLevel(p);
+      let yBand;
+      if (maxL === minL) {
+        yBand = (ATLAS_Y_NORTH + ATLAS_Y_SOUTH) / 2;
+      } else {
+        const dL = maxL - minL;
+        const idealStep = Math.max(ATLAS_MIN_PX_PER_LEVEL, latSpan / dL);
+        const need = dL * idealStep;
+        const scale = need > latSpan ? latSpan / need : 1;
+        const stepPx = idealStep * scale;
+        yBand = ATLAS_Y_SOUTH - (lv - minL) * stepPx;
+      }
+      const k = idxAtLevel[lv] ?? 0;
+      idxAtLevel[lv] = k + 1;
+      const nHere = countAtLevel[lv];
+      const stackY = nHere > 1 ? (k - (nHere - 1) / 2) * ATLAS_SAME_LEVEL_STACK : 0;
       const jitterA = ((hash32(p.name) % 360) * Math.PI) / 180 / 12;
       const a = rank * GOLDEN_ANGLE + jitterA;
-      const spread = 92 + Math.sqrt(rank + 1) * 36;
-      let x = 500 + Math.cos(a) * spread * 0.88;
-      let y = yBand + Math.sin(a) * spread * 0.32;
+      const spread = 112 + Math.sqrt(rank + 1) * 48;
+      let x = 500 + Math.cos(a) * spread * 1.02;
       const h0 = hash32(p.name);
       x += (h0 % 29) - 14;
-      y += ((h0 >>> 7) % 23) - 11;
+      const yJ = ((h0 >>> 7) % 11) - 5;
+      let y = yBand + yJ + stackY;
       x = clamp(x, 72, 928);
       y = clamp(y, 88, 548);
 
-      const rad = Math.max(4, 2.8 + Math.min(11.5, Number(p.level) / 7));
+      const rad = Math.max(4, 2.8 + Math.min(11.5, atlasSafeLevel(p) / 7));
       const displayName = p.name.length > 24 ? `${p.name.slice(0, 22)}…` : p.name;
       const estNameW = Math.min(132, 8 + displayName.length * 5.65);
       const g = document.createElementNS(NS, 'g');
@@ -796,7 +868,11 @@
     }
   }
 
-  async function refresh() {
+  async function refresh(options = {}) {
+    const fullPage = options.fullPage === true;
+    const fullPageSyncStartedAt = fullPage ? Date.now() : 0;
+    if (fullPage) setFullPageSyncBusy(true);
+    else setLedgerSyncBusy(true);
     try {
       const { players, generatedAt, botOnline, botLastSeenMs, realmPulse } = await fetchLb();
       rows = players;
@@ -831,6 +907,16 @@
       );
       setErr(msg);
       tbody.innerHTML = '';
+    } finally {
+      if (fullPage) {
+        const elapsed = Date.now() - fullPageSyncStartedAt;
+        if (elapsed < FULL_PAGE_SYNC_MIN_MS) {
+          await new Promise((r) => setTimeout(r, FULL_PAGE_SYNC_MIN_MS - elapsed));
+        }
+        setFullPageSyncBusy(false);
+      } else {
+        setLedgerSyncBusy(false);
+      }
     }
   }
 
@@ -883,7 +969,7 @@
     if (refreshInFlight) return;
     refreshInFlight = true;
     try {
-      await refresh();
+      await refresh({ fullPage: true });
       countdown = REFRESH_SEC;
     } finally {
       refreshInFlight = false;

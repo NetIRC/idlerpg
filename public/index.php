@@ -100,7 +100,7 @@ $irpgChronicleUiLimit = 15;
       </header>
       <section class="section-rise main-grid-body-lb">
         <p id="err" class="alert hidden" role="alert"></p>
-        <div class="panel panel-table table-wrap">
+        <div class="panel panel-table table-wrap" id="lb-table-panel">
           <table class="table">
             <thead>
               <tr>
@@ -113,6 +113,12 @@ $irpgChronicleUiLimit = 15;
             </thead>
             <tbody id="tbody"></tbody>
           </table>
+          <div id="lb-ledger-loading" class="ledger-sync-overlay" aria-hidden="false">
+            <div class="detail-loading-inner">
+              <div class="detail-spinner" role="status" aria-label="Loading leaderboard"></div>
+              <p class="detail-loading-text mono">Syncing ledger…</p>
+            </div>
+          </div>
         </div>
       </section>
       <header class="main-grid-header-hero">
@@ -151,7 +157,7 @@ $irpgChronicleUiLimit = 15;
           <div>
             <h2 class="h2"><span class="h2-mark h2-mark-ember" aria-hidden="true"></span> Realm atlas</h2>
             <p class="lb-meta mono atlas-sub">
-              Map is <strong>fixed</strong> · artwork is <strong>zoomed out</strong> with the <strong>lower area</strong> favored · <strong>scroll</strong> works when the pointer is on the map. Higher level = north. Names sit beside pins; <strong>hover</strong> opens the card. Online = cyan pulse.
+              Map is <strong>fixed</strong> · artwork is <strong>zoomed out</strong> with the <strong>lower area</strong> favored · <strong>scroll</strong> works when the pointer is on the map. <strong>Latitude = level</strong> (higher Lv → north). Names sit beside pins; <strong>hover</strong> opens the card. Online = cyan pulse.
             </p>
           </div>
         </div>
@@ -163,7 +169,7 @@ $irpgChronicleUiLimit = 15;
               viewBox="0 0 1000 600"
               xmlns="http://www.w3.org/2000/svg"
               role="img"
-              aria-label="Realm map of heroes"
+              aria-label="Realm map of heroes: north is higher level, south is lower level"
             >
               <defs id="atlas-defs"></defs>
               <g id="atlas-world">
@@ -179,13 +185,45 @@ $irpgChronicleUiLimit = 15;
                     preserveAspectRatio="xMidYMax slice"
                     pointer-events="none"
                   />
+                  <g class="realm-atlas-stars" aria-hidden="true">
+                    <circle class="atlas-star" cx="118" cy="48" r="2.6" />
+                    <circle class="atlas-star" cx="247" cy="112" r="2.1" />
+                    <circle class="atlas-star" cx="412" cy="36" r="2.9" />
+                    <circle class="atlas-star" cx="588" cy="78" r="2.2" />
+                    <circle class="atlas-star" cx="721" cy="42" r="2.5" />
+                    <circle class="atlas-star" cx="862" cy="118" r="2" />
+                    <circle class="atlas-star" cx="94" cy="198" r="2.4" />
+                    <circle class="atlas-star" cx="318" cy="256" r="2.2" />
+                    <circle class="atlas-star" cx="501" cy="168" r="3" />
+                    <circle class="atlas-star" cx="668" cy="228" r="1.9" />
+                    <circle class="atlas-star" cx="928" cy="268" r="2.5" />
+                    <circle class="atlas-star" cx="156" cy="348" r="2.2" />
+                    <circle class="atlas-star" cx="834" cy="382" r="2.4" />
+                    <circle class="atlas-star" cx="455" cy="428" r="1.8" />
+                    <circle class="atlas-star" cx="602" cy="486" r="2.3" />
+                  </g>
                   <g id="atlas-routes" aria-hidden="true"></g>
                   <g id="atlas-regions"></g>
                   <g id="atlas-quest-layer"></g>
                 </g>
+                <g id="atlas-legend" class="realm-atlas-legend" aria-hidden="true">
+                  <text x="500" y="20" class="atlas-legend-ns" text-anchor="middle">N · higher level</text>
+                  <text x="500" y="596" class="atlas-legend-ns" text-anchor="middle">S · lower level</text>
+                </g>
                 <g id="atlas-markers"></g>
               </g>
             </svg>
+            <div class="atlas-fx" aria-hidden="true">
+              <span class="atlas-fx-aurora"></span>
+              <span class="atlas-fx-shimmer"></span>
+              <span class="atlas-fx-vignette"></span>
+            </div>
+          </div>
+          <div id="atlas-ledger-loading" class="ledger-sync-overlay" aria-hidden="false">
+            <div class="detail-loading-inner">
+              <div class="detail-spinner" role="status" aria-label="Loading realm map"></div>
+              <p class="detail-loading-text mono">Syncing map…</p>
+            </div>
           </div>
           <div id="atlas-tooltip" class="atlas-tooltip hidden" role="tooltip" hidden></div>
         </div>
@@ -262,6 +300,18 @@ $irpgChronicleUiLimit = 15;
         <span class="footer-irc">&middot; IRC <strong>irc.netirc.eu:6667</strong> <strong>#IdleRPG</strong></span>
       </p>
     </footer>
+  </div>
+  <div
+    id="full-page-sync"
+    class="full-page-sync hidden"
+    aria-hidden="true"
+    aria-live="polite"
+    role="status"
+  >
+    <div class="full-page-sync-inner">
+      <div class="detail-spinner" role="presentation"></div>
+      <p class="detail-loading-text mono full-page-sync-label">Syncing realm…</p>
+    </div>
   </div>
   <script src="assets/app.js" defer></script>
 </body>
