@@ -1556,7 +1556,8 @@ body.full-page-sync--locked {
     rgba(0, 200, 185, 0.32) 360deg
   );
   animation: atlas-fx-aurora-spin 20s linear infinite;
-  filter: blur(22px);
+  /* Blur cheaper than 22px; still soft on the map tile */
+  filter: blur(14px);
   opacity: 1;
   mix-blend-mode: soft-light;
 }
@@ -1620,6 +1621,7 @@ body.full-page-sync--locked {
 
   .atlas-fx-aurora {
     transform: rotate(22deg);
+    filter: blur(10px);
   }
 
   .atlas-fx-shimmer {
@@ -1629,6 +1631,27 @@ body.full-page-sync--locked {
 
   .realm-atlas-panel.realm-atlas-panel--lucky::before {
     animation: none !important;
+  }
+
+  /* Quest / trails / pins: no continuous repaints */
+  .realm-atlas-svg .atlas-quest-path {
+    animation: none;
+  }
+
+  .realm-atlas-svg .atlas-trail-front {
+    animation: none;
+  }
+
+  .realm-atlas-svg .atlas-marker-g.is-online .atlas-marker-core {
+    animation: none;
+  }
+
+  .realm-atlas-svg .atlas-marker-ring {
+    animation: none;
+  }
+
+  .realm-atlas-panel.realm-atlas-panel--quest #realm-atlas-svg {
+    filter: drop-shadow(0 0 10px rgba(255, 100, 60, 0.14));
   }
 }
 

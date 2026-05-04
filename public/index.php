@@ -157,7 +157,8 @@ $irpgChronicleUiLimit = 15;
           <div>
             <h2 class="h2"><span class="h2-mark h2-mark-ember" aria-hidden="true"></span> Realm atlas</h2>
             <p class="lb-meta mono atlas-sub">
-              Map is <strong>fixed</strong> · artwork is <strong>zoomed out</strong> with the <strong>lower area</strong> favored · <strong>scroll</strong> works when the pointer is on the map. <strong>Latitude = level</strong> (higher Lv → north). Names sit beside pins; <strong>hover</strong> opens the card. Online = cyan pulse.
+              The realm forgets noise but remembers altitude: <strong>silence lifts you toward the pole</strong>, where the oldest idlers loom like constellations.
+              Drift the parchment with the pointer; <strong>linger on a name</strong> and the ledger whispers back. <strong>Cyan halos</strong> mark who still breathes in-channel.
             </p>
           </div>
         </div>
