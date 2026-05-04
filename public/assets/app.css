@@ -1994,46 +1994,6 @@ body.full-page-sync--locked {
   overflow: visible;
 }
 
-/* Pointer notch toward cursor */
-.atlas-tooltip::before {
-  content: '';
-  position: absolute;
-  width: 11px;
-  height: 11px;
-  background: linear-gradient(135deg, rgba(26, 20, 48, 0.98), rgba(14, 10, 28, 0.98));
-  border-left: 1px solid rgba(0, 229, 199, 0.45);
-  border-top: 1px solid rgba(0, 229, 199, 0.45);
-  transform: rotate(45deg);
-  z-index: 1;
-  box-shadow: -2px -2px 10px rgba(0, 229, 199, 0.15);
-}
-
-.atlas-tooltip[data-arrow='nw']::before {
-  top: -5px;
-  left: 8px;
-}
-
-.atlas-tooltip[data-arrow='ne']::before {
-  top: -5px;
-  right: 8px;
-  left: auto;
-}
-
-.atlas-tooltip[data-arrow='sw']::before {
-  bottom: -5px;
-  left: 8px;
-  top: auto;
-  transform: rotate(225deg);
-}
-
-.atlas-tooltip[data-arrow='se']::before {
-  bottom: -5px;
-  right: 8px;
-  left: auto;
-  top: auto;
-  transform: rotate(225deg);
-}
-
 .atlas-tooltip-card {
   position: relative;
   z-index: 2;
@@ -2082,10 +2042,6 @@ body.full-page-sync--locked {
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
-}
-
-.atlas-tooltip.hidden::before {
-  opacity: 0;
 }
 
 .atlas-tooltip .tt-name {

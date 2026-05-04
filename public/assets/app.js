@@ -284,13 +284,7 @@
     function apply(px, py, w, h) {
       el.style.left = `${Math.round(px)}px`;
       el.style.top = `${Math.round(py)}px`;
-      const cxMid = px + w / 2;
-      const cyMid = py + h / 2;
-      const q = (clientY < cyMid ? 'n' : 's') + (clientX < cxMid ? 'w' : 'e');
       el.style.visibility = 'visible';
-      el.setAttribute('data-arrow', q);
-      el.style.setProperty('--tt-ox', `${Math.round(clientX - px)}px`);
-      el.style.setProperty('--tt-oy', `${Math.round(clientY - py)}px`);
     }
 
     el.classList.remove('hidden');
