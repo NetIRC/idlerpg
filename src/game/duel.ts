@@ -1,9 +1,11 @@
 import type Database from 'better-sqlite3';
+import { formatDuelTimers } from '../irc/channel-style.js';
 import type { PlayerRow } from '../db/index.js';
 import { findOnlineByNickCi, insertRealmEvent, metaGetInt, metaSetInt } from '../db/index.js';
 import { durationIt } from './duration.js';
 import { ircNickInChannel } from './irc-presence.js';
 import { medalsAfterDuelWin } from './medals.js';
+import type { GameAnnouncement } from './announce.js';
 
 /** Challenger cooldown (seconds). */
 export const DUEL_INITIATOR_COOLDOWN_SEC = 5 * 3600;
@@ -32,12 +34,11 @@ function pickEpic(winner: PlayerRow, loser: PlayerRow, crit: boolean): string {
   const L = loser.character_name;
   const wShort = winner.class.trim().split(/\s+/)[0] || 'hero';
   const lShort = loser.class.trim().split(/\s+/)[0] || 'hero';
-  const critTag = crit ? 'CRITICAL STRIKE — ' : '';
+  const critNote = crit ? 'Critical strike — ' : '';
   const pool = [
-    `⚔ REALM ARENA · ${critTag}the idle ether tears — ${W} (${wShort} L${winner.level}) uncorks silence like a weapon against ${L} (${lShort} L${loser.level}). The log remembers.`,
-    `⚔ REALM ARENA · ${critTag}${W} (${wShort}) slips past ${L}'s guard without a single public line — aura wins.`,
-    `⚔ CLASH · ${critTag}${W} (L${winner.level}) out-idles ${L} (L${loser.level}): fought in breath, not keystrokes.`,
-    `⚔ ARENA · ${critTag}${L} overextends; ${W} (${wShort}) collects the moment — stillness vs RNG.`,
+    `⚔ Duel — ${critNote}${W} (${wShort}, L${winner.level}) defeats ${L} (${lShort}, L${loser.level}) in the arena.`,
+    `⚔ Duel — ${critNote}${W} (${wShort}) prevails over ${L} (L${loser.level}). Outcome applied to level timers.`,
+    `⚔ Duel — ${critNote}${W}, L${winner.level}, outlasts ${L}, L${loser.level}. ${wShort} vs ${lShort}.`,
   ];
   return pool[Math.floor(Math.random() * pool.length)]!;
 }
@@ -51,35 +52,38 @@ export function runDuel(
   initiatorIrcNick: string,
   targetIrcNick: string,
   channelNicks: Set<string>,
-): { err: string } | { lines: string[] } {
+): { err: string } | { announcements: GameAnnouncement[] } {
   const ini = findOnlineByNickCi(db, initiatorIrcNick);
   const tgt = findOnlineByNickCi(db, targetIrcNick.trim());
-  if (!ini) return { err: 'You must be logged in to throw a challenge.' };
-  if (!tgt) return { err: 'No logged-in hero holds that IRC nick — check spelling or they are away.' };
-  if (ini.id === tgt.id) return { err: 'You cannot duel yourself.' };
+  if (!ini) return { err: 'You must be logged in to issue a duel challenge.' };
+  if (!tgt)
+    return { err: 'No logged-in character matches that IRC nick. Check spelling or try when they are present.' };
+  if (ini.id === tgt.id) return { err: 'You cannot duel your own character.' };
 
   const ircSeen = (p: PlayerRow) => ircNickInChannel(p.irc_nick, channelNicks);
 
-  if (!ircSeen(ini)) return { err: 'Stay visible in the game channel to fight.' };
-  if (!ircSeen(tgt)) return { err: 'Your rival must stand in this channel (idle presence, real nick).' };
+  if (!ircSeen(ini)) return { err: 'Remain in the game channel with visible presence to use the duel command.' };
+  if (!ircSeen(tgt)) return { err: 'Your opponent must be in this channel with visible presence (logged in).' };
 
   const now = Math.floor(Date.now() / 1000);
   const lastInit = metaGetInt(db, `duel_cd_${ini.id}`) ?? 0;
   if (lastInit > 0 && now - lastInit < DUEL_INITIATOR_COOLDOWN_SEC) {
     return {
-      err: `You challenged someone recently. Next opening in ${durationIt(DUEL_INITIATOR_COOLDOWN_SEC - (now - lastInit))}.`,
+      err: `You are on duel cooldown. Next challenge allowed in ${durationIt(DUEL_INITIATOR_COOLDOWN_SEC - (now - lastInit))}.`,
     };
   }
   const pk = duelPairMetaKey(ini.id, tgt.id);
   const lastPair = metaGetInt(db, pk) ?? 0;
   if (lastPair > 0 && now - lastPair < DUEL_PAIR_COOLDOWN_SEC) {
     return {
-      err: `This pairing needs more cooldown — ${durationIt(DUEL_PAIR_COOLDOWN_SEC - (now - lastPair))} left.`,
+      err: `This pairing is on cooldown. Try again in ${durationIt(DUEL_PAIR_COOLDOWN_SEC - (now - lastPair))}.`,
     };
   }
 
   if (Math.abs(ini.level - tgt.level) > DUEL_MAX_LEVEL_GAP) {
-    return { err: `Level gap too cruel — pick someone within ±${DUEL_MAX_LEVEL_GAP} levels.` };
+    return {
+      err: `Level difference too large. Choose an opponent within ±${DUEL_MAX_LEVEL_GAP} levels of your character.`,
+    };
   }
 
   let a = combatPower(ini);
@@ -122,10 +126,21 @@ export function runDuel(
   );
 
   const line1 = pickEpic(winner, loser, crit);
-  const line2 = `⚡ Fates: ${winner.character_name} trims the clock (~${durationIt(wNs)}); ${loser.character_name} eats dust (~${durationIt(lNs)}).`;
+  const line2 = formatDuelTimers(
+    winner.character_name,
+    loser.character_name,
+    durationIt(wNs),
+    durationIt(lNs),
+  );
   const medalLines = medalsAfterDuelWin(db, winner);
 
-  return { lines: [line1, line2, ...medalLines] };
+  const announcements: GameAnnouncement[] = [
+    { target: 'chan', text: line1 },
+    { target: 'chan', text: line2, preStyled: true },
+    ...medalLines.map((text) => ({ target: 'chan' as const, text, tone: 'gain' as const })),
+  ];
+
+  return { announcements };
 }
 
 /**

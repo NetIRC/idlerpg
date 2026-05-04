@@ -27,14 +27,14 @@ function shuffleInPlace<T>(arr: T[]): void {
 }
 
 const GENERIC_TIPS = [
-  '!time — next level countdown (commands skip idle tax).',
-  '!whoami — who you are logged in as.',
-  '!stats [name] — levels and timers.',
-  '!realm — quest, lucky hour, heroes online.',
-  '!chronicle — recent realm drama.',
-  '!records — standings and highs.',
+  '!time — next level countdown (!commands skip level-timer penalty).',
+  '!whoami — active character on this IRC nick.',
+  '!stats [name] — level, class, alignment, level timer.',
+  '!realm — online count, quest, lucky hour, realm peak.',
+  '!chronicle — latest realm events.',
+  '!records — standings and realm record.',
   '!quest — party quest status.',
-  '!medals — arena and gauntlet badges.',
+  '!medals — duel, quest, gauntlet, milestone badges.',
   '!top — leaderboard snippet.',
 ] as const;
 
@@ -46,10 +46,10 @@ function randomOnlineTipBody(
 ): string {
   const tips: string[] = [...GENERIC_TIPS];
   if (omenHintEligible(db, nick, channelNicks, caseEq)) {
-    tips.push('!omen — consult fate (long cooldown; may shift your timer).');
+    tips.push('!omen — long cooldown; may change your level timer.');
   }
   if (gauntletHintEligible(db, nick, channelNicks, caseEq)) {
-    tips.push('!gauntlet — solo shadow run (long cooldown afterwards).');
+    tips.push('!gauntlet — solo trial (long cooldown after a run).');
   }
   const foe = pickDuelHintFoe(db, nick, channelNicks, caseEq);
   if (foe) {
@@ -81,7 +81,7 @@ export function pickChannelHint(
       const ch = cfg.ircChannel;
       return {
         nick,
-        body: `Character "${loggedOut.character_name}" matches this nick — PM me LOGIN ${loggedOut.character_name} <password> while you stay in ${ch}.`,
+        body: `"${loggedOut.character_name}" matches this nick — PM this bot LOGIN ${loggedOut.character_name} <password> while you stay in ${ch}.`,
       };
     }
 
@@ -94,7 +94,7 @@ export function pickChannelHint(
       if (susp) continue;
       return {
         nick,
-        body: `No hero on this nick — PM me REGISTER <name> <password> <class…> from here (!rules). !commands never cost idle time.`,
+        body: `No character on this nick — PM this bot REGISTER <name> <password> <class…> while in ${cfg.ircChannel} (!rules). !commands never add level-timer penalty.`,
       };
     }
 

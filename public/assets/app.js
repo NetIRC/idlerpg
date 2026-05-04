@@ -338,7 +338,7 @@
     const on = p.online
       ? '<span class="tt-pill tt-pill--online">Online</span>'
       : '<span class="tt-pill tt-pill--offline">Offline</span>';
-    return `<div class="tt-name">${escapeHtml(p.name)}</div><div class="tt-row">${on}<span class="tt-level mono">Lv.${escapeHtml(String(p.level))}</span></div><div class="tt-class">${escapeHtml(p.class)}</div><div class="tt-timer mono">⏳ ${escapeHtml(p.nextHuman || '')}</div><div class="tt-hint mono">Click → hero sheet</div>`;
+    return `<div class="tt-name">${escapeHtml(p.name)}</div><div class="tt-row">${on}<span class="tt-level mono">L${escapeHtml(String(p.level))}</span></div><div class="tt-class">${escapeHtml(p.class)}</div><div class="tt-timer mono">⏳ ${escapeHtml(p.nextHuman || '')}</div><div class="tt-hint mono">Click → hero sheet</div>`;
   }
 
   function showAtlasTooltipFromPlayer(p, clientX, clientY) {
@@ -533,8 +533,10 @@
     logout: 'Logout',
     admin_resetpass: 'Admin',
     admin_forcelogout: 'Admin',
+    admin_delete: 'Admin',
+    admin_shutdown: 'Shutdown',
     lucky_hour_admin: 'Lucky',
-    omen_rare: 'Omen',
+    omen_rare: 'Rare omen',
     omen_boon: 'Omen+',
     omen_curse: 'Omen−',
     duel: 'Duel',
@@ -556,7 +558,8 @@
   function formatAgoSec(tsSec) {
     const now = Math.floor(Date.now() / 1000);
     const ago = Math.max(0, now - tsSec);
-    if (ago < 3600) return `${Math.max(1, Math.floor(ago / 60))}m`;
+    if (ago < 60) return `${Math.max(1, ago)}s`;
+    if (ago < 3600) return `${Math.floor(ago / 60)}m`;
     if (ago < 86400) return `${Math.floor(ago / 3600)}h`;
     return `${Math.floor(ago / 86400)}d`;
   }
@@ -565,7 +568,7 @@
     if (!chronicleList || !chroniclePlaceholder) return;
     if (!events || !events.length) {
       chroniclePlaceholder.textContent =
-        'No realm drama yet — run the bot; duels, quests, and omens will stream here.';
+        'Chronicle empty — start the bot; quests, Hand of God, duels, and records will add the first lines.';
       chroniclePlaceholder.classList.remove('hidden');
       chronicleList.innerHTML = '';
       if (chronicleCollapsible) chronicleCollapsible.classList.add('hidden');
@@ -834,9 +837,9 @@
       const gw = d.gauntletWins != null ? Number(d.gauntletWins) : 0;
       detailWrite(`
         <div class="detail-name">${escapeHtml(d.name)}</div>
-        <p class="detail-sub">Level <span class="mono" style="color:var(--arc)">${d.level}</span> · ${escapeHtml(d.class)}</p>
+        <p class="detail-sub">L<span class="mono" style="color:var(--arc)">${d.level}</span> · ${escapeHtml(d.class)}</p>
         <div class="dl-grid">
-          <div class="dl-item"><dt>Next level</dt><dd class="arc">${escapeHtml(d.nextHuman)}</dd></div>
+          <div class="dl-item"><dt>Level timer</dt><dd class="arc">${escapeHtml(d.nextHuman)}</dd></div>
           <div class="dl-item"><dt>Total idle</dt><dd>${escapeHtml(String(d.idledHours))} h</dd></div>
           <div class="dl-item"><dt>Status</dt><dd>${formatStatus(d)}</dd></div>
           <div class="dl-item"><dt>Alignment</dt><dd>${escapeHtml(formatAlignment(d.alignment))}</dd></div>

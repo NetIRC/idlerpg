@@ -186,11 +186,11 @@ $jsonLdScript = json_encode($jsonLd, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNI
           <table class="table">
             <thead>
               <tr>
-                <th>#</th>
-                <th>Player</th>
-                <th>Lv</th>
-                <th class="hide-sm">Class</th>
-                <th>Timer</th>
+                <th scope="col" title="Rank">#</th>
+                <th scope="col">Player</th>
+                <th scope="col" title="Level">L</th>
+                <th scope="col" class="hide-sm">Class</th>
+                <th scope="col" title="Time to next level">Timer</th>
               </tr>
             </thead>
             <tbody id="tbody"></tbody>

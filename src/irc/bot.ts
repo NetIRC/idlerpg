@@ -5,7 +5,8 @@ import { config, IDLE_RPG_VERSION } from '../config.js';
 import { GameEngine } from '../game/engine.js';
 import { buildNickCandidates } from '../nick-candidates.js';
 import { randomChannelBanter } from '../game/channel-banter.js';
-import { chanReplyPrefix, stripStatusPrefix, styleAmbientBanter, styleChannelLine } from './channel-style.js';
+import { chanReplyPrefix, stripStatusPrefix, styleAmbientBanter, styleChannelLine, ircGreen, ircRed } from './channel-style.js';
+import type { GameAnnouncement } from '../game/engine.js';
 
 /** IRC user list for the game channel (must be present to earn idle time). */
 
@@ -259,26 +260,26 @@ function tryPublicChannelCommand(fromNick: string, text: string): boolean {
     case 'rules':
       bot.say(
         channel,
-        `${replyPfx} Idle to level; talking costs time. PM bot REGISTER/LOGIN. Quests & Lucky Hours fire automatically with enough players.`,
+        `${replyPfx} ${styleChannelLine(
+          `Idle to gain levels; normal channel chat adds to your level timer. !commands do not. PM this bot REGISTER or LOGIN while your nick is in this channel. Quests and lucky hours start when enough players are present.`,
+        )}`,
       );
       return true;
     case 'top':
       bot.say(channel, `${replyPfx} ${engine.topN(3)}`);
       return true;
     case 'ping':
-      bot.say(channel, `${replyPfx} pong — ${IDLE_RPG_VERSION}`);
+      bot.say(channel, `${replyPfx} ${styleChannelLine(`pong — ${IDLE_RPG_VERSION}`)}`);
       return true;
     case 'time': {
       const nameArg = rest.split(/\s+/).filter(Boolean)[0];
       const s = engine.timeLeft(fromNick, nameArg);
-      const line = 'err' in s ? s.err : s.text;
-      bot.say(channel, `${replyPfx} ${line}`);
+      bot.say(channel, `${replyPfx} ${formatEngineUserLine('err' in s ? s.err : s.text, 'err' in s)}`);
       return true;
     }
     case 'whoami': {
       const s = engine.whoami(fromNick);
-      const line = 'err' in s ? s.err : s.text;
-      bot.say(channel, `${replyPfx} ${line}`);
+      bot.say(channel, `${replyPfx} ${formatEngineUserLine('err' in s ? s.err : s.text, 'err' in s)}`);
       return true;
     }
     case 'records':
@@ -293,7 +294,7 @@ function tryPublicChannelCommand(fromNick: string, text: string): boolean {
       return true;
     case 'omen': {
       const o = engine.omenLine(fromNick, namesInChannel, (a, b) => bot.caseCompare(a, b));
-      bot.say(channel, `${replyPfx} ${'err' in o ? o.err : o.text}`);
+      bot.say(channel, `${replyPfx} ${formatOmenChannel(o)}`);
       return true;
     }
     case 'duel': {
@@ -301,27 +302,26 @@ function tryPublicChannelCommand(fromNick: string, text: string): boolean {
       if (!foe) {
         bot.say(
           channel,
-          `${replyPfx} Usage: !duel <irc_nick> — arena duel (both logged in, in channel, within ±11 levels).`,
+          `${replyPfx} Usage: ${ircGreen('!duel')} <irc_nick> — both players must be logged in, present in channel, and within ${ircGreen('±11')} levels.`,
         );
         return true;
       }
       const r = engine.duelLine(fromNick, normNick(foe), namesInChannel);
-      if ('err' in r) bot.say(channel, `${replyPfx} ${r.err}`);
-      else for (const line of r.lines) bot.say(channel, styleChannelLine(line));
+      if ('err' in r) bot.say(channel, `${replyPfx} ${ircRed(r.err)}`);
+      else for (const ann of r.announcements) deliver(ann);
       return true;
     }
     case 'gauntlet': {
       const r = engine.gauntletLine(fromNick, namesInChannel);
-      if ('err' in r) bot.say(channel, `${replyPfx} ${r.err}`);
-      else for (const line of r.lines) bot.say(channel, styleChannelLine(line));
+      if ('err' in r) bot.say(channel, `${replyPfx} ${ircRed(r.err)}`);
+      else for (const ann of r.announcements) deliver(ann);
       return true;
     }
     case 'medals':
     case 'badges': {
       const who = rest.split(/\s+/).filter(Boolean)[0];
       const s = engine.medalsLine(fromNick, who);
-      const line = 'err' in s ? s.err : s.text;
-      bot.say(channel, `${replyPfx} ${line}`);
+      bot.say(channel, `${replyPfx} ${formatEngineUserLine('err' in s ? s.err : s.text, 'err' in s)}`);
       return true;
     }
     case 'quest':
@@ -330,8 +330,7 @@ function tryPublicChannelCommand(fromNick: string, text: string): boolean {
     case 'stats': {
       const nameArg = rest.split(/\s+/).filter(Boolean)[0];
       const s = engine.stats(fromNick, nameArg);
-      const line = 'err' in s ? s.err : s.text;
-      bot.say(channel, `${replyPfx} ${line}`);
+      bot.say(channel, `${replyPfx} ${formatEngineUserLine('err' in s ? s.err : s.text, 'err' in s)}`);
       return true;
     }
     default:
@@ -365,12 +364,13 @@ bot.on('message', (event) => {
 
   if (!allowPmFlood(from)) {
     const wSec = Math.max(1, Math.round(config.pmFloodWindowMs / 1000));
-    bot.notice(from, `Slow down: too many private messages in the last ~${wSec}s. Try again shortly.`);
+    bot.notice(from, ircRed(`Slow down: too many private messages in the last ~${wSec}s. Try again shortly.`));
     return;
   }
 
   const parts = raw.split(/\s+/).filter(Boolean);
-  const cmd = (parts[0] ?? '').toLowerCase();
+  let cmd = (parts[0] ?? '').toLowerCase();
+  cmd = cmd.replace(/^[.\\/]+/, '');
   const rest = parts.slice(1);
 
   const inChan = namesInChannel.has(from);
@@ -387,9 +387,10 @@ bot.on('message', (event) => {
   }
 
   if (cmd === 'admin') {
-    const { notices, announcements } = engine.adminCommand(from, parts, namesInChannel);
-    for (const n of notices) bot.notice(from, n);
+    const { notices, announcements, requestShutdown } = engine.adminCommand(from, parts, namesInChannel);
+    for (const n of notices) bot.notice(from, formatAdminPmNotice(n));
     for (const a of announcements) deliver(a);
+    if (requestShutdown) scheduleIrcShutdown();
     return;
   }
 
@@ -414,7 +415,7 @@ bot.on('message', (event) => {
     const rPass = rest[1]!;
     const pclass = rest.slice(2).join(' ').trim();
     const r = engine.register(from, uh, rName, rPass, pclass, inChan);
-    if (!r.ok) bot.notice(from, r.err);
+    if (!r.ok) bot.notice(from, ircRed(r.err));
     else for (const a of r.announcements) deliver(a);
     return;
   }
@@ -430,14 +431,14 @@ bot.on('message', (event) => {
     }
     const [lName, lPass] = rest;
     const r = engine.login(from, uh, lName!, lPass!, inChan);
-    if (!r.ok) bot.notice(from, r.err);
+    if (!r.ok) bot.notice(from, ircRed(r.err));
     else for (const a of r.announcements) deliver(a);
     return;
   }
 
   if (cmd === 'logout') {
     const r = engine.logout(from);
-    if (!r.ok) bot.notice(from, r.err);
+    if (!r.ok) bot.notice(from, ircRed(r.err));
     else for (const a of r.announcements) deliver(a);
     return;
   }
@@ -445,8 +446,7 @@ bot.on('message', (event) => {
   if (cmd === 'stats') {
     const who = rest[0];
     const s = engine.stats(from, who);
-    if ('err' in s) bot.notice(from, s.err);
-    else bot.notice(from, s.text);
+    bot.notice(from, formatEngineUserLine('err' in s ? s.err : s.text, 'err' in s));
     return;
   }
 
@@ -457,16 +457,14 @@ bot.on('message', (event) => {
 
   if (cmd === 'whoami') {
     const s = engine.whoami(from);
-    if ('err' in s) bot.notice(from, s.err);
-    else bot.notice(from, s.text);
+    bot.notice(from, formatEngineUserLine('err' in s ? s.err : s.text, 'err' in s));
     return;
   }
 
   if (cmd === 'time') {
     const who = rest[0];
     const s = engine.timeLeft(from, who);
-    if ('err' in s) bot.notice(from, s.err);
-    else bot.notice(from, s.text);
+    bot.notice(from, formatEngineUserLine('err' in s ? s.err : s.text, 'err' in s));
     return;
   }
 
@@ -487,45 +485,54 @@ bot.on('message', (event) => {
 
   if (cmd === 'omen') {
     if (!inChan) {
-      bot.notice(from, 'OMEN only works while your nick is in the game channel.');
+      bot.notice(
+        from,
+        ircRed(`OMEN requires your nick in ${channel}. Join the game channel, stay visible, then try again.`),
+      );
       return;
     }
     const o = engine.omenLine(from, namesInChannel, (a, b) => bot.caseCompare(a, b));
-    bot.notice(from, 'err' in o ? o.err : o.text);
+    bot.notice(from, formatOmenChannel(o));
     return;
   }
 
   if (cmd === 'duel') {
     if (!inChan) {
-      bot.notice(from, 'DUEL only works while your nick is in the game channel.');
+      bot.notice(
+        from,
+        ircRed(`DUEL requires your nick in ${channel}. Join the game channel, stay visible, then try again.`),
+      );
       return;
     }
     const foe = rest[0];
     if (!foe) {
-      bot.notice(from, 'Usage: DUEL <irc_nick> — same as !duel in channel.');
+      bot.notice(from, 'Usage: DUEL <irc_nick> — same rules as !duel in channel (logged in, present, ±11 levels).');
       return;
     }
     const r = engine.duelLine(from, normNick(foe), namesInChannel);
-    if ('err' in r) bot.notice(from, r.err);
-    else for (const line of r.lines) bot.notice(from, line);
+    if ('err' in r) bot.notice(from, ircRed(r.err));
+    else for (const ann of r.announcements) deliver({ ...ann, target: 'notice', nick: from });
     return;
   }
 
   if (cmd === 'gauntlet') {
     if (!inChan) {
-      bot.notice(from, 'GAUNTLET only works while your nick is in the game channel.');
+      bot.notice(
+        from,
+        ircRed(`GAUNTLET requires your nick in ${channel}. Join the game channel, stay visible, then try again.`),
+      );
       return;
     }
     const r = engine.gauntletLine(from, namesInChannel);
-    if ('err' in r) bot.notice(from, r.err);
-    else for (const line of r.lines) bot.notice(from, line);
+    if ('err' in r) bot.notice(from, ircRed(r.err));
+    else for (const ann of r.announcements) deliver({ ...ann, target: 'notice', nick: from });
     return;
   }
 
   if (cmd === 'medals' || cmd === 'badges') {
     const who = rest[0];
     const s = engine.medalsLine(from, who);
-    bot.notice(from, 'err' in s ? s.err : s.text);
+    bot.notice(from, formatEngineUserLine('err' in s ? s.err : s.text, 'err' in s));
     return;
   }
 
@@ -534,14 +541,90 @@ bot.on('message', (event) => {
     return;
   }
 
-  bot.notice(from, 'Unknown command. Type HELP or CMDS.');
+  bot.notice(from, ircRed('Unknown command. PM HELP or CMDS for the command list.'));
 });
 
-function deliver(a: { target: 'chan' | 'notice'; nick?: string; text: string }) {
+function formatAnnouncement(a: GameAnnouncement): string {
+  if (a.preStyled) return a.text;
+  if (a.tone === 'gain') return ircGreen(a.text);
+  if (a.tone === 'loss') return ircRed(a.text);
+  return styleChannelLine(a.text);
+}
+
+function formatOmenChannel(
+  o: { err: string } | { text: string; tone?: 'gain' | 'loss' | 'neutral' },
+): string {
+  if ('err' in o) return ircRed(o.err);
+  if (o.tone === 'gain') return ircGreen(o.text);
+  if (o.tone === 'loss') return ircRed(o.text);
+  return styleChannelLine(o.text);
+}
+
+/** User-facing engine copy: errors in red; normal replies get channel line styling (PM or #channel). */
+function formatEngineUserLine(text: string, isErr: boolean): string {
+  return isErr ? ircRed(text) : styleChannelLine(text);
+}
+
+/** PM replies for ADMIN: errors in red, clear successes in green, help text plain. */
+function formatAdminPmNotice(text: string): string {
+  if (
+    text.startsWith('Admin: access denied') ||
+    text.startsWith('Unknown ADMIN') ||
+    text.startsWith('Usage:') ||
+    text.startsWith('Password exceeds') ||
+    text.startsWith('Character not found.') ||
+    text.startsWith('Character not online.') ||
+    text.startsWith('Not enough players') ||
+    text.startsWith('Quests disabled') ||
+    text.startsWith('A quest is already')
+  ) {
+    return ircRed(text);
+  }
+  if (
+    text.startsWith('Deleted "') ||
+    text.startsWith('Password reset for ') ||
+    text.startsWith('Session closed for ') ||
+    text === 'Quest started in channel.' ||
+    text === 'Lucky hour announced in channel.' ||
+    text === 'Message sent to channel.'
+  ) {
+    return ircGreen(text);
+  }
+  return text;
+}
+
+/** After ADMIN SHUTDOWN: one line in channel, QUIT, clear heartbeat, exit Node (restart via host / systemd / scripts). */
+function scheduleIrcShutdown(): void {
+  const quitReason = 'IdleRPG admin shutdown';
+  try {
+    if (bot.connected) {
+      bot.say(
+        channel,
+        '⌛ IdleRPG is going offline (admin shutdown). Level timers pause until the bot is running again.',
+      );
+    }
+  } catch {
+    /* ignore */
+  }
+  engine.clearBotHeartbeat();
+  setTimeout(() => {
+    try {
+      if (bot.connected) {
+        const safe = quitReason.replace(/\r\n/g, ' ').replace(/\n/g, ' ').slice(0, 120);
+        bot.raw(`QUIT :${safe}`);
+      }
+    } catch {
+      /* ignore */
+    }
+    setTimeout(() => process.exit(0), 1500);
+  }, 600);
+}
+
+function deliver(a: GameAnnouncement) {
   if (a.target === 'chan') {
-    bot.say(channel, styleChannelLine(a.text));
+    bot.say(channel, formatAnnouncement(a));
   } else if (a.nick) {
-    bot.notice(a.nick, a.text);
+    bot.notice(a.nick, formatAnnouncement(a));
   }
 }
 

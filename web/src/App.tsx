@@ -165,11 +165,17 @@ export default function App() {
             <table className="w-full text-left text-sm">
               <thead className="font-mono text-xs uppercase tracking-wider text-dust/50">
                 <tr className="border-b border-white/5">
-                  <th className="px-4 py-3">#</th>
+                  <th className="px-4 py-3" title="Rank">
+                    #
+                  </th>
                   <th className="px-4 py-3">Player</th>
-                  <th className="px-4 py-3">Lv</th>
+                  <th className="px-4 py-3" title="Level">
+                    L
+                  </th>
                   <th className="px-4 py-3 hidden sm:table-cell">Class</th>
-                  <th className="px-4 py-3">Timer</th>
+                  <th className="px-4 py-3" title="Time to next level">
+                    Timer
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -217,12 +223,12 @@ export default function App() {
                 <div>
                   <div className="font-display text-2xl font-bold text-white">{sel.name}</div>
                   <div className="mt-1 text-sm text-dust/80">
-                    Level <span className="font-mono text-arc">{sel.level}</span> · {sel.class}
+                    L<span className="font-mono text-arc">{sel.level}</span> · {sel.class}
                   </div>
                 </div>
                 <dl className="grid grid-cols-2 gap-3 font-mono text-xs">
                   <div className="rounded-lg bg-black/30 p-3">
-                    <dt className="text-dust/50">Next level</dt>
+                    <dt className="text-dust/50">Level timer</dt>
                     <dd className="mt-1 text-arc">{sel.nextHuman}</dd>
                   </div>
                   <div className="rounded-lg bg-black/30 p-3">

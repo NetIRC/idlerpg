@@ -25,7 +25,7 @@
   - [Game rules](#game-rules)
   - [Channel commands](#channel-commands-)
   - [Private messages (PM)](#private-messages-to-the-bot)
-  - [Staff (ADMIN)](#staff-after-login)
+  - [Staff (ADMIN)](#staff-admin-over-pm)
 - [Optional components](#optional-components)
 - [License](#license)
 
@@ -37,7 +37,7 @@
 |--------|----------------|
 | **IRC bot** (`src/`) | Normal client connection (not server / P10). Registration, login, idle ticks, channel penalties, optional quests, lucky hour, Hand of God, alignment, charms. |
 | **Web UI** (`public/`) | `index.php` leaderboard, detail pane, rules, bot online/offline banner. [`public/.htaccess`](public/.htaccess): HTTPS (non-local), security headers. |
-| **HTTP API** | Read-only JSON: `/api/health.php`, `/api/leaderboard.php`, `/api/player.php?name=…`. |
+| **HTTP API** | Read-only JSON: [`/api/health.php`](public/api/health.php), [`/api/leaderboard.php`](public/api/leaderboard.php), [`/api/player.php`](public/api/player.php) (`?name=…`), [`/api/chronicle.php`](public/api/chronicle.php) (optional `limit`). |
 | **Data** | Single SQLite file (e.g. `data/idlerpg.db`). The bot and `site.config.php` must use the **same** path. |
 
 ---
@@ -104,6 +104,7 @@ Point the virtual host **document root** at **`public/`**. Enable **mod_rewrite*
 |--------|-----------------|
 | `GET /api/health.php` | JSON with `"ok": true` |
 | `GET /api/leaderboard.php` | JSON including a `players` array |
+| `GET /api/chronicle.php` | JSON with an `events` array (realm log; default limit matches IRC `!chronicle`) |
 
 ---
 
@@ -125,6 +126,8 @@ For production, set **`debug` ⇒ false** in `site.config.php`. Do not place the
 **Game channel** is `IRPG_IRC_CHANNEL` (default `#IdleRPG`). For **REGISTER** and **LOGIN**, your IRC nick must be **in that channel** while you message the bot.
 
 Private commands are rate-limited per nick via `IRPG_PM_FLOOD_MAX` and `IRPG_PM_FLOOD_WINDOW_MS` (see `.env.example`; set max to `0` to disable). **CTCP VERSION** does not count toward that limit.
+
+**Durations (timers, lucky hour, penalties):** the bot and PHP API use the same human-readable rules: under **1 minute** as `45s`; under **1 hour** as `13m 5s` or `10m` (minutes, not clock digits); under **1 day** as `H:MM:SS`; **1+ days** as `N day(s), H:MM:SS`. Chronicle / site “time ago” uses compact `s` / `m` / `h` / `d`.
 
 If **`IRPG_IRC_CHAN_BANTER_MS`** is set **`> 0`**, the bot also posts occasional ambient lines and **contextual tips** (REGISTER / LOGIN / `!` commands you can actually use right then). Set to **`0`** to disable.
 
@@ -150,7 +153,7 @@ If **`IRPG_IRC_CHAN_BANTER_MS`** is set **`> 0`**, the bot also posts occasional
 | **NICK change** while logged in | Penalty + DB `irc_nick` updated to the new nick. |
 | **Not in channel** | If you are logged in but your nick is not in the game channel, **idle time does not advance** for that character. |
 | **Bot offline** | Timers do not advance while the bot is disconnected. |
-| **Password recovery** | No self-service reset: ask a **game admin** (see [Staff](#staff-after-login)). |
+| **Password recovery** | No self-service reset: ask a **game admin** (see [Staff](#staff-admin-over-pm)). |
 | **Privacy** | Do not paste passwords in the channel; use **PM** only. |
 
 The site sidebar **Rules** panel is a short summary; this section matches the bot behaviour in code.
@@ -206,27 +209,35 @@ Send as **PM** (private message) to the bot nick. For **REGISTER**, **LOGIN**, a
 | **DUEL** | `irc_nick` | Same rules as **!duel** (must be in game channel). |
 | **GAUNTLET** | — | Same as **!gauntlet** (must be in game channel). |
 | **MEDALS** / **BADGES** | `[name]` | Same as **!medals**. |
-| **ADMIN** | `subcommand …` | [Staff](#staff-after-login) only. Try **`ADMIN HELP`**. |
+| **ADMIN** | `subcommand …` | [Staff](#staff-admin-over-pm) only. Try **`ADMIN HELP`**. |
 
 When you **join the game channel** logged out but your IRC nick is still tied to a hero on file, the bot may send a **NOTICE** reminding you to **LOGIN** (throttled).
 
 ---
 
-### Staff (after login)
+### Staff (ADMIN over PM)
 
-Eligible if the character is **`is_admin`** in the database **or** matches **`IRPG_OWNER_ACCOUNT`** in `.env` (character name, same case rules as config).
+Who may use **`ADMIN`**:
 
-Message the bot: **`ADMIN HELP`**
+| Eligibility | Detail |
+|-------------|--------|
+| **`IRPG_ADMIN_IRC_NICKS`** | Comma-separated **IRC nicks** in `.env` (see [`.env.example`](.env.example)): can **`ADMIN`** by PM **without** a logged-in game character. Status prefixes (`~&@%+`) are ignored when matching. |
+| **Logged-out / online** | A player row whose **`irc_nick`** matches yours may **`ADMIN`** if **`is_admin`** is set **or** the character name matches **`IRPG_OWNER_ACCOUNT`** — **even when `online = 0`** (e.g. after **LOGOUT**), as long as the nick is still stored on that row. |
+| **In channel** | Not required for **`ADMIN`** itself (PM only). Subcommands that need channel state (**STARTQUEST**, etc.) still use the bot’s live presence list. |
+
+Message the bot in **PM**: **`ADMIN HELP`**
 
 | ADMIN subcommand | Syntax | Effect |
 |------------------|--------|--------|
-| **FORCELOGOUT** | `ADMIN FORCELOGOUT CharacterName` | Clears online session for that character. |
-| **RESETPASS** | `ADMIN RESETPASS CharacterName newpassword` | Sets new password (max 128 chars), clears session; player must **LOGIN** again. Alias: **SETPASS**. |
-| **STARTQUEST** | `ADMIN STARTQUEST` | Force-start a quest (if configuration allows). |
-| **LUCKY** | `ADMIN LUCKY` | Starts staff **lucky hour** broadcast window. |
-| **SAY** | `ADMIN SAY …text…` | Bot says the text in the game channel. |
+| **FORCELOGOUT** | `ADMIN FORCELOGOUT CharacterName` | Clears **online** session for that character. |
+| **DELETEUSER** | `ADMIN DELETEUSER CharacterName` | **Permanently deletes** the character from **`players`**, their **`player_medals`**, and clears **realm peak** metadata if it was theirs. **Irreversible.** Alias: **`ADMIN DELETE`** (same arguments). |
+| **RESETPASS** | `ADMIN RESETPASS CharacterName newpassword` | Sets a new password (max 128 chars), clears session; player must **LOGIN** again. Alias: **SETPASS**. |
+| **STARTQUEST** | `ADMIN STARTQUEST` | Force-start a quest (if configuration allows and enough players are in channel). |
+| **LUCKY** | `ADMIN LUCKY` | Broadcast staff **lucky hour** window. |
+| **SAY** | `ADMIN SAY …text…` | Bot sends the text as a normal message in the **game channel**. |
+| **SHUTDOWN** | `ADMIN SHUTDOWN` optional note | Writes **`admin_shutdown`** to the realm chronicle, posts a short line in channel, sends **QUIT**, clears bot heartbeat, then **exits the Node process** (`process.exit(0)`). **Restart** the bot on the host (e.g. `./scripts/idlerpg.sh start`, **systemd**, or your supervisor). Optional words after **`SHUTDOWN`** are stored in the chronicle detail for logging. **Does not stop PHP** or your web server — only the bot process. |
 
-Do **not** publish admin syntax to players for password resets; players should ask staff in channel.
+**Security:** treat **`IRPG_ADMIN_IRC_NICKS`** and owner account like root access. Do **not** publish full admin syntax publicly for password resets; players should ask staff in channel.
 
 ### Development
 

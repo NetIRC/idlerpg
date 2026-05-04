@@ -5,12 +5,14 @@ import {
   findByCharacter,
   findLoggedOutByIrcNickCi,
   findOnlineByNickCi,
+  findPlayerByIrcNickCi,
   getDb,
   insertRealmEvent,
   touchBotHeartbeat as dbTouchBotHeartbeat,
   type PlayerRow,
 } from '../db/index.js';
 import type { AppConfig } from '../config.js';
+import { stripStatusPrefix } from '../irc/channel-style.js';
 import { reservedBotNicksLower } from '../nick-candidates.js';
 import { alignmentIdleHint, alignmentIdleRate, alignmentLabel } from './alignment.js';
 import { durationIt } from './duration.js';
@@ -22,6 +24,7 @@ import { runDuel } from './duel.js';
 import { runGauntlet } from './gauntlet.js';
 import { medalsDisplayLine, medalsForLevel } from './medals.js';
 import {
+  adminDeleteCharacter,
   adminForceLogout,
   adminForceLucky,
   adminForceStartQuest,
@@ -37,7 +40,8 @@ import {
 
 /** Game logic: timers, penalties, and tick aligned with classic IdleRPG / bot.pl. */
 
-export type GameAnnouncement = { target: 'chan' | 'notice'; nick?: string; text: string };
+import type { GameAnnouncement } from './announce.js';
+export type { GameAnnouncement } from './announce.js';
 
 export class GameEngine {
   private lastTick = 0;
@@ -90,23 +94,23 @@ export class GameEngine {
     if (!inChannel)
       return {
         ok: false,
-        err: `REGISTER only works while your nick is in ${this.cfg.ircChannel}. Join that channel, then send REGISTER again here (private message to this bot).`,
+        err: `REGISTER requires your nick in ${this.cfg.ircChannel}. Join, stay visible, then send REGISTER again by PM to this bot.`,
       };
     if (findOnlineByNickCi(this.db, ircNick))
       return {
         ok: false,
-        err: 'This IRC nick already has a character logged in. Send LOGOUT first, then REGISTER a different account or use another nick.',
+        err: 'This IRC nick already has an active session. Send LOGOUT first, or use another nick, before REGISTER.',
       };
     const name = this.resolveNameLookup(charName.trim());
     const pass = password.trim();
     const cls = pclass.trim();
-    if (name.length < 1 || name.length > 16) return { ok: false, err: 'Character name must be 1–16 characters.' };
-    if (name.startsWith('#')) return { ok: false, err: 'Name cannot start with #.' };
-    if (this.reservedBotNicks.has(name.toLowerCase())) return { ok: false, err: 'Invalid name.' };
-    if (cls.length < 1 || cls.length > 30) return { ok: false, err: 'Class must be 1–30 characters.' };
-    if (pass.length < 1) return { ok: false, err: 'Password is required.' };
+    if (name.length < 1 || name.length > 16) return { ok: false, err: 'Character name: use 1–16 characters.' };
+    if (name.startsWith('#')) return { ok: false, err: 'Character name cannot start with #.' };
+    if (this.reservedBotNicks.has(name.toLowerCase())) return { ok: false, err: 'That character name is not allowed.' };
+    if (cls.length < 1 || cls.length > 30) return { ok: false, err: 'Class: use 1–30 characters.' };
+    if (pass.length < 1) return { ok: false, err: 'Password is required (single word, no spaces).' };
 
-    if (findByCharacter(this.db, name, this.cfg.caseSensitiveNames)) return { ok: false, err: 'That name is already taken.' };
+    if (findByCharacter(this.db, name, this.cfg.caseSensitiveNames)) return { ok: false, err: 'That character name is already registered.' };
 
     const hash = bcrypt.hashSync(pass, 10);
     const now = Math.floor(Date.now() / 1000);
@@ -124,15 +128,16 @@ export class GameEngine {
       {
         target: 'chan',
         text: pickRegisterWelcome(ircNick, name, cls, this.cfg.rpbase),
+        tone: 'gain',
       },
       {
         target: 'notice',
         nick: ircNick,
         text: [
-          `OK — character "${name}" is created and you are logged in as your IRC nick (${ircNick}).`,
-          `Stay in ${this.cfg.ircChannel} (visible in the user list) or the idle timer will not run.`,
-          `Silence in channel counts toward levels. Lines starting with ! are free; other chat adds penalty time.`,
-          `First goal: ${durationIt(this.cfg.rpbase)} idling (level 0→1). PM HELP for commands. LOGOUT when you are done.`,
+          `Session opened: character "${name}" is linked to ${ircNick}.`,
+          `Remain in ${this.cfg.ircChannel} (visible in /names) or your level timer will not advance.`,
+          `Idling in channel counts toward the next level. Lines starting with ! are free; normal chat adds time to your level timer.`,
+          `First milestone: ~${durationIt(this.cfg.rpbase)} to level 1. PM HELP for commands. LOGOUT applies a small timer cost.`,
         ].join(' '),
       },
     ];
@@ -149,19 +154,19 @@ export class GameEngine {
     if (!inChannel)
       return {
         ok: false,
-        err: `LOGIN only works while your nick is in ${this.cfg.ircChannel}. Join the channel, then send LOGIN again (private message to this bot).`,
+        err: `LOGIN requires your nick in ${this.cfg.ircChannel}. Join, stay visible, then send LOGIN again by PM.`,
       };
     if (findOnlineByNickCi(this.db, ircNick))
       return {
         ok: false,
-        err: 'Already logged in on this IRC nick. Send LOGOUT first if you want to switch character.',
+        err: 'This nick already has an open session. Send LOGOUT first to switch character.',
       };
     const p = findByCharacter(this.db, this.resolveNameLookup(charName.trim()), this.cfg.caseSensitiveNames);
     if (!p || !bcrypt.compareSync(password.trim(), p.password_hash)) {
       const hint = this.cfg.caseSensitiveNames ? ' Character names are case-sensitive.' : '';
       return {
         ok: false,
-        err: `LOGIN failed: check character name and password.${hint} New player? REGISTER first. Forgot password? Ask a game admin in the channel — they can reset it for you.`,
+        err: `LOGIN failed: verify character name and password.${hint} New player: REGISTER by PM. Lost password: ask a channel admin for a reset.`,
       };
     }
 
@@ -177,6 +182,7 @@ export class GameEngine {
       {
         target: 'chan',
         text: pickLoginWelcome(ircNick, row.character_name, row.level, row.class, row.next_seconds),
+        tone: 'gain',
       },
       { target: 'notice', nick: ircNick, text: loginSuccessNotice(this.cfg.ircChannel, row) },
     ];
@@ -185,7 +191,7 @@ export class GameEngine {
 
   logout(ircNick: string): { ok: true; announcements: GameAnnouncement[] } | { ok: false; err: string } {
     const p = findOnlineByNickCi(this.db, ircNick);
-    if (!p) return { ok: false, err: 'Not logged in — send LOGIN CharacterName Password first.' };
+    if (!p) return { ok: false, err: 'No active session. PM LOGIN <CharacterName> <Password> while in the game channel.' };
     insertRealmEvent(this.db, 'logout', p.character_name);
     const pen = this.applyPenaltyAmount(p, 20);
     this.db
@@ -199,7 +205,8 @@ export class GameEngine {
         {
           target: 'notice',
           nick: ircNick,
-          text: `Logged out from "${p.character_name}". Logout penalty: +${durationIt(pen)} on your timer. LOGIN again next time.`,
+          text: `Logged out from "${p.character_name}". Logout cost: +${durationIt(pen)} on your level timer. Use LOGIN when you return.`,
+          tone: 'loss',
         },
       ],
     };
@@ -217,8 +224,8 @@ export class GameEngine {
     const ch = this.cfg.ircChannel;
     const caseHint = this.cfg.caseSensitiveNames ? ' Character name must match exactly (case-sensitive).' : '';
     return (
-      `IdleRPG — "${name}" is not logged in.${caseHint} Stay in ${ch}, then PM me: LOGIN ${name} YourPassword (one word, no spaces). ` +
-      `Forgot password? Ask a game admin in ${ch} — they will help you recover your account. PM HELP for other commands.`
+      `IdleRPG — character "${name}" is not logged in.${caseHint} Stay in ${ch}, then PM this bot: LOGIN ${name} <password> (password = one word). ` +
+      `Password recovery: contact a channel admin. PM HELP for the full command list.`
     );
   }
 
@@ -266,23 +273,23 @@ export class GameEngine {
     let p: PlayerRow | undefined;
     if (who) {
       p = findByCharacter(this.db, this.resolveNameLookup(who), this.cfg.caseSensitiveNames);
-      if (!p) return { err: 'Player not found.' };
+      if (!p) return { err: 'No character matches that name.' };
     } else {
       p = findOnlineByNickCi(this.db, ircNick);
-      if (!p) return { err: 'Not logged in; use STATS <name>.' };
+      if (!p) return { err: 'Not logged in. Use: !stats <character_name> to look up another player.' };
     }
     const idleH = (p.idled / 3600).toFixed(1);
     const charm = (p.trinket ?? '').trim();
-    const charmS = charm ? ` · charm ${charm} (~0.3% faster idle)` : '';
-    const text = `${p.character_name} · lv.${p.level} ${p.class} · next level in ${durationIt(p.next_seconds)} · total idle ~${idleH}h · ${alignmentIdleHint(p.alignment)}${charmS}`;
+    const charmS = charm ? ` · charm: ${charm} (~0.3% faster idle rate)` : '';
+    const text = `${p.character_name} · L${p.level} ${p.class} · next level in ${durationIt(p.next_seconds)} · idle logged ~${idleH}h · ${alignmentIdleHint(p.alignment)}${charmS}`;
     return { text };
   }
 
   whoami(ircNick: string): { text: string } | { err: string } {
     const p = findOnlineByNickCi(this.db, ircNick);
-    if (!p) return { err: 'Not logged in.' };
+    if (!p) return { err: 'No session on this nick. PM LOGIN while in the game channel, or use REGISTER to create a character.' };
     return {
-      text: `You are ${p.character_name}, level ${p.level} ${p.class} (${alignmentLabel(p.alignment)}). Next level in ${durationIt(p.next_seconds)}.`,
+      text: `Session: ${p.character_name} · L${p.level} ${p.class} · alignment: ${alignmentLabel(p.alignment)} · next level in ${durationIt(p.next_seconds)}.`,
     };
   }
 
@@ -290,47 +297,59 @@ export class GameEngine {
     let p: PlayerRow | undefined;
     if (who) {
       p = findByCharacter(this.db, this.resolveNameLookup(who), this.cfg.caseSensitiveNames);
-      if (!p) return { err: 'Player not found.' };
+      if (!p) return { err: 'No character matches that name.' };
     } else {
       p = findOnlineByNickCi(this.db, ircNick);
-      if (!p) return { err: 'Not logged in; use STATS <name>.' };
+      if (!p) return { err: 'Not logged in. Use: !time <character_name> to query another player.' };
     }
     return {
-      text: `${p.character_name}: next level in ${durationIt(p.next_seconds)} (lv.${p.level} ${p.class}).`,
+      text: `${p.character_name}: next level in ${durationIt(p.next_seconds)} · L${p.level} ${p.class}.`,
     };
   }
 
   helpPm(page: number): string {
     if (page >= 2) {
-      return 'More: STATS [name] TOP PING. Channel: !time !whoami !records !quest !realm !chronicle !omen !duel !gauntlet !medals (no penalty). !realm = live realm pulse. ADMIN: FORCELOGOUT | RESETPASS char newpass | STARTQUEST | LUCKY | SAY';
+      return (
+        'PM: STATS [name], TOP, PING, REALM, CHRONICLE, QUEST, LOGOUT. ' +
+        'Channel (no timer cost): !time !whoami !stats !records !quest !realm !chronicle !omen !duel !gauntlet !medals !top. ' +
+        'Admin (if authorized): ADMIN HELP — FORCELOGOUT, DELETEUSER, RESETPASS, STARTQUEST, LUCKY, SAY, SHUTDOWN.'
+      );
     }
-    return 'REGISTER <name> <password> <class…> — PM this bot only; password = one word (no spaces); class can be several words. LOGIN <name> <password> — same. You must be in the game channel. Forgot password? Ask a game admin in the channel. Then: LOGOUT STATS TOP HELP CMDS REALM CHRONICLE OMEN DUEL …';
+    return (
+      'PM only, from your nick in the game channel. REGISTER <CharacterName> <password> <class…> — password = one word; class may be multiple words. ' +
+      'LOGIN <CharacterName> <password>. LOGOUT ends session (small level-timer cost). Forgot password: ask a channel admin. CMDS for page 2.'
+    );
   }
 
   helpChannel(page: number, viewerIrcNick?: string): string {
     if (page >= 2) {
-      return 'Also: !time !whoami !records !quest !realm !chronicle !omen !duel !gauntlet !medals (no penalty). !realm = heartbeat of the shard (online, quest, lucky, peak).';
+      return (
+        'Commands here do not add level-timer penalty: !time !whoami !stats !records !quest !realm !chronicle !omen !duel !gauntlet !medals !top. ' +
+        '!realm — snapshot: online count, quest, lucky hour, realm peak level.'
+      );
     }
     const viewer = viewerIrcNick?.trim();
     if (viewer) {
       const p = findOnlineByNickCi(this.db, viewer);
       if (p) {
         return (
-          `You are logged in as ${p.character_name} (lv.${p.level} ${p.class}). ` +
-          `Channel (no idle penalty): !time !whoami !stats !records !quest !realm !chronicle !omen !duel !gauntlet !medals !top — ` +
-          `!help 2 for the full line. PM HELP for LOGOUT, TOP, account help. To onboard someone else: PM this bot REGISTER or LOGIN.`
+          `Logged in as ${p.character_name} (L${p.level} ${p.class}). ` +
+          `Try !time, !stats, !realm, !top — !help 2 lists all public commands. Account changes: PM this bot (HELP).`
         );
       }
       const loggedOut = findLoggedOutByIrcNickCi(this.db, viewer);
       if (loggedOut) {
         const ch = this.cfg.ircChannel;
         return (
-          `You are not logged in. This nick matches "${loggedOut.character_name}" — PM me LOGIN ${loggedOut.character_name} <password> while you stay in ${ch}. ` +
-          `New player instead? PM REGISTER <name> <password> <class> (password = one word). Then !help.`
+          `Not logged in. This nick is tied to "${loggedOut.character_name}" — PM this bot LOGIN ${loggedOut.character_name} <password> while in ${ch}. ` +
+          'New player: PM REGISTER <name> <password> <class>.'
         );
       }
     }
-    return 'New here? PM this bot: REGISTER YourName yourpassword Your Class — you must be in the game channel; password = one word. Back again? LOGIN YourName password. Then !help in channel.';
+    return (
+      'Welcome: create a character by PM — REGISTER <name> <password> <class> — while your nick is in this channel (password = one word). ' +
+      'Returning: LOGIN <name> <password>. Then use !help 2 for commands.'
+    );
   }
 
   questLine(): string {
@@ -355,20 +374,17 @@ export class GameEngine {
     ircNick: string,
     channelNicks: Set<string>,
     nickEquals: (a: string, b: string) => boolean,
-  ): { err: string } | { text: string } {
+  ): { err: string } | { text: string; tone?: 'gain' | 'loss' | 'neutral' } {
     return consultOmen(this.db, ircNick, channelNicks, nickEquals);
   }
 
   /** In-channel duel vs another IRC nick (both logged in, present, level gap limited). */
-  duelLine(ircNick: string, targetIrcNick: string, channelNicks: Set<string>): { err: string } | { lines: string[] } {
+  duelLine(ircNick: string, targetIrcNick: string, channelNicks: Set<string>) {
     return runDuel(this.db, ircNick, targetIrcNick, channelNicks);
   }
 
   /** Shadow gauntlet (PvE); long cooldown; must be in channel. */
-  gauntletLine(
-    ircNick: string,
-    channelNicks: Set<string>,
-  ): { err: string } | { lines: string[] } {
+  gauntletLine(ircNick: string, channelNicks: Set<string>) {
     return runGauntlet(this.db, ircNick, channelNicks);
   }
 
@@ -377,10 +393,10 @@ export class GameEngine {
     let p: PlayerRow | undefined;
     if (who) {
       p = findByCharacter(this.db, this.resolveNameLookup(who), this.cfg.caseSensitiveNames);
-      if (!p) return { err: 'Player not found.' };
+      if (!p) return { err: 'No character matches that name.' };
     } else {
       p = findOnlineByNickCi(this.db, ircNick);
-      if (!p) return { err: 'Not logged in; use MEDALS <name>.' };
+      if (!p) return { err: 'Not logged in. Use: !medals <character_name> to view another player.' };
     }
     return { text: medalsDisplayLine(this.db, p) };
   }
@@ -395,7 +411,14 @@ export class GameEngine {
   }
 
   canAdmin(ircNick: string): boolean {
-    const p = findOnlineByNickCi(this.db, ircNick);
+    const nick = stripStatusPrefix(ircNick);
+    if (this.cfg.adminIrcNicks.length > 0) {
+      const needle = nick.toLowerCase();
+      for (const a of this.cfg.adminIrcNicks) {
+        if (a.toLowerCase() === needle) return true;
+      }
+    }
+    const p = findPlayerByIrcNickCi(this.db, nick);
     if (!p) return false;
     if (p.is_admin) return true;
     if (this.cfg.ownerAccount && this.caseName(p.character_name) === this.caseName(this.cfg.ownerAccount)) {
@@ -408,42 +431,58 @@ export class GameEngine {
     ircNick: string,
     parts: string[],
     channelNicks: Set<string>,
-  ): { notices: string[]; announcements: GameAnnouncement[] } {
+  ): { notices: string[]; announcements: GameAnnouncement[]; requestShutdown?: boolean } {
     const notices: string[] = [];
     const announcements: GameAnnouncement[] = [];
     if (!this.canAdmin(ircNick)) {
-      return { notices: ['Denied.'], announcements: [] };
+      return { notices: ['Admin: access denied for this nick.'], announcements: [] };
     }
     const sub = (parts[1] ?? '').toLowerCase();
     if (!sub || sub === 'help') {
-      notices.push('ADMIN: FORCELOGOUT char | RESETPASS char newpassword | STARTQUEST | LUCKY | SAY …');
+      notices.push(
+        'ADMIN: FORCELOGOUT ⟨name⟩ | DELETEUSER ⟨name⟩ | RESETPASS ⟨name⟩ ⟨pass⟩ | STARTQUEST | LUCKY | SAY ⟨text⟩ | SHUTDOWN [note]',
+      );
+      return { notices, announcements };
+    }
+    if (sub === 'deleteuser' || sub === 'delete') {
+      const name = parts.slice(2).join(' ').trim();
+      if (!name) {
+        notices.push('Usage: ADMIN DELETEUSER <CharacterName> — permanently removes the character from the database.');
+        return { notices, announcements };
+      }
+      const r = adminDeleteCharacter(this.db, name, this.cfg.caseSensitiveNames);
+      notices.push(
+        'err' in r
+          ? r.err
+          : `Deleted "${r.name}" from the database (medals removed). Realm peak cleared if it belonged to them.`,
+      );
       return { notices, announcements };
     }
     if (sub === 'forcelogout') {
       const name = parts.slice(2).join(' ').trim();
       if (!name) {
-        notices.push('Usage: ADMIN FORCELOGOUT CharacterName');
+        notices.push('Usage: ADMIN FORCELOGOUT <CharacterName>');
         return { notices, announcements };
       }
       const r = adminForceLogout(this.db, name, this.cfg.caseSensitiveNames);
-      notices.push('err' in r ? r.err : `Forced logout: ${name}.`);
+      notices.push('err' in r ? r.err : `Session closed for ${name}.`);
       return { notices, announcements };
     }
     if (sub === 'resetpass' || sub === 'setpass') {
       const charName = parts[2]?.trim();
       const newPass = parts.slice(3).join(' ');
       if (!charName || !newPass.trim()) {
-        notices.push('Usage: ADMIN RESETPASS CharacterName newpassword');
+        notices.push('Usage: ADMIN RESETPASS <CharacterName> <newpassword>');
         return { notices, announcements };
       }
       const pass = newPass.trim();
       if (pass.length > 128) {
-        notices.push('Password too long (max 128).');
+        notices.push('Password exceeds maximum length (128 characters).');
         return { notices, announcements };
       }
       const p = findByCharacter(this.db, this.resolveNameLookup(charName), this.cfg.caseSensitiveNames);
       if (!p) {
-        notices.push('No such character.');
+        notices.push('Character not found.');
         return { notices, announcements };
       }
       const hash = bcrypt.hashSync(pass, 10);
@@ -458,25 +497,34 @@ export class GameEngine {
     }
     if (sub === 'startquest') {
       const r = adminForceStartQuest(this.db, this.cfg, channelNicks, announcements);
-      notices.push('err' in r ? r.err : 'Quest pushed to channel.');
+      notices.push('err' in r ? r.err : 'Quest started in channel.');
       return { notices, announcements };
     }
     if (sub === 'lucky') {
       adminForceLucky(this.db, this.cfg, announcements);
-      notices.push('Lucky hour broadcast.');
+      notices.push('Lucky hour announced in channel.');
       return { notices, announcements };
     }
     if (sub === 'say') {
       const msg = parts.slice(2).join(' ').trim();
       if (!msg) {
-        notices.push('Usage: ADMIN SAY …');
+        notices.push('Usage: ADMIN SAY <channel message>');
         return { notices, announcements };
       }
       announcements.push({ target: 'chan', text: msg });
-      notices.push('Sent.');
+      notices.push('Message sent to channel.');
       return { notices, announcements };
     }
-    notices.push('Unknown ADMIN. Try ADMIN HELP.');
+    if (sub === 'shutdown') {
+      const note = parts.slice(2).join(' ').trim();
+      const summary = note ? `${stripStatusPrefix(ircNick)}: ${note}` : `${stripStatusPrefix(ircNick)}: shutdown`;
+      insertRealmEvent(this.db, 'admin_shutdown', summary.slice(0, 500));
+      notices.push(
+        'Shutting down: the bot will QUIT IRC and exit this process. Start it again on the host (or use your process manager).',
+      );
+      return { notices, announcements, requestShutdown: true };
+    }
+    notices.push('Unknown ADMIN subcommand. Send: ADMIN HELP');
     return { notices, announcements };
   }
 
@@ -492,11 +540,11 @@ export class GameEngine {
         `SELECT character_name, level, class, next_seconds FROM players ORDER BY level DESC, next_seconds ASC LIMIT ?`,
       )
       .all(n) as { character_name: string; level: number; class: string; next_seconds: number }[];
-    if (!rows.length) return 'No players yet.';
+    if (!rows.length) return 'Leaderboard is empty — no characters registered yet.';
     return rows
       .map(
         (r, i) =>
-          `#${i + 1} ${r.character_name} lv.${r.level} ${r.class} (${durationIt(r.next_seconds)})`,
+          `#${i + 1} ${r.character_name} · L${r.level} ${r.class} · next level ${durationIt(r.next_seconds)}`,
       )
       .join(' · ');
   }
@@ -513,7 +561,8 @@ export class GameEngine {
       {
         target: 'notice',
         nick: ircNick,
-        text: `Penalty ${durationIt(pen)} for speaking in the channel (${msgLen} characters).`,
+        text: `Channel penalty: +${durationIt(pen)} on your level timer (${msgLen} characters sent). Commands starting with ! are exempt.`,
+        tone: 'loss',
       },
     ];
   }
@@ -528,7 +577,7 @@ export class GameEngine {
         `UPDATE players SET pen_nick = pen_nick + ?, next_seconds = next_seconds + ?, irc_nick = ?, userhost = ? WHERE id = ?`,
       )
       .run(pen, pen, newNick, uh, p.id);
-    return [{ target: 'notice', nick: newNick, text: `Penalty ${durationIt(pen)} for nick change.` }];
+    return [{ target: 'notice', nick: newNick, text: `Nick change penalty: +${durationIt(pen)} on your level timer.`, tone: 'loss' }];
   }
 
   onPartQuit(ircNick: string, kind: 'part' | 'quit'): GameAnnouncement[] {
@@ -543,14 +592,30 @@ export class GameEngine {
           `UPDATE players SET online = 0, session_open = 1, ${col} = ${col} + ?, next_seconds = next_seconds + ? WHERE id = ?`,
         )
         .run(pen, pen, p.id);
+      const ch = this.cfg.ircChannel;
+      return [
+        {
+          target: 'notice',
+          nick: ircNick,
+          text: `You left ${ch}: session suspended; level timer +${durationIt(pen)}. Rejoin ${ch} to resume the same session (no second LOGIN).`,
+          tone: 'loss',
+        },
+      ];
     } else {
       this.db
         .prepare(
           `UPDATE players SET online = 0, session_open = 0, ${col} = ${col} + ?, next_seconds = next_seconds + ? WHERE id = ?`,
         )
         .run(pen, pen, p.id);
+      return [
+        {
+          target: 'notice',
+          nick: ircNick,
+          text: `IRC disconnect: session closed; level timer +${durationIt(pen)}. LOGIN again when you return.`,
+          tone: 'loss',
+        },
+      ];
     }
-    return [];
   }
 
   onKick(ircNick: string): GameAnnouncement[] {
@@ -562,7 +627,14 @@ export class GameEngine {
         `UPDATE players SET online = 0, session_open = 0, pen_kick = pen_kick + ?, next_seconds = next_seconds + ? WHERE id = ?`,
       )
       .run(pen, pen, p.id);
-    return [];
+    return [
+      {
+        target: 'notice',
+        nick: ircNick,
+        text: `Kicked from ${this.cfg.ircChannel}. Session closed; level timer +${durationIt(pen)}.`,
+        tone: 'loss',
+      },
+    ];
   }
 
   private applyPenaltyAmount(p: PlayerRow, mult: number): number {
@@ -609,6 +681,7 @@ export class GameEngine {
         announcements.push({
           target: 'chan',
           text: line,
+          tone: 'gain',
         });
         if (isMilestoneLevel(level)) {
           const t = grantMilestoneTrinket(this.db, p.id);
@@ -617,12 +690,13 @@ export class GameEngine {
               target: 'notice',
               nick: p.irc_nick,
               text: `Charm attuned: ${t} — small idle boost while kept.`,
+              tone: 'gain',
             });
           }
         }
         checkNewRealmRecord(this.db, p.character_name, level, p.id, announcements);
         for (const mline of medalsForLevel(this.db, p, level)) {
-          announcements.push({ target: 'chan', text: mline });
+          announcements.push({ target: 'chan', text: mline, tone: 'gain' });
         }
       }
 
@@ -640,9 +714,9 @@ export class GameEngine {
 function loginSuccessNotice(channel: string, row: PlayerRow): string {
   const d = durationIt(row.next_seconds);
   return [
-    `OK — you are logged in as character "${row.character_name}" (level ${row.level} ${row.class}).`,
-    `Stay in ${channel} so the idle timer runs. Next level in ${d}.`,
-    `PM HELP for commands. LOGOUT when you are done (adds a small penalty).`,
+    `Session open: "${row.character_name}" · L${row.level} ${row.class}.`,
+    `Stay in ${channel} so your level timer advances. Next level in ${d}.`,
+    `PM HELP for commands. LOGOUT applies a small level-timer cost.`,
   ].join(' ');
 }
 
@@ -659,9 +733,9 @@ function pickRegisterWelcome(ircNick: string, name: string, cls: string, rpbase:
 function pickLoginWelcome(ircNick: string, charName: string, level: number, cls: string, nextSec: number): string {
   const d = durationIt(nextSec);
   const o = [
-    `◇ ${charName} (lv.${level} ${cls}) slips back into the grind via ${ircNick}. Next: ${d}.`,
-    `Back in session: ${charName}, the ${cls}, level ${level} — courtesy of ${ircNick}. ${d} to go.`,
-    `${ircNick} carries ${charName} online again. ${cls}, level ${level}. Clock: ${d}.`,
+    `◇ ${charName} (L${level} ${cls}) returns via ${ircNick}. Next level in ${d}.`,
+    `Back in channel: ${charName}, ${cls} · L${level} — ${ircNick}. ${d} on the clock.`,
+    `${ircNick} brings ${charName} online again · ${cls}, L${level}. Next: ${d}.`,
   ];
   return o[Math.floor(Math.random() * o.length)]!;
 }
@@ -727,15 +801,14 @@ function maybeHandOfGod(
     const nn = Math.max(1, p.next_seconds - delta);
     db.prepare(`UPDATE players SET next_seconds = ? WHERE id = ?`).run(nn, p.id);
     const lines = [
-      `★ HoG: the heavens shorten the road for ${p.character_name} (-${durationIt(delta)}).`,
-      `★ HoG: luck smiles on ${p.character_name} — timer cut by ${durationIt(delta)}.`,
-      `✧ HoG: cosmic lag compensation! ${p.character_name} shaves ${durationIt(delta)} off the wait.`,
-      `◆ HoG: the RNG gods smile — ${p.character_name} gains ${durationIt(delta)} of borrowed time back.`,
-      `⚡ HoG: ${p.character_name} catches a tailwind (-${durationIt(delta)}).`,
+      `★ Hand of God: ${p.character_name}'s level timer is reduced by ${durationIt(delta)} (favorable).`,
+      `★ Hand of God: ${p.character_name} gains ${durationIt(delta)} toward the next level (timer shortened).`,
+      `★ Hand of God: fortune favors ${p.character_name} — wait until next level cut by ${durationIt(delta)}.`,
     ];
     announcements.push({
       target: 'chan',
       text: lines[Math.floor(Math.random() * lines.length)]!,
+      tone: 'gain',
     });
     insertRealmEvent(db, 'hog_win', `${p.character_name} -${durationIt(delta)}`);
     nudgeAlignmentAfterHog(db, p, true);
@@ -743,15 +816,14 @@ function maybeHandOfGod(
     const nn = p.next_seconds + delta;
     db.prepare(`UPDATE players SET next_seconds = ? WHERE id = ?`).run(nn, p.id);
     const lines = [
-      `★ HoG: ${p.character_name} trips on lag (+${durationIt(delta)}).`,
-      `★ HoG: the net hiccups; ${p.character_name} waits longer (+${durationIt(delta)}).`,
-      `☄ HoG: ${p.character_name} drew the short straw (+${durationIt(delta)}).`,
-      `▸ HoG: entropy wins today — ${p.character_name} +${durationIt(delta)}.`,
-      `🌩 HoG: rude awakening for ${p.character_name} (+${durationIt(delta)}).`,
+      `★ Hand of God: ${p.character_name}'s level timer increases by ${durationIt(delta)} (unfavorable).`,
+      `★ Hand of God: ${p.character_name} loses ${durationIt(delta)} of progress toward the next level.`,
+      `★ Hand of God: harsh roll for ${p.character_name} — extra ${durationIt(delta)} on the level timer.`,
     ];
     announcements.push({
       target: 'chan',
       text: lines[Math.floor(Math.random() * lines.length)]!,
+      tone: 'loss',
     });
     insertRealmEvent(db, 'hog_lose', `${p.character_name} +${durationIt(delta)}`);
     nudgeAlignmentAfterHog(db, p, false);

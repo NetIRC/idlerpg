@@ -2,11 +2,11 @@ import type Database from 'better-sqlite3';
 import type { AppConfig } from '../config.js';
 import type { PlayerRow } from '../db/index.js';
 import { insertRealmEvent, metaGetInt, metaGetText, metaSetInt, metaSetText } from '../db/index.js';
+import { formatQuestEndLine } from '../irc/channel-style.js';
 import { durationIt } from './duration.js';
 import { ircNickInChannel } from './irc-presence.js';
 import { grantQuestCrest } from './medals.js';
-
-type Ann = { target: 'chan' | 'notice'; nick?: string; text: string };
+import type { GameAnnouncement } from './announce.js';
 
 const MK_QUEST_ACTIVE = 'quest_active';
 const MK_QUEST_ENDS = 'quest_ends_at';
@@ -24,7 +24,7 @@ export function hogChanceMultiplier(db: Database, nowSec: number): number {
   return nowSec < until ? 3 : 1;
 }
 
-export function realmTick(db: Database, cfg: AppConfig, channelNicks: Set<string>, now: number, an: Ann[]): void {
+export function realmTick(db: Database, cfg: AppConfig, channelNicks: Set<string>, now: number, an: GameAnnouncement[]): void {
   if (cfg.questEnabled) {
     const active = (metaGetInt(db, MK_QUEST_ACTIVE) ?? 0) === 1;
     if (active) {
@@ -72,7 +72,7 @@ function tryStartQuest(
   cfg: AppConfig,
   channelNicks: Set<string>,
   now: number,
-  an: Ann[],
+  an: GameAnnouncement[],
   force: boolean,
 ): void {
   if (questActive(db)) return;
@@ -113,12 +113,12 @@ function tryStartQuest(
   const d = durationIt(cfg.questDurationSec);
   an.push({
     target: 'chan',
-    text: `⚔ QUEST: ${TEAM_NAMES[0]} vs ${TEAM_NAMES[1]} — ${n0.join(', ')} |vs| ${n1.join(', ')}. Scores grow from levels while you idle in channel. Ends in ${d}.`,
+    text: `⚔ Quest started: ${TEAM_NAMES[0]} vs ${TEAM_NAMES[1]} — ${n0.join(', ')} vs ${n1.join(', ')}. Scoring uses your level while idling in channel. Duration: ${d}.`,
   });
   insertRealmEvent(db, 'quest_start', `${TEAM_NAMES[0]} vs ${TEAM_NAMES[1]}`);
 }
 
-function finishQuest(db: Database, cfg: AppConfig, channelNicks: Set<string>, an: Ann[]): void {
+function finishQuest(db: Database, cfg: AppConfig, channelNicks: Set<string>, an: GameAnnouncement[]): void {
   const raw = metaGetText(db, MK_QUEST_TEAMS);
   let teams: Record<string, number> = {};
   if (raw) {
@@ -157,7 +157,7 @@ function finishQuest(db: Database, cfg: AppConfig, channelNicks: Set<string>, an
     const nn = Math.max(1, p.next_seconds - bonusWin);
     db.prepare('UPDATE players SET next_seconds = ? WHERE id = ?').run(nn, p.id);
     for (const line of grantQuestCrest(db, p.id, p.character_name)) {
-      an.push({ target: 'chan', text: line });
+      an.push({ target: 'chan', text: line, tone: 'gain' });
     }
   }
   for (const name of losers) {
@@ -172,7 +172,15 @@ function finishQuest(db: Database, cfg: AppConfig, channelNicks: Set<string>, an
 
   an.push({
     target: 'chan',
-    text: `⚔ QUEST END: ${winName} wins (${s0} vs ${s1}) over ${loseName}. Winners −${durationIt(bonusWin)}; losers +${durationIt(penLose)} quest tax.`,
+    text: formatQuestEndLine(
+      winName,
+      loseName,
+      s0,
+      s1,
+      durationIt(bonusWin),
+      durationIt(penLose),
+    ),
+    preStyled: true,
   });
   insertRealmEvent(db, 'quest_end', `${winName} wins ${s0}-${s1}`);
 
@@ -195,7 +203,7 @@ function findByCharacterName(db: Database, name: string, caseSensitive: boolean)
   return db.prepare(sql).get(name) as PlayerRow | undefined;
 }
 
-function maybeLuckyHour(db: Database, cfg: AppConfig, now: number, an: Ann[]): void {
+function maybeLuckyHour(db: Database, cfg: AppConfig, now: number, an: GameAnnouncement[]): void {
   const last = metaGetInt(db, MK_LUCKY_CHECK) ?? 0;
   if (now - last < 100) return;
   metaSetInt(db, MK_LUCKY_CHECK, now);
@@ -206,28 +214,29 @@ function maybeLuckyHour(db: Database, cfg: AppConfig, now: number, an: Ann[]): v
   metaSetInt(db, MK_LUCKY_UNTIL, now + dur);
   an.push({
     target: 'chan',
-    text: `✦ LUCKY HOUR: the realm hums — Hand-of-God odds triple for ${durationIt(dur)}.`,
+    text: `✦ Lucky hour: Hand-of-God chance is tripled for ${durationIt(dur)}.`,
+    tone: 'gain',
   });
   insertRealmEvent(db, 'lucky_hour', `duration ${dur}s`);
 }
 
-export function questPublicLine(db: Database, cfg: AppConfig): string {
+export function questPublicLine(db: Database, _cfg: AppConfig): string {
   if (!(metaGetInt(db, MK_QUEST_ACTIVE) ?? 0)) {
-    return 'No quest in progress. Skirmishes start when enough players idle in channel.';
+    return 'No quest active — party skirmishes start when enough logged-in players idle in channel.';
   }
   const ends = metaGetInt(db, MK_QUEST_ENDS) ?? 0;
   const now = Math.floor(Date.now() / 1000);
   const left = Math.max(0, ends - now);
   const s0 = metaGetInt(db, MK_QUEST_T0) ?? 0;
   const s1 = metaGetInt(db, MK_QUEST_T1) ?? 0;
-  return `Quest: ${TEAM_NAMES[0]} ${s0} vs ${TEAM_NAMES[1]} ${s1} — ${durationIt(left)} left. Idle in channel to score for your band.`;
+  return `Quest: ${TEAM_NAMES[0]} ${s0} vs ${TEAM_NAMES[1]} ${s1} · ${durationIt(left)} left. Idle in channel to score for your band.`;
 }
 
 export function realmRecordsLine(db: Database): string {
   const lv = metaGetInt(db, 'realm_record_level');
   const name = metaGetText(db, 'realm_record_name');
-  if (!lv || !name) return 'No realm record set yet — first to climb highest wins the mural.';
-  return `Realm record: ${name} reached level ${lv} (all-time high).`;
+  if (!lv || !name) return 'No realm record yet — the highest level on this shard will claim it first.';
+  return `Realm record: ${name} · L${lv} (all-time high on this shard).`;
 }
 
 export function checkNewRealmRecord(
@@ -235,7 +244,7 @@ export function checkNewRealmRecord(
   charName: string,
   level: number,
   playerId: number,
-  an: { target: 'chan' | 'notice'; nick?: string; text: string }[],
+  an: GameAnnouncement[],
 ): void {
   const maxOther = db
     .prepare('SELECT MAX(level) AS m FROM players WHERE id != ?')
@@ -247,7 +256,8 @@ export function checkNewRealmRecord(
   metaSetText(db, 'realm_record_name', charName);
   an.push({
     target: 'chan',
-    text: `◆ REALM RECORD: ${charName} is now the highest level in the realm at ${level}.`,
+    text: `◆ Realm record: ${charName} is now highest level in the shard (${level}).`,
+    tone: 'gain',
   });
   insertRealmEvent(db, 'realm_record', `${charName} L${level}`);
 }
@@ -288,18 +298,45 @@ export function nudgeAlignmentAfterHog(db: Database, p: PlayerRow, won: boolean)
 
 export function adminForceLogout(db: Database, characterName: string, caseSensitive: boolean): { ok: true } | { err: string } {
   const p = findByCharacterName(db, characterName.trim(), caseSensitive);
-  if (!p) return { err: 'No such character.' };
+  if (!p) return { err: 'Character not found.' };
   if (!p.online) return { err: 'Character not online.' };
   db.prepare('UPDATE players SET online = 0, session_open = 0 WHERE id = ?').run(p.id);
   insertRealmEvent(db, 'admin_forcelogout', characterName.trim());
   return { ok: true };
 }
 
+/** Permanently remove a character, medals, and realm record name if it matches. */
+export function adminDeleteCharacter(
+  db: Database,
+  characterName: string,
+  caseSensitive: boolean,
+): { ok: true; name: string } | { err: string } {
+  const p = findByCharacterName(db, characterName.trim(), caseSensitive);
+  if (!p) return { err: 'Character not found.' };
+  const id = p.id;
+  const name = p.character_name;
+  db.prepare('DELETE FROM player_medals WHERE player_id = ?').run(id);
+  db.prepare('DELETE FROM players WHERE id = ?').run(id);
+  const recName = metaGetText(db, 'realm_record_name');
+  const recLv = metaGetInt(db, 'realm_record_level');
+  if (
+    recName &&
+    name.trim().toLowerCase() === recName.trim().toLowerCase() &&
+    recLv != null &&
+    recLv > 0
+  ) {
+    metaSetInt(db, 'realm_record_level', 0);
+    metaSetText(db, 'realm_record_name', null);
+  }
+  insertRealmEvent(db, 'admin_delete', name);
+  return { ok: true, name };
+}
+
 export function adminForceStartQuest(
   db: Database,
   cfg: AppConfig,
   channelNicks: Set<string>,
-  an: Ann[],
+  an: GameAnnouncement[],
 ): { ok: true } | { err: string } {
   if (!cfg.questEnabled) return { err: 'Quests disabled in config.' };
   if ((metaGetInt(db, MK_QUEST_ACTIVE) ?? 0) === 1) return { err: 'A quest is already running.' };
@@ -311,13 +348,14 @@ export function adminForceStartQuest(
   return { ok: true };
 }
 
-export function adminForceLucky(db: Database, cfg: AppConfig, an: Ann[]): void {
+export function adminForceLucky(db: Database, cfg: AppConfig, an: GameAnnouncement[]): void {
   if (!cfg.luckyHourEnabled) return;
   const now = Math.floor(Date.now() / 1000);
   metaSetInt(db, MK_LUCKY_UNTIL, now + cfg.luckyHourDurationSec);
   an.push({
     target: 'chan',
-    text: `✦ LUCKY HOUR (staff): Hand-of-God odds triple for ${durationIt(cfg.luckyHourDurationSec)}.`,
+    text: `✦ Lucky hour (staff): Hand-of-God chance tripled for ${durationIt(cfg.luckyHourDurationSec)}.`,
+    tone: 'gain',
   });
   insertRealmEvent(db, 'lucky_hour_admin', '');
 }
@@ -358,17 +396,19 @@ export function realmPulseData(db: Database, cfg: AppConfig): RealmPulseJson {
   const recordName = recNameRaw?.trim() ? recNameRaw.trim() : null;
 
   const segments: string[] = [];
-  segments.push(`${onlineHeroes} hero${onlineHeroes !== 1 ? 'es' : ''} online`);
+  segments.push(`${onlineHeroes} hero${onlineHeroes !== 1 ? 'es' : ''} with open session`);
   if (cfg.questEnabled) {
-    segments.push(questActive && questShort ? `Quest live: ${questShort}` : 'Quest dormant');
+    segments.push(questActive && questShort ? `Quest live · ${questShort}` : `Quest idle — need more players in channel`);
   }
   if (cfg.luckyHourEnabled) {
-    segments.push(luckySecondsLeft > 0 ? `Lucky hour ${durationIt(luckySecondsLeft)}` : 'Lucky quiet');
+    segments.push(
+      luckySecondsLeft > 0 ? `Lucky hour · ${durationIt(luckySecondsLeft)} left` : `Lucky hour inactive`,
+    );
   }
   if (recordName && recordLevel) {
-    segments.push(`Peak ${recordName} L${recordLevel}`);
+    segments.push(`Realm peak · ${recordName} L${recordLevel}`);
   } else {
-    segments.push('No realm peak yet');
+    segments.push(`Realm peak · none yet`);
   }
 
   const display = `◆ ${segments.join(' · ')}`;

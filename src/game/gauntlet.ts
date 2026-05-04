@@ -4,6 +4,7 @@ import { findOnlineByNickCi, insertRealmEvent, metaGetInt, metaSetInt } from '..
 import { durationIt } from './duration.js';
 import { ircNickInChannel } from './irc-presence.js';
 import { grantMedal } from './medals.js';
+import type { GameAnnouncement } from './announce.js';
 
 export const GAUNTLET_COOLDOWN_SEC = 16 * 3600;
 
@@ -25,18 +26,18 @@ export function runGauntlet(
   db: Database,
   ircNick: string,
   channelNicks: Set<string>,
-): { err: string } | { lines: string[] } {
+): { err: string } | { announcements: GameAnnouncement[] } {
   const p = findOnlineByNickCi(db, ircNick);
-  if (!p) return { err: 'Log in first — the Gauntlet demands a named hero.' };
+  if (!p) return { err: 'Log in first. The Gauntlet requires an active session.' };
   const seen = ircNickInChannel(p.irc_nick, channelNicks);
-  if (!seen) return { err: 'Stand in the game channel — the shadow only manifests there.' };
+  if (!seen) return { err: 'Stand in the game channel; the Gauntlet only runs while you are present.' };
 
   const now = Math.floor(Date.now() / 1000);
   const cdKey = `gauntlet_cd_${p.id}`;
   const last = metaGetInt(db, cdKey) ?? 0;
   if (last > 0 && now - last < GAUNTLET_COOLDOWN_SEC) {
     return {
-      err: `The veil reforms slowly. Gauntlet again in ${durationIt(GAUNTLET_COOLDOWN_SEC - (now - last))}.`,
+      err: `Gauntlet on cooldown. Available again in ${durationIt(GAUNTLET_COOLDOWN_SEC - (now - last))}.`,
     };
   }
   metaSetInt(db, cdKey, now);
@@ -46,7 +47,7 @@ export function runGauntlet(
   const epic = Math.random() < 1 / 8;
   const win = h >= sh || (epic && Math.random() < 0.35);
 
-  const lines: string[] = [];
+  const announcements: GameAnnouncement[] = [];
   const name = p.character_name;
   const cls = p.class.trim().split(/\s+/)[0] || 'hero';
 
@@ -63,25 +64,43 @@ export function runGauntlet(
     const gnext = gw + 1;
     db.prepare('UPDATE players SET gauntlet_wins = ? WHERE id = ?').run(gnext, p.id);
 
-    lines.push(
-      `◇ GAUNTLET · ${name} (${cls} L${p.level}) strikes the Shadow of the Realm — silence answers violence. ${epic ? 'MYTHIC RIPOSTE! ' : ''}The clock yields.`,
-    );
-    lines.push(`⚡ ${name} cuts toward next level (~${durationIt(ns)}). Gauntlet wins: ${gnext}.`);
+    announcements.push({
+      target: 'chan',
+      text: `◇ Gauntlet — ${name} (${cls}, L${p.level}) clears the trial.${epic ? ' Exceptional performance.' : ''} Level timer shortened.`,
+      tone: 'gain',
+    });
+    announcements.push({
+      target: 'chan',
+      text: `◇ ${name}: next level in ${durationIt(ns)} · Gauntlet victories: ${gnext}.`,
+      tone: 'gain',
+    });
     insertRealmEvent(db, 'gauntlet_win', `${name}${epic ? ' (epic)' : ''}`);
-    lines.push(...grantMedal(db, p.id, 'gauntlet_shade', name));
-    if (gnext >= 10) lines.push(...grantMedal(db, p.id, 'gauntlet_void', name));
+    for (const t of grantMedal(db, p.id, 'gauntlet_shade', name)) {
+      announcements.push({ target: 'chan', text: t, tone: 'gain' });
+    }
+    if (gnext >= 10) {
+      for (const t of grantMedal(db, p.id, 'gauntlet_void', name)) {
+        announcements.push({ target: 'chan', text: t, tone: 'gain' });
+      }
+    }
   } else {
     const mult = epic ? 1.012 : 1.005;
     const ns = p.next_seconds * mult;
     db.prepare('UPDATE players SET next_seconds = ? WHERE id = ?').run(ns, p.id);
-    lines.push(
-      `◇ GAUNTLET · The Shadow overwhelms ${name} (${cls}) — a lesson in hubris etched in lag.`,
-    );
-    lines.push(`⚡ ${name} staggers (~${durationIt(ns)} to next level). Train silence; return.`);
+    announcements.push({
+      target: 'chan',
+      text: `◇ Gauntlet — ${name} (${cls}) fails the trial. Level timer extended.`,
+      tone: 'loss',
+    });
+    announcements.push({
+      target: 'chan',
+      text: `◇ ${name}: next level in ${durationIt(ns)}. Cooldown active; try again later.`,
+      tone: 'loss',
+    });
     insertRealmEvent(db, 'gauntlet_lose', name);
   }
 
-  return { lines };
+  return { announcements };
 }
 
 /** True if !gauntlet would start (read-only; does not set cooldown). */

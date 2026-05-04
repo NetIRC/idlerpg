@@ -6,7 +6,7 @@ import {
   metaSetInt,
   recentRealmEvents,
 } from '../db/index.js';
-import { durationIt } from './duration.js';
+import { durationIt, formatRelativeAgoSec } from './duration.js';
 
 /** Events packed into one IRC/PM line (also capped by CHRONICLE_IRC_MAX_CHARS). Same count as default web feed. */
 export const CHRONICLE_IRC_MAX_EVENTS = 15;
@@ -35,6 +35,8 @@ const CHRONICLE_KIND_LABEL: Record<string, string> = {
   logout: 'Logout',
   admin_resetpass: 'Admin',
   admin_forcelogout: 'Admin',
+  admin_delete: 'Admin',
+  admin_shutdown: 'Shutdown',
   lucky_hour_admin: 'Lucky',
   omen_rare: 'Rare omen',
   omen_boon: 'Omen+',
@@ -63,17 +65,17 @@ function chronicleKindLabel(kind: string): string {
 export function formatChronicleLine(db: Database): string {
   const rows = recentRealmEvents(db, CHRONICLE_IRC_MAX_EVENTS);
   if (!rows.length) {
-    return 'The chronicle is blank — quests, Hand of God, and records will write the first lines.';
+    return 'Chronicle empty — quests, Hand of God, duels, and records will add the first lines.';
   }
   const now = Math.floor(Date.now() / 1000);
   const parts = rows.map((r) => {
     const ago = Math.max(0, now - r.ts);
-    const t = ago < 3600 ? `${Math.max(1, Math.floor(ago / 60))}m` : `${Math.floor(ago / 3600)}h`;
+    const t = formatRelativeAgoSec(ago);
     const label = chronicleKindLabel(r.kind);
     const det = (r.detail || '').trim() || '—';
     return `${label} (${t}): ${det}`.slice(0, 100);
   });
-  const prefix = `📜 Chronicle (IRC ${rows.length}/${CHRONICLE_IRC_MAX_EVENTS}): `;
+  const prefix = `Chronicle · last ${rows.length} events: `;
   const budget = Math.max(80, CHRONICLE_IRC_MAX_CHARS - prefix.length);
   const joined = parts.join(' │ ');
   const body = joined.length <= budget ? joined : `${joined.slice(0, Math.max(0, budget - 1))}…`;
@@ -85,9 +87,9 @@ export function consultOmen(
   ircNick: string,
   channelNicks: Set<string>,
   nickEquals: (a: string, b: string) => boolean,
-): { err: string } | { text: string } {
+): { err: string } | { text: string; tone?: 'gain' | 'loss' | 'neutral' } {
   const p = findOnlineByNickCi(db, ircNick);
-  if (!p) return { err: 'Log in (LOGIN via PM) before consulting the omen.' };
+  if (!p) return { err: 'Log in via PM (LOGIN) before consulting the omen.' };
   const raw = (p.irc_nick || '').replace(/^@|%|\+/, '');
   let seen = false;
   for (const n of channelNicks) {
@@ -97,7 +99,7 @@ export function consultOmen(
     }
   }
   if (!seen) {
-    return { err: 'Stand in the game channel — the omen reads who is present.' };
+    return { err: 'Join the game channel — the omen only reads players who are present.' };
   }
 
   const now = Math.floor(Date.now() / 1000);
@@ -105,7 +107,7 @@ export function consultOmen(
   const last = metaGetInt(db, key) ?? 0;
   if (last > 0 && now - last < OMEN_COOLDOWN_SEC) {
     const wait = OMEN_COOLDOWN_SEC - (now - last);
-    return { err: `The veil is quiet. Another omen in ${durationIt(wait)}.` };
+    return { err: `Omen cooldown active. Next reading in ${durationIt(wait)}.` };
   }
 
   metaSetInt(db, key, now);
@@ -113,23 +115,30 @@ export function consultOmen(
   const r = Math.random();
   if (r < 0.55) {
     const line = OMEN_FLUFF[Math.floor(Math.random() * OMEN_FLUFF.length)]!;
-    return { text: `🜁 ${line}` };
+    return { text: `🜁 Omen (neutral): ${line}`, tone: 'neutral' };
   }
   if (r < 0.78) {
     const ns = Math.max(30, p.next_seconds * 0.998);
     db.prepare('UPDATE players SET next_seconds = ? WHERE id = ?').run(ns, p.id);
     insertRealmEvent(db, 'omen_boon', p.character_name);
-    return { text: `🜁 A kind omen — time thins toward your next level (~${durationIt(ns)}).` };
+    return {
+      text: `🜁 Omen (favorable): ${p.character_name}'s level timer is shortened. Next level in ${durationIt(ns)}.`,
+      tone: 'gain',
+    };
   }
   if (r < 0.93) {
     const ns = p.next_seconds * 1.004;
     db.prepare('UPDATE players SET next_seconds = ? WHERE id = ?').run(ns, p.id);
     insertRealmEvent(db, 'omen_curse', p.character_name);
-    return { text: `🜁 A heavy omen — the clock swells (~${durationIt(ns)}).` };
+    return {
+      text: `🜁 Omen (unfavorable): ${p.character_name}'s level timer is extended. Next level in ${durationIt(ns)}.`,
+      tone: 'loss',
+    };
   }
   insertRealmEvent(db, 'omen_rare', p.character_name);
   return {
-    text: `🜁 Rare omen — ${p.character_name} is etched into the chronicle. The realm notices.`,
+    text: `🜁 Omen (rare): ${p.character_name} is inscribed in the realm chronicle.`,
+    tone: 'gain',
   };
 }
 

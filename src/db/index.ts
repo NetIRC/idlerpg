@@ -323,6 +323,15 @@ export function findOnlineByNickCi(db: Database.Database, nick: string): PlayerR
     .get(nick) as PlayerRow | undefined;
 }
 
+/** Any row with this IRC nick (online or not) — used for admin checks after LOGOUT. */
+export function findPlayerByIrcNickCi(db: Database.Database, nick: string): PlayerRow | undefined {
+  return db
+    .prepare(
+      `SELECT * FROM players WHERE irc_nick != '' AND irc_nick COLLATE NOCASE = ? ORDER BY online DESC, session_open DESC LIMIT 1`,
+    )
+    .get(nick) as PlayerRow | undefined;
+}
+
 /** Last IRC nick on file but not logged in (e.g. after LOGOUT / PART) — for LOGIN reminders on join. */
 export function findLoggedOutByIrcNickCi(db: Database.Database, nick: string): PlayerRow | undefined {
   return db

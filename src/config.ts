@@ -123,6 +123,27 @@ const schema = z.object({
   pmFloodMaxMessages: z.coerce.number().int().min(0).max(500).default(18),
   /** Sliding window (ms) for PM flood counting. */
   pmFloodWindowMs: z.coerce.number().int().min(1_000).max(300_000).default(10_000),
+  /**
+   * Comma- or space-separated IRC nicks (no #channel) allowed to use ADMIN by PM even without a logged-in character.
+   * Status prefixes (~&@%+) are ignored when matching.
+   */
+  adminIrcNicks: z
+    .string()
+    .optional()
+    .default('')
+    .transform((s: string) => {
+      const t = (s ?? '').trim();
+      if (!t) return [] as string[];
+      return t
+        .split(/[,;\s]+/)
+        .map((n) =>
+          n
+            .trim()
+            .replace(/^[~&@%+]+/, '')
+            .replace(/^\|/, ''),
+        )
+        .filter(Boolean);
+    }),
 });
 
 function load() {
@@ -168,6 +189,7 @@ function load() {
     luckyHourRollChance: decr(process.env.IRPG_LUCKY_HOUR_CHANCE),
     pmFloodMaxMessages: decr(process.env.IRPG_PM_FLOOD_MAX),
     pmFloodWindowMs: decr(process.env.IRPG_PM_FLOOD_WINDOW_MS),
+    adminIrcNicks: decr(process.env.IRPG_ADMIN_IRC_NICKS) ?? '',
   };
   return schema.parse(raw);
 }

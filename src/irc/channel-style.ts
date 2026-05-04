@@ -11,6 +11,45 @@ function color(fg: number, text: string): string {
   return `\x03${fg}${text}${RESET}`;
 }
 
+/** Favorable outcomes (timer reduced, level up, wins) — mIRC 03 green. */
+export function ircGreen(text: string): string {
+  return color(3, text);
+}
+
+/** Penalties, timer extensions, defeats — mIRC 04 red. */
+export function ircRed(text: string): string {
+  return color(4, text);
+}
+
+/** Quest result: one line, two colored clauses (preStyled for PRIVMSG). */
+export function formatQuestEndLine(
+  winTeam: string,
+  loseTeam: string,
+  s0: number,
+  s1: number,
+  bonusLabel: string,
+  penaltyLabel: string,
+): string {
+  return (
+    `⚔ Quest result: ${winTeam} wins (${s0}–${s1}) over ${loseTeam}. ` +
+    `${ircGreen(`Winners: level timer reduced by ${bonusLabel}.`)} ` +
+    `${ircRed(`Losers: level timer increased by ${penaltyLabel} (quest levy).`)}`
+  );
+}
+
+/** Duel: timer snapshot after fight (preStyled). */
+export function formatDuelTimers(
+  winnerName: string,
+  loserName: string,
+  winnerNextLabel: string,
+  loserNextLabel: string,
+): string {
+  return (
+    `${ircGreen(`${winnerName}: next level in ${winnerNextLabel} (timer improved).`)} ` +
+    `${ircRed(`${loserName}: next level in ${loserNextLabel} (timer penalized).`)}`
+  );
+}
+
 /** Strip channel status prefix from NAMES / PRIVMSG source. */
 export function stripStatusPrefix(nick: string): string {
   return nick.replace(/^[~&@%+]+/, '').replace(/^\|/, '');

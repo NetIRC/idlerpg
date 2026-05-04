@@ -30,7 +30,7 @@ export const MEDAL_DEF: Record<
   gauntlet_shade: {
     label: 'Shade Walker',
     tier: 'bronze',
-    fanfare: 'walked the Gauntlet and lived — Shade Walker medal.',
+    fanfare: 'claims the Shade Walker medal (first shadow trial survived).',
   },
   gauntlet_void: {
     label: 'Void Dancer',
@@ -88,11 +88,12 @@ export function listMedalKeys(db: Database, playerId: number): string[] {
 
 export function medalsDisplayLine(db: Database, p: PlayerRow): string {
   const keys = listMedalKeys(db, p.id);
-  if (!keys.length) return `${p.character_name} has no medals yet — duel, quest, gauntlet, and levels write history.`;
+  if (!keys.length)
+    return `${p.character_name}: no medals yet — duels, quests, gauntlet, and level milestones fill this list.`;
   const labels = keys.map((k) => MEDAL_DEF[k]?.label ?? k).join(' · ');
   const dw = p.duel_wins ?? 0;
   const gw = p.gauntlet_wins ?? 0;
-  return `${p.character_name}: ${keys.length} medal(s) — ${labels} (arena wins ${dw} · gauntlet ${gw})`;
+  return `${p.character_name}: ${keys.length} medal(s) · ${labels} · duel wins ${dw} · gauntlet ${gw}`;
 }
 
 /** After any level-up step (may fire multiple times per tick). */

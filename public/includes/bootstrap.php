@@ -128,13 +128,27 @@ function irpg_duration_it(float $totalSec): string
         return 'n/a (' . $totalSec . ')';
     }
     $s = (int) floor($totalSec);
+    if ($s < 60) {
+        return sprintf('%ds', $s);
+    }
     $days = intdiv($s, 86400);
     $h = intdiv($s % 86400, 3600);
     $m = intdiv($s % 3600, 60);
     $sec = $s % 60;
+    if ($days === 0 && $h === 0) {
+        if ($sec === 0) {
+            return sprintf('%dm', $m);
+        }
+
+        return sprintf('%dm %ds', $m, $sec);
+    }
+    $clock = sprintf('%d:%02d:%02d', $h, $m, $sec);
+    if ($days === 0) {
+        return $clock;
+    }
     $dayWord = $days === 1 ? 'day' : 'days';
 
-    return sprintf('%d %s, %02d:%02d:%02d', $days, $dayWord, $h, $m, $sec);
+    return sprintf('%d %s, %s', $days, $dayWord, $clock);
 }
 
 /** Display labels for `player_medals.medal_key` — keep in sync with `src/game/medals.ts` MEDAL_DEF. */
