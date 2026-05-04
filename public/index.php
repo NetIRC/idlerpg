@@ -12,12 +12,94 @@ if (is_file($atlasMapFsPath)) {
 }
 /** Must match CHRONICLE_API_DEFAULT_LIMIT in src/game/chronicle-omen.ts */
 $irpgChronicleUiLimit = 15;
+
+$seoTitle = 'IdleRPG — Live IRC idle game leaderboard & realm map | NetIRC';
+$seoDescription = 'Live IdleRPG leaderboard linked to the IRC bot: idle timers, levels, classes, medals, charms, realm atlas, and realm chronicle. '
+    . 'Silence levels you up in channel — play on NetIRC with the same SQLite ledger this page reads.';
+
+$publicBase = '';
+$envPublic = getenv('IRPG_PUBLIC_URL');
+if (is_string($envPublic) && $envPublic !== '') {
+    $publicBase = rtrim(trim($envPublic), '/');
+} else {
+    $host = $_SERVER['HTTP_HOST'] ?? '';
+    if ($host !== '') {
+        $https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+            || (isset($_SERVER['SERVER_PORT']) && (string) $_SERVER['SERVER_PORT'] === '443');
+        $publicBase = ($https ? 'https' : 'http') . '://' . $host;
+    }
+}
+$requestPath = '/';
+if (!empty($_SERVER['REQUEST_URI'])) {
+    $path = parse_url((string) $_SERVER['REQUEST_URI'], PHP_URL_PATH);
+    if (is_string($path) && $path !== '') {
+        $requestPath = $path;
+    }
+}
+$canonicalUrl = $publicBase !== '' ? $publicBase . $requestPath : '';
+$ogMapAsset = 'assets/' . ($atlasMapUsesZenith ? 'realm-atlas-top.png' : 'realm-atlas-bg.png');
+$ogImageUrl = '';
+if ($publicBase !== '' && is_file($atlasMapFsPath)) {
+    $ogImageUrl = $publicBase . '/' . $ogMapAsset . '?v=' . rawurlencode((string) filemtime($atlasMapFsPath));
+}
+if ($ogImageUrl === '' && $publicBase !== '') {
+    $ogImageUrl = $publicBase . '/favicon.svg';
+}
+
+$webSiteLd = [
+    '@type' => 'WebSite',
+    'name' => 'IdleRPG Live Realm',
+    'description' => $seoDescription,
+    'inLanguage' => 'en',
+];
+if ($canonicalUrl !== '') {
+    $webSiteLd['url'] = $canonicalUrl;
+}
+$jsonLd = [
+    '@context' => 'https://schema.org',
+    '@graph' => [
+        $webSiteLd,
+        [
+            '@type' => 'VideoGame',
+            'name' => 'IdleRPG',
+            'gamePlatform' => 'IRC',
+            'applicationCategory' => 'Game',
+            'description' => $seoDescription,
+        ],
+    ],
+];
+$jsonLdScript = json_encode($jsonLd, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
 ?><!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <title>IdleRPG &mdash; Live realm</title>
+  <title><?= htmlspecialchars($seoTitle, ENT_QUOTES, 'UTF-8') ?></title>
+  <meta name="description" content="<?= htmlspecialchars($seoDescription, ENT_QUOTES, 'UTF-8') ?>" />
+  <meta name="robots" content="index, follow, max-image-preview:large" />
+  <meta name="theme-color" content="#05040a" />
+  <meta name="author" content="NetIRC IdleRPG" />
+  <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+  <?php if ($canonicalUrl !== ''): ?>
+  <link rel="canonical" href="<?= htmlspecialchars($canonicalUrl, ENT_QUOTES, 'UTF-8') ?>" />
+  <?php endif; ?>
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="<?= htmlspecialchars($seoTitle, ENT_QUOTES, 'UTF-8') ?>" />
+  <meta property="og:description" content="<?= htmlspecialchars($seoDescription, ENT_QUOTES, 'UTF-8') ?>" />
+  <meta property="og:locale" content="en_US" />
+  <?php if ($canonicalUrl !== ''): ?>
+  <meta property="og:url" content="<?= htmlspecialchars($canonicalUrl, ENT_QUOTES, 'UTF-8') ?>" />
+  <?php endif; ?>
+  <?php if ($ogImageUrl !== ''): ?>
+  <meta property="og:image" content="<?= htmlspecialchars($ogImageUrl, ENT_QUOTES, 'UTF-8') ?>" />
+  <?php endif; ?>
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="<?= htmlspecialchars($seoTitle, ENT_QUOTES, 'UTF-8') ?>" />
+  <meta name="twitter:description" content="<?= htmlspecialchars($seoDescription, ENT_QUOTES, 'UTF-8') ?>" />
+  <?php if ($ogImageUrl !== ''): ?>
+  <meta name="twitter:image" content="<?= htmlspecialchars($ogImageUrl, ENT_QUOTES, 'UTF-8') ?>" />
+  <?php endif; ?>
+  <script type="application/ld+json"><?= $jsonLdScript ?></script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Orbitron:wght@700;900&family=Outfit:wght@400;500;600&display=swap" rel="stylesheet" />
