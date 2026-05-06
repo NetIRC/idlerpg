@@ -318,6 +318,80 @@ body {
   font-weight: 600;
 }
 
+.treasure-guide {
+  display: flex;
+  flex-direction: column;
+  gap: 0.42rem;
+}
+
+.treasure-rule {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 0.62rem;
+  background: rgba(255, 255, 255, 0.02);
+  padding: 0.4rem 0.5rem;
+}
+
+.treasure-rule summary {
+  list-style: none;
+  cursor: pointer;
+  font-family: var(--font-m);
+  font-size: 0.76rem;
+  color: rgba(255, 255, 255, 0.94);
+  letter-spacing: 0.02em;
+}
+
+.treasure-rule summary::-webkit-details-marker {
+  display: none;
+}
+
+.treasure-rule p {
+  margin: 0.42rem 0 0;
+  font-size: 0.74rem;
+  line-height: 1.45;
+  color: rgba(227, 218, 240, 0.85);
+}
+
+.treasure-rule .treasure-list {
+  margin-top: 0.38rem;
+}
+
+.guild-preview-item {
+  margin-bottom: 0.58rem;
+}
+
+.guild-preview-head {
+  color: rgba(255, 255, 255, 0.95);
+  margin-bottom: 0.28rem;
+}
+
+.guild-members {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.28rem;
+}
+
+.guild-members--empty {
+  color: rgba(196, 184, 212, 0.7);
+  font-size: 0.72rem;
+}
+
+.guild-member-chip {
+  display: inline-flex;
+  align-items: center;
+  font-family: var(--font-m);
+  font-size: 0.65rem;
+  padding: 0.16rem 0.38rem;
+  border-radius: 999px;
+  border: 1px solid rgba(0, 229, 199, 0.35);
+  color: rgba(255, 255, 255, 0.92);
+  background: rgba(0, 229, 199, 0.08);
+}
+
+.guild-member-chip--leader {
+  border-color: rgba(255, 196, 120, 0.5);
+  background: rgba(255, 196, 120, 0.12);
+}
+
 .rules-cmd {
   font-family: var(--font-m);
   font-size: 0.78em;
@@ -868,6 +942,21 @@ body.full-page-sync--locked {
   font-size: 0.72rem;
   opacity: 0.78;
   letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.player-presence {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.42rem;
+  white-space: nowrap;
+}
+
+.timer-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.34rem;
+  white-space: nowrap;
 }
 
 .dot {
@@ -880,6 +969,29 @@ body.full-page-sync--locked {
   box-shadow: 0 0 12px var(--arc-glow);
   vertical-align: middle;
   animation: pulse-led 2.5s ease-in-out infinite;
+}
+
+.dot--online {
+  background: var(--arc);
+  box-shadow: 0 0 12px var(--arc-glow);
+}
+
+.dot--offline {
+  background: #ff5c6a;
+  box-shadow: 0 0 10px rgba(255, 92, 106, 0.55);
+  animation: none;
+}
+
+.timer-offline-tag {
+  display: inline-block;
+  padding: 0.08rem 0.32rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 92, 106, 0.45);
+  color: #ffc9ce;
+  background: rgba(255, 92, 106, 0.1);
+  font-size: 0.64rem;
+  line-height: 1.15;
+  white-space: nowrap;
 }
 
 .hide-sm {
@@ -1780,13 +1892,13 @@ body.full-page-sync--locked {
 
 .realm-atlas-svg .atlas-marker-label {
   font-family: var(--font-m);
-  font-size: 10.5px;
-  font-weight: 600;
+  font-size: 11.8px;
+  font-weight: 650;
   letter-spacing: 0.03em;
   fill: rgba(248, 244, 255, 0.9);
   paint-order: stroke fill;
   stroke: rgba(0, 0, 0, 0.62);
-  stroke-width: 3px;
+  stroke-width: 3.4px;
   pointer-events: none;
 }
 
@@ -1966,7 +2078,7 @@ body.full-page-sync--locked {
 .realm-atlas-svg .atlas-marker-ring {
   fill: none;
   stroke: rgba(255, 210, 120, 0.9);
-  stroke-width: 1.6;
+  stroke-width: 1.9;
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.15s ease;
@@ -2153,6 +2265,7 @@ body.full-page-sync--locked {
 
 .chronicle-panel {
   padding: 1.1rem 1.2rem;
+  overflow-x: hidden;
 }
 
 .chronicle-collapsible {
@@ -2558,4 +2671,53 @@ body.full-page-sync--locked {
 .finds-item--gauntlet_win .finds-kind,
 .finds-item--gauntlet_lose .finds-kind {
   color: #b794f6;
+}
+
+.chronicle-filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
+  gap: 0.55rem;
+  margin-bottom: 0.8rem;
+}
+
+.chronicle-filters > * {
+  min-width: 0;
+}
+
+.chronicle-filters input[type='datetime-local'] {
+  inline-size: 100%;
+  max-inline-size: 100%;
+  min-inline-size: 0;
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 0.45rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chronicle-filters input[type='datetime-local']::-webkit-date-and-time-value {
+  text-align: left;
+}
+
+.chronicle-filters input[type='datetime-local']::-webkit-calendar-picker-indicator {
+  margin: 0;
+  opacity: 0.9;
+}
+
+@media (max-width: 900px) {
+  .chronicle-filters {
+    grid-template-columns: 1fr;
+  }
+}
+
+.chronicle-day-head {
+  list-style: none;
+  font-family: var(--font-m);
+  font-size: 0.68rem;
+  letter-spacing: 0.06em;
+  color: rgba(255, 255, 255, 0.7);
+  margin: 0.4rem 0 0.15rem;
 }

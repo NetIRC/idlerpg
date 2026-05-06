@@ -317,8 +317,26 @@ export class GameEngine {
       this.cfg.v3ModeEnabled && this.cfg.v3StreakEnabled
         ? ` · streak: ${durationIt(p.idle_streak_sec ?? 0)}`
         : '';
-    const text = `${p.character_name} · L${p.level} ${p.class} · next level in ${durationIt(p.next_seconds)} · idle logged ~${idleH}h · ${alignmentIdleHint(p.alignment)}${streakS}${charmS}`;
-    return { text };
+    const guildTag =
+      p.guild_id && p.guild_id > 0
+        ? (() => {
+            const g = this.db.prepare('SELECT tag FROM guilds WHERE id = ? LIMIT 1').get(p.guild_id) as
+              | { tag: string }
+              | undefined;
+            return g?.tag ? ` · guild: [${g.tag}]` : '';
+          })()
+        : '';
+    const text = `${p.character_name} · L${p.level} ${p.class} · next level in ${durationIt(p.next_seconds)} · idle logged ~${idleH}h · ${alignmentIdleHint(p.alignment)}${streakS}${charmS}${guildTag}`;
+    const prestige = this.cfg.v3ModeEnabled && this.cfg.v3PrestigeEnabled ? ` · prestige: R${Math.max(0, p.prestige_rank ?? 0)}` : '';
+    const guildS = this.cfg.v3ModeEnabled && this.cfg.v3GuildEnabled && p.guild_id ? ` · guild #${p.guild_id}` : '';
+    const relicS =
+      this.cfg.v3ModeEnabled && this.cfg.v3RelicEnabled
+        ? (() => {
+            const key = this.activeRelicKey(p.id);
+            return key ? ` · relic: ${key}` : '';
+          })()
+        : '';
+    return { text: text + prestige + guildS + relicS };
   }
 
   whoami(ircNick: string): { text: string } | { err: string } {
@@ -349,6 +367,10 @@ export class GameEngine {
     if (levelActionWindowLeft > 0) {
       cooldowns.push(`level-up hint window in ${durationIt(levelActionWindowLeft)}`);
     }
+    if (this.cfg.v3ModeEnabled && this.cfg.v3SeasonEnabled) {
+      const season = this.currentSeasonWindow(now);
+      cooldowns.push(`season rollover in ${durationIt(Math.max(0, season.endAt - now))}`);
+    }
 
     return {
       text:
@@ -371,11 +393,196 @@ export class GameEngine {
     };
   }
 
+  bountyLine(ircNick: string): { text: string } | { err: string } {
+    if (!this.cfg.v3ModeEnabled || !this.cfg.v3BountyEnabled) {
+      return { err: 'Bounty board is disabled on this shard.' };
+    }
+    const p = findOnlineByNickCi(this.db, ircNick);
+    if (!p) return { err: 'Log in first to view your bounty progress.' };
+    const now = Math.floor(Date.now() / 1000);
+    const st = this.getBountyState(p.id, now, true);
+    const target = Math.max(1, this.cfg.v3BountyTargetSec);
+    const progress = Math.min(target, st.progressSec);
+    const quietLeft =
+      this.cfg.v3BountyQuietSec > 0 ? Math.max(0, st.lastActivitySec + this.cfg.v3BountyQuietSec - now) : 0;
+    const state = st.claimedToday
+      ? 'claimed today'
+      : progress >= target
+        ? 'ready'
+        : `in progress (${durationIt(target - progress)} left)`;
+    const quiet = quietLeft > 0 ? ` · quiet gate ${durationIt(quietLeft)}` : '';
+    return {
+      text:
+        `Bounty: ${durationIt(progress)} / ${durationIt(target)} idle today · reward -${durationIt(this.cfg.v3BountyRewardSec)} · ${state}${quiet}.`,
+    };
+  }
+
+  seasonLine(ircNick: string): { text: string } | { err: string } {
+    if (!this.cfg.v3ModeEnabled || !this.cfg.v3SeasonEnabled) return { err: 'Season pass is disabled on this shard.' };
+    const p = findOnlineByNickCi(this.db, ircNick);
+    if (!p) return { err: 'Log in first to view season progress.' };
+    const now = Math.floor(Date.now() / 1000);
+    const season = this.currentSeasonWindow(now);
+    const seasonId = season.id;
+    const seasonEnd = season.endAt;
+    const row = this.db
+      .prepare(
+        `SELECT xp, level FROM player_season_progress
+         WHERE player_id = ? AND season_id = ?`,
+      )
+      .get(p.id, seasonId) as { xp: number; level: number } | undefined;
+    const xp = Math.max(0, row?.xp ?? 0);
+    const tier = Math.max(0, Math.floor(xp / Math.max(1, this.cfg.v3SeasonTierXp)));
+    const nextTierIn = Math.max(0, this.cfg.v3SeasonTierXp - (xp % Math.max(1, this.cfg.v3SeasonTierXp)));
+    return {
+      text:
+        `Season ${seasonId}: tier ${tier} · XP ${xp}. ` +
+        `Next tier in ${nextTierIn} XP · ends in ${durationIt(Math.max(0, seasonEnd - now))}.`,
+    };
+  }
+
+  bossLine(): { text: string } | { err: string } {
+    if (!this.cfg.v3ModeEnabled || !this.cfg.v3WorldBossEnabled) return { err: 'World Boss is disabled on this shard.' };
+    const active = this.db
+      .prepare(
+        `SELECT boss_name, hp_left, hp_max, ends_at FROM world_boss_runs
+         WHERE state = 'active'
+         ORDER BY id DESC
+         LIMIT 1`,
+      )
+      .get() as { boss_name: string; hp_left: number; hp_max: number; ends_at: number } | undefined;
+    const now = Math.floor(Date.now() / 1000);
+    if (!active) {
+      const nextAt = metaGetInt(this.db, 'v3_world_boss_next') ?? 0;
+      const left = Math.max(0, nextAt - now);
+      return { text: left > 0 ? `World Boss: next spawn in ${durationIt(left)}.` : 'World Boss: scouting the realm.' };
+    }
+    const pct = active.hp_max > 0 ? Math.max(0, Math.floor((active.hp_left / active.hp_max) * 100)) : 0;
+    return {
+      text: `World Boss: ${active.boss_name} · ${active.hp_left}/${active.hp_max} HP (${pct}%) · ${durationIt(Math.max(0, active.ends_at - now))} left.`,
+    };
+  }
+
+  guildLine(ircNick: string, parts: string[]): { text: string } | { err: string } {
+    if (!this.cfg.v3ModeEnabled || !this.cfg.v3GuildEnabled) return { err: 'Guilds are disabled on this shard.' };
+    const p = findOnlineByNickCi(this.db, ircNick);
+    if (!p) return { err: 'Log in first to manage guilds.' };
+    const sub = (parts[0] ?? '').toLowerCase();
+    if (!sub || sub === 'status') {
+      if (!p.guild_id) return { text: 'Guild: none. Use !guild create <TAG> <Name> or !guild join <TAG>.' };
+      const g = this.db
+        .prepare('SELECT id, tag, name FROM guilds WHERE id = ? LIMIT 1')
+        .get(p.guild_id) as { id: number; tag: string; name: string } | undefined;
+      if (!g) return { text: 'Guild link stale. Use !guild leave then join/create again.' };
+      const members = this.db
+        .prepare('SELECT COUNT(*) AS c FROM guild_members WHERE guild_id = ?')
+        .get(g.id) as { c: number };
+      return { text: `Guild [${g.tag}] ${g.name} · members ${members.c} · passive idle bonus ${Math.round(this.cfg.v3GuildIdleBonusPct * 100)}%.` };
+    }
+    if (sub === 'create') {
+      const tag = (parts[1] ?? '').replace(/[^A-Za-z0-9]/g, '').slice(0, 8).toUpperCase();
+      const name = parts.slice(2).join(' ').trim().slice(0, 40);
+      if (!tag || !name) return { err: 'Usage: !guild create <TAG> <Guild Name>' };
+      if (p.guild_id) return { err: 'Leave your current guild first with !guild leave.' };
+      try {
+        const now = Math.floor(Date.now() / 1000);
+        this.db.prepare(`INSERT INTO guilds (tag, name, created_at) VALUES (?, ?, ?)`).run(tag, name, now);
+        const g = this.db.prepare(`SELECT id FROM guilds WHERE tag = ?`).get(tag) as { id: number } | undefined;
+        if (!g) return { err: 'Guild creation failed. Try again.' };
+        this.db.prepare(`INSERT OR REPLACE INTO guild_members (guild_id, player_id, role, joined_at) VALUES (?, ?, 'leader', ?)`).run(g.id, p.id, now);
+        this.db.prepare(`UPDATE players SET guild_id = ? WHERE id = ?`).run(g.id, p.id);
+        insertRealmEvent(this.db, 'guild_create', `${p.character_name} [${tag}] ${name}`);
+        return { text: `Guild created: [${tag}] ${name}.` };
+      } catch {
+        return { err: 'Guild tag or name already exists.' };
+      }
+    }
+    if (sub === 'join') {
+      const tag = (parts[1] ?? '').replace(/[^A-Za-z0-9]/g, '').slice(0, 8).toUpperCase();
+      if (!tag) return { err: 'Usage: !guild join <TAG>' };
+      if (p.guild_id) return { err: 'Leave your current guild first with !guild leave.' };
+      const g = this.db
+        .prepare('SELECT id, name FROM guilds WHERE tag = ? LIMIT 1')
+        .get(tag) as { id: number; name: string } | undefined;
+      if (!g) return { err: 'Guild not found.' };
+      const now = Math.floor(Date.now() / 1000);
+      this.db.prepare(`INSERT OR REPLACE INTO guild_members (guild_id, player_id, role, joined_at) VALUES (?, ?, 'member', ?)`).run(g.id, p.id, now);
+      this.db.prepare('UPDATE players SET guild_id = ? WHERE id = ?').run(g.id, p.id);
+      insertRealmEvent(this.db, 'guild_join', `${p.character_name} [${tag}]`);
+      return { text: `Joined guild [${tag}] ${g.name}.` };
+    }
+    if (sub === 'leave') {
+      if (!p.guild_id) return { err: 'You are not in a guild.' };
+      this.db.prepare('DELETE FROM guild_members WHERE player_id = ?').run(p.id);
+      this.db.prepare('UPDATE players SET guild_id = NULL WHERE id = ?').run(p.id);
+      insertRealmEvent(this.db, 'guild_leave', p.character_name);
+      return { text: 'You left your guild.' };
+    }
+    return { err: 'Guild commands: !guild status | create | join | leave' };
+  }
+
+  relicLine(ircNick: string, parts: string[]): { text: string } | { err: string } {
+    if (!this.cfg.v3ModeEnabled || !this.cfg.v3RelicEnabled) return { err: 'Relics are disabled on this shard.' };
+    const p = findOnlineByNickCi(this.db, ircNick);
+    if (!p) return { err: 'Log in first to manage relics.' };
+    const sub = (parts[0] ?? '').toLowerCase();
+    const all = this.db
+      .prepare(`SELECT relic_key, is_active FROM player_relics WHERE player_id = ? ORDER BY acquired_at ASC`)
+      .all(p.id) as { relic_key: string; is_active: number }[];
+    if (!sub || sub === 'status' || sub === 'list') {
+      if (!all.length) return { text: 'Relics: none. Keep idling and leveling to discover one.' };
+      const items = all.map((r) => `${r.is_active ? '*' : ''}${r.relic_key}`).join(', ');
+      return { text: `Relics: ${items}. Use !relic equip <key>.` };
+    }
+    if (sub === 'equip') {
+      const key = (parts[1] ?? '').trim().toLowerCase();
+      if (!key) return { err: 'Usage: !relic equip <key>' };
+      const owned = all.find((r) => r.relic_key.toLowerCase() === key);
+      if (!owned) return { err: 'You do not own that relic key.' };
+      this.db.prepare('UPDATE player_relics SET is_active = 0 WHERE player_id = ?').run(p.id);
+      this.db.prepare('UPDATE player_relics SET is_active = 1 WHERE player_id = ? AND relic_key = ?').run(p.id, owned.relic_key);
+      insertRealmEvent(this.db, 'relic_equip', `${p.character_name} ${owned.relic_key}`);
+      return { text: `Active relic set to ${owned.relic_key}.` };
+    }
+    return { err: 'Relic commands: !relic status | list | equip <key>' };
+  }
+
+  prestigeLine(ircNick: string, forceNow: boolean): { text: string } | { err: string } {
+    if (!this.cfg.v3ModeEnabled || !this.cfg.v3PrestigeEnabled) return { err: 'Prestige is disabled on this shard.' };
+    const p = findOnlineByNickCi(this.db, ircNick);
+    if (!p) return { err: 'Log in first to use prestige.' };
+    const rank = Math.max(0, p.prestige_rank ?? 0);
+    const bonusPct = Math.round(rank * this.cfg.v3PrestigeIdleRateBonusPct * 1000) / 10;
+    if (!forceNow) {
+      return {
+        text:
+          `Prestige rank ${rank} · idle-rate bonus +${bonusPct}%. ` +
+          `Next rebirth at L${this.cfg.v3PrestigeMinLevel} (use !prestige now).`,
+      };
+    }
+    if (p.level < this.cfg.v3PrestigeMinLevel) {
+      return { err: `Prestige requires at least level ${this.cfg.v3PrestigeMinLevel}.` };
+    }
+    const newRank = rank + 1;
+    this.db
+      .prepare(
+        `UPDATE players
+         SET level = 0, next_seconds = ?, prestige_rank = ?, prestige_points = COALESCE(prestige_points, 0) + 1, idle_streak_sec = 0
+         WHERE id = ?`,
+      )
+      .run(this.cfg.rpbase, newRank, p.id);
+    insertRealmEvent(this.db, 'prestige', `${p.character_name} rank ${newRank}`);
+    return {
+      text:
+        `Prestige complete: rank ${newRank}. Level reset to 0 with permanent idle bonus +${Math.round(newRank * this.cfg.v3PrestigeIdleRateBonusPct * 1000) / 10}%.`,
+    };
+  }
+
   helpPm(page: number): string {
     if (page >= 2) {
       return (
-        'PM: STATS [name], TOP, PING, REALM, CHRONICLE, QUEST, LORE [topic], LOGOUT. ' +
-        'Channel (no timer cost): !time !whoami !stats !records !quest !realm !chronicle !omen !duel !gauntlet !medals !top !lore. ' +
+        'PM: HELP, CMDS, PING, STATS [name], TIME [name], WHOAMI, TOP, RECORDS, QUEST, BOUNTY, SEASON, BOSS, GUILD, RELIC, PRESTIGE, REALM, CHRONICLE, OMEN, DUEL <irc_nick>, GAUNTLET, MEDALS [name], LORE [topic], LOGOUT. ' +
+        'Channel (no timer cost): !help !cmds !rules !ping !time !whoami !stats !records !quest !bounty !season !boss !guild !relic !prestige !realm !chronicle !omen !duel !gauntlet !medals !top !lore. ' +
         'Admin (if authorized): ADMIN HELP — FORCELOGOUT, DELETEUSER, RESETPASS, STARTQUEST, LUCKY, SAY, SHUTDOWN.'
       );
     }
@@ -388,7 +595,7 @@ export class GameEngine {
   helpChannel(page: number, viewerIrcNick?: string): string {
     if (page >= 2) {
       return (
-        'Commands here do not add level-timer penalty: !time !whoami !stats !records !quest !realm !chronicle !omen !duel !gauntlet !medals !top !lore. ' +
+        'Commands here do not add level-timer penalty: !help !cmds !rules !ping !time !whoami !stats !records !quest !bounty !season !boss !guild !relic !prestige !realm !chronicle !omen !duel !gauntlet !medals !top !lore. ' +
         '!realm — snapshot: online count, quest, lucky hour, daily trial, realm peak level.'
       );
     }
@@ -398,7 +605,7 @@ export class GameEngine {
       if (p) {
         return (
           `Logged in as ${p.character_name} (L${p.level} ${p.class}). ` +
-          `Try !time, !stats, !realm, !top — use !cmds for the full public command list. Account changes: PM this bot (HELP).`
+          `Try !time, !stats, !bounty, !season, !boss, !guild, !relic, !prestige, !realm, !top — use !cmds for the full public command list. Account changes: PM this bot (HELP).`
         );
       }
       const loggedOut = findLoggedOutByIrcNickCi(this.db, viewer);
@@ -431,6 +638,83 @@ export class GameEngine {
   /** One-line realm snapshot (heroes online, quest, lucky, peak level). */
   realmPulseLine(): string {
     return computeRealmPulseLine(this.db, this.cfg);
+  }
+
+  seasonStatusLine(): string {
+    if (!this.cfg.v3ModeEnabled || !this.cfg.v3SeasonEnabled) return 'Season off';
+    const now = Math.floor(Date.now() / 1000);
+    const season = this.currentSeasonWindow(now);
+    return `Season ${season.id} · rollover in ${durationIt(Math.max(0, season.endAt - now))}`;
+  }
+
+  /** Coarse ETA for channel topic to avoid noisy per-second topic churn. */
+  private topicEta(secLeft: number): string {
+    const s = Math.max(0, Math.floor(secLeft));
+    if (s >= 2 * 86400) {
+      const d = Math.floor(s / 86400);
+      const h = Math.floor((s % 86400) / 3600);
+      return `${d}d ${h}h`;
+    }
+    if (s >= 3600) {
+      const h = Math.floor(s / 3600);
+      const m = Math.floor((s % 3600) / 60);
+      const m5 = Math.floor(m / 5) * 5;
+      return m5 > 0 ? `${h}h ${m5}m` : `${h}h`;
+    }
+    const m = Math.max(1, Math.floor(s / 60));
+    if (m >= 10) {
+      const m5 = Math.floor(m / 5) * 5;
+      return `${Math.max(5, m5)}m`;
+    }
+    return `${m}m`;
+  }
+
+  /** Stable topic-refresh signal: update only on season or boss state changes. */
+  channelTopicSignal(): string {
+    const now = Math.floor(Date.now() / 1000);
+    const seasonId = this.currentSeasonWindow(now).id;
+    const activeBoss = this.db
+      .prepare(
+        `SELECT id FROM world_boss_runs
+         WHERE state = 'active'
+         ORDER BY id DESC
+         LIMIT 1`,
+      )
+      .get() as { id: number } | undefined;
+    const bossState = activeBoss ? `active:${activeBoss.id}` : 'idle';
+    return `season:${seasonId}|boss:${bossState}`;
+  }
+
+  channelTopicLine(): string {
+    const now = Math.floor(Date.now() / 1000);
+    const seasonW = this.currentSeasonWindow(now);
+    const seasonLabel = `Season ${seasonW.id} · ends in ${this.topicEta(Math.max(0, seasonW.endAt - now))}`;
+
+    const activeBoss = this.db
+      .prepare(
+        `SELECT boss_name, ends_at FROM world_boss_runs
+         WHERE state = 'active'
+         ORDER BY id DESC
+         LIMIT 1`,
+      )
+      .get() as { boss_name: string; ends_at: number } | undefined;
+    const nextBossAt = Math.max(0, metaGetInt(this.db, 'v3_world_boss_next') ?? 0);
+    const bossShort = activeBoss
+      ? `World Boss active · ${activeBoss.boss_name} · ${this.topicEta(Math.max(0, activeBoss.ends_at - now))} left`
+      : nextBossAt > now
+        ? `World Boss standby · next in ${this.topicEta(nextBossAt - now)}`
+        : 'World Boss scouting';
+
+    const parts = [
+      `\x0310Realm Status\x03`,
+      `\x0312${seasonLabel}\x03`,
+      `\x0304${bossShort}\x03`,
+    ];
+    if (this.cfg.publicUrl) {
+      parts.push(`\x0311Web\x03: ${this.cfg.publicUrl}`);
+    }
+    const topic = parts.join(' | ');
+    return topic.length > 420 ? `${topic.slice(0, 417)}...` : topic;
   }
 
   /** Realm omen: flavour + rare tiny timer nudge; cooldown in consultOmen. */
@@ -626,7 +910,7 @@ export class GameEngine {
       {
         target: 'notice',
         nick: ircNick,
-        text: `Channel penalty: +${durationIt(pen)} on your level timer (${msgLen} characters sent). Commands starting with ! are exempt.`,
+        text: `Channel penalty: +${durationIt(pen)} on your level timer (${msgLen} characters sent). Recognized !commands are exempt.`,
         tone: 'loss',
       },
     ];
@@ -637,10 +921,15 @@ export class GameEngine {
    * including `!` commands (which remain penalty-free but no longer streak-free).
    */
   noteChannelActivity(ircNick: string): void {
-    if (!this.cfg.v3ModeEnabled || !this.cfg.v3StreakEnabled) return;
+    if (!this.cfg.v3ModeEnabled) return;
     const p = findOnlineByNickCi(this.db, ircNick);
     if (!p) return;
-    this.resetIdleStreak(p.id);
+    if (this.cfg.v3StreakEnabled) {
+      this.resetIdleStreak(p.id);
+    }
+    if (this.cfg.v3BountyEnabled) {
+      metaSetInt(this.db, `last_chan_activity_${p.id}`, Math.floor(Date.now() / 1000));
+    }
   }
 
   onNick(oldNick: string, newNick: string): GameAnnouncement[] {
@@ -733,6 +1022,37 @@ export class GameEngine {
     metaSetInt(this.db, `streak_notice_next_at_${playerId}`, 0);
   }
 
+  private bountyDayIndex(nowSec: number): number {
+    return Math.floor(nowSec / 86400);
+  }
+
+  private getBountyState(
+    playerId: number,
+    nowSec: number,
+    writeRollover: boolean,
+  ): { progressSec: number; claimedToday: boolean; lastActivitySec: number } {
+    const day = this.bountyDayIndex(nowSec);
+    const dayKey = `bounty_day_${playerId}`;
+    const progressKey = `bounty_idle_sec_${playerId}`;
+    const claimedKey = `bounty_claimed_${playerId}`;
+    const activityKey = `last_chan_activity_${playerId}`;
+    let curDay = metaGetInt(this.db, dayKey) ?? day;
+    let progress = Math.max(0, metaGetInt(this.db, progressKey) ?? 0);
+    let claimed = Math.max(0, metaGetInt(this.db, claimedKey) ?? 0);
+    const lastActivity = Math.max(0, metaGetInt(this.db, activityKey) ?? 0);
+    if (curDay !== day) {
+      curDay = day;
+      progress = 0;
+      claimed = 0;
+      if (writeRollover) {
+        metaSetInt(this.db, dayKey, day);
+        metaSetInt(this.db, progressKey, 0);
+        metaSetInt(this.db, claimedKey, 0);
+      }
+    }
+    return { progressSec: progress, claimedToday: claimed > 0, lastActivitySec: lastActivity };
+  }
+
   private levelActionOptions(player: PlayerRow, channelNicks: Set<string>): string[] {
     if (!player.irc_nick) return [];
 
@@ -759,6 +1079,47 @@ export class GameEngine {
     return `Level-up window reminder (${durationIt(leftSec)} left): check !whoami for live cooldowns.`;
   }
 
+  private currentSeasonWindow(now: number): { id: number; startAt: number; endAt: number } {
+    const seasonLenSec = Math.max(7, this.cfg.v3SeasonLengthDays) * 86400;
+    const epoch = Math.max(0, this.cfg.v3SeasonEpochSec);
+    const rel = Math.max(0, now - epoch);
+    const seasonId = Math.floor(rel / seasonLenSec) + 1;
+    const startAt = epoch + (seasonId - 1) * seasonLenSec;
+    const endAt = startAt + seasonLenSec;
+    return { id: seasonId, startAt, endAt };
+  }
+
+  private activeRelicKey(playerId: number): string | null {
+    const row = this.db
+      .prepare(
+        `SELECT relic_key FROM player_relics
+         WHERE player_id = ? AND is_active = 1
+         ORDER BY acquired_at DESC
+         LIMIT 1`,
+      )
+      .get(playerId) as { relic_key: string } | undefined;
+    const key = row?.relic_key?.trim() ?? '';
+    return key || null;
+  }
+
+  private maybeGrantRelicOnLevel(playerId: number): string | null {
+    if (!this.cfg.v3ModeEnabled || !this.cfg.v3RelicEnabled) return null;
+    if (Math.random() > 0.18) return null;
+    const current = this.db.prepare(`SELECT COUNT(*) AS c FROM player_relics WHERE player_id = ?`).get(playerId) as { c: number };
+    if ((current.c ?? 0) >= 5) return null;
+    const pool = ['omen_eye', 'levy_guard', 'streak_core'];
+    const existing = this.db
+      .prepare(`SELECT relic_key FROM player_relics WHERE player_id = ?`)
+      .all(playerId) as { relic_key: string }[];
+    const owned = new Set(existing.map((r) => r.relic_key));
+    const candidates = pool.filter((k) => !owned.has(k));
+    if (!candidates.length) return null;
+    const pick = candidates[Math.floor(Math.random() * candidates.length)]!;
+    const now = Math.floor(Date.now() / 1000);
+    this.db.prepare(`INSERT INTO player_relics (player_id, relic_key, is_active, acquired_at) VALUES (?, ?, 0, ?)`).run(playerId, pick, now);
+    return pick;
+  }
+
   tick(channelNicks: Set<string>): GameAnnouncement[] {
     const now = Math.floor(Date.now() / 1000);
     if (this.lastTick === 0) {
@@ -771,6 +1132,14 @@ export class GameEngine {
     const dt = Math.min(dtRaw, GameEngine.MAX_TICK_DELTA_SEC);
 
     const online = this.db.prepare(`SELECT * FROM players WHERE online = 1`).all() as PlayerRow[];
+    const guildOnlineCounts = new Map<number, number>();
+    for (const p of online) {
+      if (!p.guild_id) continue;
+      if (!p.irc_nick || !ircNickInChannel(p.irc_nick, channelNicks)) continue;
+      guildOnlineCounts.set(p.guild_id, (guildOnlineCounts.get(p.guild_id) ?? 0) + 1);
+    }
+    const seasonId =
+      this.cfg.v3ModeEnabled && this.cfg.v3SeasonEnabled ? this.currentSeasonWindow(now).id : 0;
 
     const announcements: GameAnnouncement[] = [];
 
@@ -783,7 +1152,17 @@ export class GameEngine {
 
       const rate =
         alignmentIdleRate(p.alignment) * ((p.trinket ?? '').trim() ? 1.003 : 1);
-      let next = p.next_seconds - dt * rate;
+      const prestigeRank = Math.max(0, p.prestige_rank ?? 0);
+      const prestigeRateMult =
+        this.cfg.v3ModeEnabled && this.cfg.v3PrestigeEnabled
+          ? 1 + prestigeRank * this.cfg.v3PrestigeIdleRateBonusPct
+          : 1;
+      const guildRateMult =
+        this.cfg.v3ModeEnabled && this.cfg.v3GuildEnabled && p.guild_id && (guildOnlineCounts.get(p.guild_id) ?? 0) >= 2
+          ? 1 + this.cfg.v3GuildIdleBonusPct
+          : 1;
+      const effectiveRate = rate * prestigeRateMult * guildRateMult;
+      let next = p.next_seconds - dt * effectiveRate;
       let level = p.level;
       const prevLevel = p.level;
       const idled = p.idled + dt;
@@ -792,7 +1171,10 @@ export class GameEngine {
 
       if (this.cfg.v3ModeEnabled && this.cfg.v3StreakEnabled) {
         const step = Math.max(1, this.cfg.v3StreakStepSec);
-        const reward = Math.max(1, this.cfg.v3StreakRewardSec);
+        const relic = this.activeRelicKey(p.id);
+        const streakBonusPct =
+          this.cfg.v3RelicEnabled && relic === 'streak_core' ? Math.max(0, this.cfg.v3RelicStreakBonusPct) : 0;
+        const reward = Math.max(1, Math.floor(this.cfg.v3StreakRewardSec * (1 + streakBonusPct)));
         const beforeBand = Math.floor(streakSec / step);
         streakSec += dt;
         const afterBand = Math.floor(streakSec / step);
@@ -823,6 +1205,40 @@ export class GameEngine {
           } else {
             metaSetInt(this.db, pendingKey, pending);
           }
+        }
+      }
+
+      if (this.cfg.v3ModeEnabled && this.cfg.v3BountyEnabled) {
+        const target = Math.max(1, this.cfg.v3BountyTargetSec);
+        const quietSec = Math.max(0, this.cfg.v3BountyQuietSec);
+        const reward = Math.max(1, this.cfg.v3BountyRewardSec);
+        const day = this.bountyDayIndex(now);
+        const dayKey = `bounty_day_${p.id}`;
+        const progressKey = `bounty_idle_sec_${p.id}`;
+        const claimedKey = `bounty_claimed_${p.id}`;
+
+        const st = this.getBountyState(p.id, now, true);
+        let progress = st.progressSec;
+        const claimedToday = st.claimedToday;
+        const quietOk = quietSec <= 0 || now - st.lastActivitySec >= quietSec;
+        if (!claimedToday && quietOk && progress < target) {
+          progress = Math.min(target, progress + dt);
+          metaSetInt(this.db, progressKey, progress);
+        }
+        if (!claimedToday && progress >= target) {
+          next = Math.max(1, next - reward);
+          metaSetInt(this.db, dayKey, day);
+          metaSetInt(this.db, claimedKey, 1);
+          metaSetInt(this.db, progressKey, target);
+          if (p.irc_nick) {
+            announcements.push({
+              target: 'notice',
+              nick: p.irc_nick,
+              text: `Bounty complete: -${durationIt(reward)} from your level timer (daily idle contract).`,
+              tone: 'gain',
+            });
+          }
+          insertRealmEvent(this.db, 'bounty_claim', `${p.character_name} -${durationIt(reward)}`);
         }
       }
 
@@ -861,6 +1277,16 @@ export class GameEngine {
             });
           }
         }
+        const relicDrop = this.maybeGrantRelicOnLevel(p.id);
+        if (relicDrop && p.irc_nick) {
+          announcements.push({
+            target: 'notice',
+            nick: p.irc_nick,
+            text: `Relic discovered: ${relicDrop}. Use !relic list and !relic equip ${relicDrop}.`,
+            tone: 'gain',
+          });
+          insertRealmEvent(this.db, 'relic_found', `${p.character_name} ${relicDrop}`);
+        }
         checkNewRealmRecord(this.db, p.character_name, level, p.id, announcements);
         for (const mline of medalsForLevel(this.db, p, level)) {
           announcements.push({ target: 'chan', text: mline, tone: 'gain' });
@@ -872,6 +1298,18 @@ export class GameEngine {
           `UPDATE players SET level = ?, next_seconds = ?, idled = ?, idle_streak_sec = ?, streak_reward_count = ? WHERE id = ?`,
         )
         .run(level, next, idled, streakSec, streakRewards, p.id);
+
+      if (seasonId > 0) {
+        const seasonXpGain = Math.max(1, Math.floor((dt * Math.max(1, this.cfg.v3SeasonPassXpPerMinute)) / 60));
+        this.db.prepare(
+          `INSERT INTO player_season_progress (player_id, season_id, xp, level, updated_at)
+           VALUES (?, ?, ?, 0, ?)
+           ON CONFLICT(player_id, season_id) DO UPDATE SET
+             xp = xp + excluded.xp,
+             level = (xp + excluded.xp) / ?,
+             updated_at = excluded.updated_at`,
+        ).run(p.id, seasonId, seasonXpGain, now, Math.max(1, this.cfg.v3SeasonTierXp));
+      }
 
       if (level > prevLevel && p.irc_nick) {
         metaSetInt(this.db, `lvl_action_window_until_${p.id}`, now + GameEngine.LEVEL_ACTION_WINDOW_SEC);

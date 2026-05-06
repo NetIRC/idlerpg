@@ -243,6 +243,77 @@ function irpg_ensure_db_schema(PDO $pdo): void
     if (!isset($names['streak_reward_count'])) {
         $pdo->exec('ALTER TABLE players ADD COLUMN streak_reward_count INTEGER NOT NULL DEFAULT 0');
     }
+    if (!isset($names['guild_id'])) {
+        $pdo->exec('ALTER TABLE players ADD COLUMN guild_id INTEGER DEFAULT NULL');
+    }
+    if (!isset($names['prestige_rank'])) {
+        $pdo->exec('ALTER TABLE players ADD COLUMN prestige_rank INTEGER NOT NULL DEFAULT 0');
+    }
+    if (!isset($names['prestige_points'])) {
+        $pdo->exec('ALTER TABLE players ADD COLUMN prestige_points INTEGER NOT NULL DEFAULT 0');
+    }
+    $pdo->exec(
+        "CREATE TABLE IF NOT EXISTS seasons (
+            id INTEGER PRIMARY KEY,
+            label TEXT NOT NULL,
+            starts_at INTEGER NOT NULL,
+            ends_at INTEGER NOT NULL,
+            pass_tier_count INTEGER NOT NULL DEFAULT 20
+        );
+        CREATE TABLE IF NOT EXISTS player_season_progress (
+            player_id INTEGER NOT NULL,
+            season_id INTEGER NOT NULL,
+            xp INTEGER NOT NULL DEFAULT 0,
+            level INTEGER NOT NULL DEFAULT 0,
+            updated_at INTEGER NOT NULL,
+            PRIMARY KEY (player_id, season_id)
+        );
+        CREATE TABLE IF NOT EXISTS season_rewards_claimed (
+            player_id INTEGER NOT NULL,
+            season_id INTEGER NOT NULL,
+            tier INTEGER NOT NULL,
+            claimed_at INTEGER NOT NULL,
+            PRIMARY KEY (player_id, season_id, tier)
+        );
+        CREATE TABLE IF NOT EXISTS world_boss_runs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            season_id INTEGER NOT NULL DEFAULT 0,
+            boss_name TEXT NOT NULL,
+            hp_max INTEGER NOT NULL,
+            hp_left INTEGER NOT NULL,
+            starts_at INTEGER NOT NULL,
+            ends_at INTEGER NOT NULL,
+            state TEXT NOT NULL DEFAULT 'active',
+            reward_sec INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE TABLE IF NOT EXISTS world_boss_contrib (
+            run_id INTEGER NOT NULL,
+            player_id INTEGER NOT NULL,
+            damage INTEGER NOT NULL DEFAULT 0,
+            last_hit_at INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (run_id, player_id)
+        );
+        CREATE TABLE IF NOT EXISTS guilds (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            tag TEXT NOT NULL UNIQUE,
+            name TEXT NOT NULL UNIQUE,
+            created_at INTEGER NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS guild_members (
+            guild_id INTEGER NOT NULL,
+            player_id INTEGER NOT NULL UNIQUE,
+            role TEXT NOT NULL DEFAULT 'member',
+            joined_at INTEGER NOT NULL,
+            PRIMARY KEY (guild_id, player_id)
+        );
+        CREATE TABLE IF NOT EXISTS player_relics (
+            player_id INTEGER NOT NULL,
+            relic_key TEXT NOT NULL,
+            is_active INTEGER NOT NULL DEFAULT 0,
+            acquired_at INTEGER NOT NULL,
+            PRIMARY KEY (player_id, relic_key)
+        );"
+    );
 }
 
 /**
@@ -272,13 +343,44 @@ function irpg_meta_int(PDO $pdo, string $key): ?int
     return (int) $row['int_value'];
 }
 
+function irpg_meta_text(PDO $pdo, string $key): ?string
+{
+    $st = $pdo->prepare('SELECT text_value FROM meta WHERE key = ? LIMIT 1');
+    $st->execute([$key]);
+    $row = $st->fetch(PDO::FETCH_ASSOC);
+    if ($row === false || !array_key_exists('text_value', $row)) {
+        return null;
+    }
+    $v = trim((string) ($row['text_value'] ?? ''));
+    return $v === '' ? null : $v;
+}
+
+function irpg_env_bool(string $key, bool $default): bool
+{
+    $raw = getenv($key);
+    if ($raw === false) {
+        return $default;
+    }
+    $v = strtolower(trim((string) $raw));
+    if ($v === '') {
+        return $default;
+    }
+    return in_array($v, ['1', 'true', 'yes', 'on'], true);
+}
+
 /**
  * Realm snapshot for dashboard / IRC !realm — keep strings in line with src/game/realm.ts realmPulseData.
  *
- * @return array{display: string, onlineHeroes: int, questActive: bool, questShort: ?string, luckySecondsLeft: int, recordName: ?string, recordLevel: ?int}
+ * @return array{display: string, onlineHeroes: int, questActive: bool, questShort: ?string, luckySecondsLeft: int, recordName: ?string, recordLevel: ?int, worldBoss: ?string, seasonLabel: ?string}
  */
 function irpg_realm_pulse(PDO $pdo): array
 {
+    $v3Mode = irpg_env_bool('IRPG_V3_MODE_ENABLED', true);
+    $luckyEnabled = irpg_env_bool('IRPG_LUCKY_HOUR_ENABLED', true);
+    $trialEnabled = irpg_env_bool('IRPG_V3_DAILY_TRIAL_ENABLED', true);
+    $streakEnabled = irpg_env_bool('IRPG_V3_STREAK_ENABLED', false);
+    $seasonEnabled = irpg_env_bool('IRPG_V3_SEASON_ENABLED', true);
+    $worldBossEnabled = irpg_env_bool('IRPG_V3_WORLD_BOSS_ENABLED', true);
     $stmt = $pdo->query('SELECT COUNT(*) FROM players WHERE online = 1');
     $onlineHeroes = (int) $stmt->fetchColumn();
     $now = time();
@@ -296,29 +398,54 @@ function irpg_realm_pulse(PDO $pdo): array
     $trialNext = irpg_meta_int($pdo, 'v3_daily_trial_next') ?? 0;
     $trialLeft = max(0, $trialNext - $now);
     $recLv = irpg_meta_int($pdo, 'realm_record_level');
-    $st = $pdo->prepare('SELECT text_value FROM meta WHERE key = ? LIMIT 1');
-    $st->execute(['realm_record_name']);
-    $row = $st->fetch(PDO::FETCH_ASSOC);
-    $recName = null;
-    if ($row !== false && $row['text_value'] !== null && $row['text_value'] !== '') {
-        $recName = (string) $row['text_value'];
-    }
+    $recName = irpg_meta_text($pdo, 'realm_record_name');
+    $seasonLabel = irpg_meta_text($pdo, 'v3_season_label');
+    $worldBoss = null;
 
     $segments = [];
-    $segments[] = $onlineHeroes . ' hero' . ($onlineHeroes !== 1 ? 'es' : '') . ' online';
-    $segments[] = $qActive && $questShort !== null ? ('Quest live: ' . $questShort) : 'Quest dormant';
-    if ($luckyLeft > 0) {
-        $segments[] = 'Lucky hour ' . irpg_duration_it((float) $luckyLeft);
-    } else {
-        $segments[] = 'Lucky quiet';
+    $segments[] = $onlineHeroes . ' hero' . ($onlineHeroes !== 1 ? 'es' : '') . ' with open session';
+    $segments[] = $qActive && $questShort !== null ? ('Quest live · ' . $questShort) : 'Quest idle — awaiting next start roll';
+    if ($luckyEnabled) {
+        if ($luckyLeft > 0) {
+            $segments[] = 'Lucky hour · ' . irpg_duration_it((float) $luckyLeft) . ' left';
+        } else {
+            $segments[] = 'Lucky hour inactive';
+        }
     }
-    if ($trialNext > 0) {
+    if ($v3Mode && $trialEnabled && $trialNext > 0) {
         $segments[] = $trialLeft > 0 ? ('Daily trial in ' . irpg_duration_it((float) $trialLeft)) : 'Daily trial ready';
     }
+    if ($v3Mode && $worldBossEnabled) try {
+        $wb = $pdo->query("SELECT boss_name, hp_left, hp_max FROM world_boss_runs WHERE state = 'active' ORDER BY id DESC LIMIT 1");
+        $wbRow = $wb ? $wb->fetch(PDO::FETCH_ASSOC) : false;
+        if ($wbRow !== false) {
+            $bn = (string) ($wbRow['boss_name'] ?? '');
+            $hl = (int) ($wbRow['hp_left'] ?? 0);
+            $hm = (int) ($wbRow['hp_max'] ?? 0);
+            if ($bn !== '' && $hm > 0) {
+                $pct = (int) floor(max(0, min(100, ($hl / $hm) * 100)));
+                $segments[] = 'World Boss ' . $bn . ' ' . $pct . '% HP';
+                $worldBoss = $bn . ' ' . $hl . '/' . $hm;
+            }
+        } else {
+            $wbNext = max(0, (irpg_meta_int($pdo, 'v3_world_boss_next') ?? 0) - $now);
+            if ($wbNext > 0) {
+                $segments[] = 'World Boss in ' . irpg_duration_it((float) $wbNext);
+            }
+        }
+    } catch (Throwable) {
+        // Keep pulse resilient while older shards migrate.
+    }
+    if ($v3Mode && $seasonEnabled && $seasonLabel !== null) {
+        $segments[] = $seasonLabel;
+    }
+    if ($v3Mode && $streakEnabled) {
+        $segments[] = 'Idle streak rewards active';
+    }
     if ($recName !== null && $recLv !== null && $recLv > 0) {
-        $segments[] = 'Peak ' . $recName . ' L' . $recLv;
+        $segments[] = 'Realm peak · ' . $recName . ' L' . $recLv;
     } else {
-        $segments[] = 'No realm peak yet';
+        $segments[] = 'Realm peak · none yet';
     }
     $display = '◆ ' . implode(' · ', $segments);
 
@@ -329,6 +456,8 @@ function irpg_realm_pulse(PDO $pdo): array
         'luckySecondsLeft' => $luckyLeft,
         'recordName' => $recName,
         'recordLevel' => $recLv,
+        'worldBoss' => $worldBoss,
+        'seasonLabel' => $seasonLabel,
         'display' => $display,
     ];
 }

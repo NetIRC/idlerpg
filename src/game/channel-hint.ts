@@ -25,13 +25,19 @@ function shuffleInPlace<T>(arr: T[]): void {
 }
 
 const GENERIC_TIPS = [
-  '!time — next level countdown (!commands skip level-timer penalty).',
+  '!time — next level countdown (recognized !commands skip level-timer penalty).',
   '!whoami — active character on this IRC nick.',
   '!stats [name] — level, class, alignment, level timer.',
   '!realm — online count, quest, lucky hour, realm peak.',
   '!chronicle — latest realm events.',
   '!records — standings and realm record.',
   '!quest — party quest status.',
+  '!bounty — daily idle contract progress and reward.',
+  '!season — current seasonal ladder progress.',
+  '!boss — world boss health and spawn timing.',
+  '!guild — create/join/leave guilds.',
+  '!relic — view or equip your active relic.',
+  '!prestige — check rebirth rank and bonus.',
   '!medals — duel, quest, gauntlet, milestone badges.',
   '!top — leaderboard snippet.',
 ] as const;
@@ -92,7 +98,7 @@ export function pickChannelHint(
       if (susp) continue;
       return {
         nick,
-        body: `No character linked to this nick. While in ${cfg.ircChannel}, PM REGISTER <name> <password> <class...>. See !rules. Public !commands never add level-timer penalty.`,
+        body: `No character linked to this nick. While in ${cfg.ircChannel}, PM REGISTER <name> <password> <class...>. See !rules. Recognized public !commands never add level-timer penalty.`,
       };
     }
 

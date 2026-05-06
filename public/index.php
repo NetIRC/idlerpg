@@ -136,6 +136,9 @@ $jsonLdScript = json_encode($jsonLd, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNI
     <div class="realm-pulse-bar inner" aria-label="Realm pulse">
       <p class="realm-pulse mono" id="realm-pulse">Syncing realm pulse…</p>
     </div>
+    <div class="realm-pulse-bar inner" aria-label="Season and world boss">
+      <p class="realm-pulse mono"><span id="season-banner">Season status unavailable</span> · <span id="world-boss-banner">World Boss scouting</span></p>
+    </div>
 
     <header class="header">
       <div class="inner header-grid">
@@ -147,11 +150,15 @@ $jsonLdScript = json_encode($jsonLd, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNI
           <p class="tagline mono">Stay silent &middot; climb levels &middot; own the timer</p>
           <p class="lead lead-wow">
             <span class="lead-punch">Silence is the only currency that compounds.</span>
-            This realm-board updates in real time: who out-idles the room, which class they wear,
-            how many heartbeats separate them from the next level&mdash;and who is online while the channel holds its breath.
+            This realm-board updates in real time: who out-idles the room, which class they carry,
+            how many heartbeats remain until the next level, and exactly who is online while the channel holds its breath.
+            One shared ledger drives both IRC gameplay and this web surface, so every rank shift and timer swing is visible without delay.
           </p>
           <p class="lead-sub mono">
             The leaderboard and stat sheet read from the same live ledger the IRC bot keeps&mdash;no extra app server required for this page.
+          </p>
+          <p class="lead-sub mono">
+            Live shard intelligence: seasonal ladder pressure, world-boss windows, chronicle trails, and guild momentum&mdash;all in one operational view.
           </p>
         </div>
         <aside class="header-rules panel section-rise" aria-label="Game rules">
@@ -160,9 +167,13 @@ $jsonLdScript = json_encode($jsonLd, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNI
           <ul class="rules-list">
             <li><strong>Stay idle</strong> in the game channel to shrink your level timer. Silence levels you up.</li>
             <li><strong>Talking in the channel</strong> adds a time penalty (length matters). Lines starting with <span class="rules-cmd">!</span> (see below) are free.</li>
-            <li><strong>In-channel (no penalty):</strong> <span class="rules-cmd">!help</span> &middot; <span class="rules-cmd">!cmds</span> (extra) &middot; <span class="rules-cmd">!rules</span> &middot; <span class="rules-cmd">!top</span> &middot; <span class="rules-cmd">!ping</span> &middot; <span class="rules-cmd">!stats</span> [name] &middot; <span class="rules-cmd">!time</span> [name] &middot; <span class="rules-cmd">!whoami</span> &middot; <span class="rules-cmd">!records</span> &middot; <span class="rules-cmd">!quest</span> &middot; <span class="rules-cmd">!realm</span> &middot; <span class="rules-cmd">!chronicle</span> &middot; <span class="rules-cmd">!lore</span> <span class="mono muted-strong">(if enabled)</span> &middot; <span class="rules-cmd">!omen</span> &middot; <span class="rules-cmd">!duel</span> <span class="mono muted-strong">&lt;irc_nick&gt;</span> &middot; <span class="rules-cmd">!gauntlet</span> &middot; <span class="rules-cmd">!medals</span> [name].</li>
+            <li><strong>In-channel (no penalty):</strong> <span class="rules-cmd">!help</span> &middot; <span class="rules-cmd">!cmds</span> (extra) &middot; <span class="rules-cmd">!rules</span> &middot; <span class="rules-cmd">!top</span> &middot; <span class="rules-cmd">!ping</span> &middot; <span class="rules-cmd">!stats</span> [name] &middot; <span class="rules-cmd">!time</span> [name] &middot; <span class="rules-cmd">!whoami</span> &middot; <span class="rules-cmd">!records</span> &middot; <span class="rules-cmd">!quest</span> &middot; <span class="rules-cmd">!bounty</span> &middot; <span class="rules-cmd">!season</span> &middot; <span class="rules-cmd">!boss</span> &middot; <span class="rules-cmd">!guild</span> &middot; <span class="rules-cmd">!relic</span> &middot; <span class="rules-cmd">!prestige</span> &middot; <span class="rules-cmd">!realm</span> &middot; <span class="rules-cmd">!chronicle</span> &middot; <span class="rules-cmd">!lore</span> <span class="mono muted-strong">(if enabled)</span> &middot; <span class="rules-cmd">!omen</span> &middot; <span class="rules-cmd">!duel</span> <span class="mono muted-strong">&lt;irc_nick&gt;</span> &middot; <span class="rules-cmd">!gauntlet</span> &middot; <span class="rules-cmd">!medals</span> [name].</li>
             <li><strong>Daily trial (V3)</strong> runs automatically for eligible online heroes and can reduce or increase the level timer. Status appears in <span class="rules-cmd">!realm</span>.</li>
-            <li><strong>Idle streak (V3)</strong> grants small periodic timer reductions while you remain online and visible; penalties/combat outcomes reset streak progress.</li>
+            <li><strong>Bounty board (V3)</strong> tracks daily idle progress and grants a one-time timer reward when the contract is completed. Check status with <span class="rules-cmd">!bounty</span>.</li>
+            <li><strong>Season Pass (V3)</strong> grants seasonal XP while idling and stores monthly seasonal tiers separately from base progression (<span class="rules-cmd">!season</span>).</li>
+            <li><strong>World Boss (V3)</strong> spawns on cadence; all online idlers contribute passive damage and share reward on kill (<span class="rules-cmd">!boss</span>).</li>
+            <li><strong>Guild / Relic / Prestige (V3)</strong> add social buffs and soft meta-progression: <span class="rules-cmd">!guild</span>, <span class="rules-cmd">!relic</span>, <span class="rules-cmd">!prestige</span>.</li>
+            <li><strong>Idle streak (V3)</strong> grants small periodic timer reductions while you remain online and silent in the game channel; any channel activity (including <span class="rules-cmd">!</span> commands), penalties, or combat outcomes reset streak progress.</li>
             <li><strong>Private message</strong> the bot (from IRC) while <strong>your nick is in the game channel</strong>: <span class="rules-cmd mono">REGISTER Name Password Class…</span> &mdash; password one word; class can be several words. <span class="rules-cmd mono">LOGIN Name Password</span> to return. Also: <span class="rules-cmd mono">LOGOUT</span>, <span class="rules-cmd mono">STATS</span>, <span class="rules-cmd mono">TOP</span>, <span class="rules-cmd mono">HELP</span>, <span class="rules-cmd mono">CMDS</span>, etc.</li>
           </ul>
         </aside>
@@ -330,16 +341,33 @@ $jsonLdScript = json_encode($jsonLd, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNI
         <div class="panel treasures-panel">
           <div class="treasures-grid">
             <div class="treasure-card treasure-card--omen">
-              <h3 class="treasure-h3">How <span class="mono">!omen</span> works</h3>
-              <ul class="treasure-list">
-                <li>Must be <strong>logged in</strong> and physically <strong>in the game channel</strong> (same as earning idle time).</li>
-                <li><strong>Cooldown 8 hours</strong> per hero &mdash; no spamming fate.</li>
-                <li><strong class="omen-odds omen-odds--fluff">~55%</strong> &mdash; mood text only, timer unchanged.</li>
-                <li><strong class="omen-odds omen-odds--boon">~23%</strong> &mdash; kind omen: next level timer nudged slightly shorter (~0.2% &times; current wait, min 30s).</li>
-                <li><strong class="omen-odds omen-odds--curse">~15%</strong> &mdash; heavy omen: timer swells a little (~+0.4%).</li>
-                <li><strong class="omen-odds omen-odds--rare">~7%</strong> &mdash; rare omen: your name is written into the realm <strong>chronicle</strong> (show-off line for the shard).</li>
-              </ul>
-              <p class="treasure-foot mono muted-strong">Boon/curse/rare also write a line to the realm ledger; the web feed highlights them.</p>
+              <h3 class="treasure-h3">Quick command guide</h3>
+              <div class="treasure-guide" aria-label="Gameplay quick command guide">
+                <details class="treasure-rule" open>
+                  <summary>How <span class="mono">!omen</span> works</summary>
+                  <ul class="treasure-list">
+                    <li>Requires a logged-in hero currently in the game channel.</li>
+                    <li><strong>Cooldown:</strong> 8 hours per hero.</li>
+                    <li><strong class="omen-odds omen-odds--fluff">~55%</strong> mood text only (no timer change).</li>
+                    <li><strong class="omen-odds omen-odds--boon">~23%</strong> small timer gain (shorter wait).</li>
+                    <li><strong class="omen-odds omen-odds--curse">~15%</strong> small timer loss (longer wait).</li>
+                    <li><strong class="omen-odds omen-odds--rare">~7%</strong> rare chronicle event line.</li>
+                  </ul>
+                </details>
+                <details class="treasure-rule">
+                  <summary>How <span class="mono">!boss</span> works</summary>
+                  <p>World Boss starts on cadence. Logged-in heroes online in channel contribute passive damage while idling. On slay, reward is shared as timer reduction.</p>
+                </details>
+                <details class="treasure-rule">
+                  <summary>How <span class="mono">!season</span> works</summary>
+                  <p>Season XP is earned while idling. Monthly season ladder resets tiers and rewards, while base hero progression remains intact.</p>
+                </details>
+                <details class="treasure-rule">
+                  <summary>How <span class="mono">!guild</span> / <span class="mono">!relic</span> / <span class="mono">!prestige</span> work</summary>
+                  <p>Guild gives light social bonuses, relic grants one active perk, and prestige unlocks soft permanent scaling at higher levels.</p>
+                </details>
+              </div>
+              <p class="treasure-foot mono muted-strong">Major actions also write chronicle lines so the shard can audit results live.</p>
             </div>
             <div class="treasure-card treasure-card--finds">
               <h3 class="treasure-h3">Realm finds on this site</h3>
@@ -361,6 +389,21 @@ $jsonLdScript = json_encode($jsonLd, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNI
           </div>
         </div>
         <div class="panel chronicle-panel" id="chronicle-root" data-chronicle-limit="<?= (int) $irpgChronicleUiLimit ?>">
+          <div class="chronicle-filters">
+            <select id="chronicle-kind-filter" class="search">
+              <option value="">All kinds</option>
+              <option value="quest_start">Quest start</option>
+              <option value="quest_end">Quest end</option>
+              <option value="world_boss_start">World boss</option>
+              <option value="world_boss_slay">World boss slain</option>
+              <option value="prestige">Prestige</option>
+              <option value="bounty_claim">Bounty</option>
+            </select>
+            <input id="chronicle-search" class="search" type="search" placeholder="Search player/event..." />
+            <input id="chronicle-since" class="search" type="datetime-local" />
+            <input id="chronicle-until" class="search" type="datetime-local" />
+            <button id="chronicle-apply" class="search" type="button">Apply filters</button>
+          </div>
           <p class="muted" id="chronicle-placeholder">Pulling realm_events…</p>
           <div id="chronicle-collapsible" class="chronicle-collapsible hidden">
             <button
@@ -379,6 +422,18 @@ $jsonLdScript = json_encode($jsonLd, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNI
           </div>
         </div>
       </section>
+
+      <section class="section-rise treasures-section" aria-label="Guild standings">
+        <div class="section-head section-head-row treasures-head">
+          <div>
+            <h2 class="h2"><span class="h2-mark h2-mark-omen" aria-hidden="true"></span> Guild standings</h2>
+            <p class="lb-meta mono treasures-sub">Top guilds by member count (live from the same shard ledger).</p>
+          </div>
+        </div>
+        <div class="panel treasures-panel">
+          <ul id="guild-preview" class="rules-list"><li class="muted">Loading guilds…</li></ul>
+        </div>
+      </section>
     </main>
 
     <footer class="footer inner">
@@ -387,18 +442,6 @@ $jsonLdScript = json_encode($jsonLd, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNI
         <span class="footer-irc">&middot; IRC <strong>irc.netirc.eu:6667</strong> <strong>#IdleRPG</strong></span>
       </p>
     </footer>
-  </div>
-  <div
-    id="full-page-sync"
-    class="full-page-sync hidden"
-    aria-hidden="true"
-    aria-live="polite"
-    role="status"
-  >
-    <div class="full-page-sync-inner">
-      <div class="detail-spinner" role="presentation"></div>
-      <p class="detail-loading-text mono full-page-sync-label">Syncing realm…</p>
-    </div>
   </div>
   <script src="assets/app.js" defer></script>
 </body>

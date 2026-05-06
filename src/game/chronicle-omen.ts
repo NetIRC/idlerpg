@@ -10,6 +10,7 @@ import {
 } from '../db/index.js';
 import { durationIt, formatRelativeAgoSec } from './duration.js';
 import { ircNickInChannelWithCase } from './irc-presence.js';
+import { config } from '../config.js';
 
 /** Events packed into one IRC/PM line (also capped by CHRONICLE_IRC_MAX_CHARS). Same count as default web feed. */
 export const CHRONICLE_IRC_MAX_EVENTS = 15;
@@ -50,6 +51,16 @@ const CHRONICLE_KIND_LABEL: Record<string, string> = {
   gauntlet_lose: 'Gauntlet',
   daily_trial_win: 'Daily trial',
   daily_trial_lose: 'Daily trial',
+  bounty_claim: 'Bounty',
+  world_boss_start: 'World boss',
+  world_boss_slay: 'World boss',
+  world_boss_fail: 'World boss',
+  guild_create: 'Guild',
+  guild_join: 'Guild',
+  guild_leave: 'Guild',
+  relic_found: 'Relic',
+  relic_equip: 'Relic',
+  prestige: 'Prestige',
 };
 
 const OMEN_FLUFF = [
@@ -109,7 +120,21 @@ export function consultOmen(
 
   metaSetInt(db, key, now);
 
-  const r = Math.random();
+  const relic = db
+    .prepare(
+      `SELECT relic_key FROM player_relics
+       WHERE player_id = ? AND is_active = 1
+       ORDER BY acquired_at DESC
+       LIMIT 1`,
+    )
+    .get(p.id) as { relic_key: string } | undefined;
+  const omenLuckBoost =
+    config.v3ModeEnabled &&
+    config.v3RelicEnabled &&
+    relic?.relic_key === 'omen_eye'
+      ? Math.max(0, config.v3RelicOmenLuckBonusPct)
+      : 0;
+  const r = Math.min(0.999, Math.max(0, Math.random() - omenLuckBoost));
   if (r < 0.55) {
     const line = OMEN_FLUFF[Math.floor(Math.random() * OMEN_FLUFF.length)]!;
     return { text: `🜁 Omen (neutral): ${line}`, tone: 'neutral' };

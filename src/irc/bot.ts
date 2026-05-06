@@ -33,6 +33,9 @@ const RECLAIM_PRIMARY_MS = 90_000;
 
 let reclaimPrimaryTimer: ReturnType<typeof setInterval> | null = null;
 let forceReconnectTimer: ReturnType<typeof setTimeout> | null = null;
+let lastTopicSent = '';
+let lastTopicRefreshAttemptMs = 0;
+let lastTopicSignal = '';
 
 function normNick(n: string): string {
   return stripStatusPrefix(n);
@@ -158,6 +161,12 @@ bot.on('connected', () => {
   console.log(`[irc] registered as ${bot.user.nick}`);
   setTimeout(joinGameChannel, 500);
   engine.touchBotHeartbeat();
+  if (config.ircTopicEnabled) {
+    setTimeout(() => {
+      lastTopicSignal = engine.channelTopicSignal();
+      refreshChannelTopic(true);
+    }, 2000);
+  }
 
   if (!reclaimPrimaryTimer) {
     reclaimPrimaryTimer = setInterval(() => {
@@ -170,6 +179,26 @@ bot.on('connected', () => {
   }
 });
 
+function refreshChannelTopic(force: boolean): void {
+  if (!config.ircTopicEnabled) return;
+  if (!bot.connected) return;
+  const now = Date.now();
+  if (!force && now - lastTopicRefreshAttemptMs < 5000) return;
+  lastTopicRefreshAttemptMs = now;
+  const topic = engine.channelTopicLine();
+  if (!topic || topic === lastTopicSent) return;
+  lastTopicSent = topic;
+  bot.raw(`TOPIC ${channel} :${topic}`);
+}
+
+function refreshTopicOnStateChange(): void {
+  if (!config.ircTopicEnabled) return;
+  const sig = engine.channelTopicSignal();
+  if (sig === lastTopicSignal) return;
+  lastTopicSignal = sig;
+  refreshChannelTopic(true);
+}
+
 bot.on('reconnecting', (info: { attempt: number; max_retries: number; wait: number }) => {
   console.warn(`[irc] reconnecting attempt ${info.attempt}/${info.max_retries} in ${info.wait}ms`);
 });
@@ -181,6 +210,7 @@ bot.on('socket error', (err: unknown) => {
 bot.on('close', (hadError?: boolean) => {
   engine.clearBotHeartbeat();
   console.warn(`[irc] connection end${hadError ? ' (had error)' : ''}`);
+  lastTopicSent = '';
   /* irc-framework skips auto-reconnect if the socket drops before ~5s after registration (e.g. immediate KILL). Schedule our own reconnect when the client is fully closed. */
   if (forceReconnectTimer) clearTimeout(forceReconnectTimer);
   forceReconnectTimer = setTimeout(() => {
@@ -303,7 +333,7 @@ function tryPublicChannelCommand(fromNick: string, text: string): boolean {
       bot.say(
         channel,
         `${replyPfx} ${styleChannelLine(
-          `Idle to gain levels; normal channel chat adds to your level timer. Public !commands never add level-timer penalty. PM this bot REGISTER or LOGIN while your nick is in this channel. Quests and lucky hours start when enough players are present.`,
+          `Idle to gain levels; normal channel chat adds to your level timer. Recognized public !commands do not add level-timer penalty. PM this bot REGISTER or LOGIN while your nick is in this channel. Quests, bounties, seasons, and world boss events start automatically when conditions are met.`,
         )}`,
       );
       return true;
@@ -372,6 +402,37 @@ function tryPublicChannelCommand(fromNick: string, text: string): boolean {
     case 'quest':
       bot.say(channel, `${replyPfx} ${engine.questLine()}`);
       return true;
+    case 'bounty': {
+      const s = engine.bountyLine(fromNick);
+      bot.say(channel, `${replyPfx} ${formatEngineUserLine('err' in s ? s.err : s.text, 'err' in s)}`);
+      return true;
+    }
+    case 'season': {
+      const s = engine.seasonLine(fromNick);
+      bot.say(channel, `${replyPfx} ${formatEngineUserLine('err' in s ? s.err : s.text, 'err' in s)}`);
+      return true;
+    }
+    case 'boss': {
+      const s = engine.bossLine();
+      bot.say(channel, `${replyPfx} ${formatEngineUserLine('err' in s ? s.err : s.text, 'err' in s)}`);
+      return true;
+    }
+    case 'guild': {
+      const s = engine.guildLine(fromNick, rest.split(/\s+/).filter(Boolean));
+      bot.say(channel, `${replyPfx} ${formatEngineUserLine('err' in s ? s.err : s.text, 'err' in s)}`);
+      return true;
+    }
+    case 'relic': {
+      const s = engine.relicLine(fromNick, rest.split(/\s+/).filter(Boolean));
+      bot.say(channel, `${replyPfx} ${formatEngineUserLine('err' in s ? s.err : s.text, 'err' in s)}`);
+      return true;
+    }
+    case 'prestige': {
+      const parts = rest.split(/\s+/).filter(Boolean);
+      const s = engine.prestigeLine(fromNick, (parts[0] ?? '').toLowerCase() === 'now');
+      bot.say(channel, `${replyPfx} ${formatEngineUserLine('err' in s ? s.err : s.text, 'err' in s)}`);
+      return true;
+    }
     case 'stats': {
       const nameArg = rest.split(/\s+/).filter(Boolean)[0];
       const s = engine.stats(fromNick, nameArg);
@@ -593,6 +654,42 @@ bot.on('message', (event) => {
     return;
   }
 
+  if (cmd === 'bounty') {
+    const s = engine.bountyLine(from);
+    bot.notice(from, formatEngineUserLine('err' in s ? s.err : s.text, 'err' in s));
+    return;
+  }
+
+  if (cmd === 'season') {
+    const s = engine.seasonLine(from);
+    bot.notice(from, formatEngineUserLine('err' in s ? s.err : s.text, 'err' in s));
+    return;
+  }
+
+  if (cmd === 'boss') {
+    const s = engine.bossLine();
+    bot.notice(from, formatEngineUserLine('err' in s ? s.err : s.text, 'err' in s));
+    return;
+  }
+
+  if (cmd === 'guild') {
+    const s = engine.guildLine(from, rest);
+    bot.notice(from, formatEngineUserLine('err' in s ? s.err : s.text, 'err' in s));
+    return;
+  }
+
+  if (cmd === 'relic') {
+    const s = engine.relicLine(from, rest);
+    bot.notice(from, formatEngineUserLine('err' in s ? s.err : s.text, 'err' in s));
+    return;
+  }
+
+  if (cmd === 'prestige') {
+    const s = engine.prestigeLine(from, (rest[0] ?? '').toLowerCase() === 'now');
+    bot.notice(from, formatEngineUserLine('err' in s ? s.err : s.text, 'err' in s));
+    return;
+  }
+
   bot.notice(from, ircRed(MSG.unknownPmCommand));
 });
 
@@ -684,6 +781,7 @@ setInterval(() => {
   for (const a of engine.tick(namesInChannel)) {
     deliver(a);
   }
+  refreshTopicOnStateChange();
 }, config.selfClockMs);
 
 /** Site reads `meta.bot_last_seen_ms`; refresh while socket is up, clear on disconnect. */

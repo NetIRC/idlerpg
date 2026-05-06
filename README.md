@@ -35,9 +35,9 @@
 
 | Layer | Responsibility |
 |--------|----------------|
-| **IRC bot** (`src/`) | Normal client connection (not server / P10). Registration, login, idle ticks, channel penalties, optional quests, lucky hour, Hand of God, alignment, charms. |
+| **IRC bot** (`src/`) | Normal client connection (not server / P10). Registration, login, idle ticks, channel penalties, optional quests, lucky hour, Hand of God, alignment, charms, season pass, world boss, guild/relic/prestige systems. |
 | **Web UI** (`public/`) | `index.php` leaderboard, detail pane, rules, bot online/offline banner. [`public/.htaccess`](public/.htaccess): HTTPS (non-local), security headers. |
-| **HTTP API** | Read-only JSON: [`/api/health.php`](public/api/health.php), [`/api/leaderboard.php`](public/api/leaderboard.php), [`/api/player.php`](public/api/player.php) (`?name=…`), [`/api/chronicle.php`](public/api/chronicle.php) (optional `limit`). |
+| **HTTP API** | Read-only JSON: [`/api/health.php`](public/api/health.php), [`/api/leaderboard.php`](public/api/leaderboard.php), [`/api/player.php`](public/api/player.php) (`?name=…`), [`/api/chronicle.php`](public/api/chronicle.php) (`limit`, `kind`, `search`, `since`, `until`). |
 | **Data** | Single SQLite file (e.g. `data/idlerpg.db`). The bot and `site.config.php` must use the **same** path. |
 
 ---
@@ -133,6 +133,7 @@ Private commands are rate-limited per nick via `IRPG_PM_FLOOD_MAX` and `IRPG_PM_
 **Durations (timers, lucky hour, penalties):** the bot and PHP API use the same human-readable rules: under **1 minute** as `45s`; under **1 hour** as `13m 5s` or `10m`; under **1 day** as `14h 18m 29s`; **1+ days** as `2d 14h 18m 29s`. Chronicle / site “time ago” uses compact `s` / `m` / `h` / `d`.
 
 If **`IRPG_IRC_CHAN_BANTER_MS`** is set **`> 0`**, the bot also posts occasional ambient lines and **contextual tips** (REGISTER / LOGIN / `!` commands you can actually use right then). Set to **`0`** to disable.
+If **`IRPG_IRC_TOPIC_ENABLED=true`**, the bot updates the channel **TOPIC** only on key state changes (season rollover or world-boss state change) using a low-noise format. The bot needs topic privileges (+o / +h depending on network mode policy).
 
 ---
 
@@ -149,6 +150,12 @@ If **`IRPG_IRC_CHAN_BANTER_MS`** is set **`> 0`**, the bot also posts occasional
 | **Quests** | If enabled, party quests start automatically when enough heroes are online (see `IRPG_QUEST_*` in `.env`). |
 | **Lucky hour** | If enabled, random windows where Hand-of-God odds are boosted. |
 | **V3 daily trial** | Optional shard event (`IRPG_V3_*`): one online hero gets a timed challenge with bounded timer reward/penalty and chronicle log. |
+| **V3 bounty board** | Optional daily idle contract (`!bounty`): stay quiet/present to fill progress and auto-claim one timer reduction when target is reached. |
+| **V3 season pass** | Optional monthly season ladder with separate seasonal XP/tier progression (`!season`) and no reset of base hero progression. |
+Season numbering is anchored by `IRPG_V3_SEASON_EPOCH_SEC` (Unix seconds) plus `IRPG_V3_SEASON_LENGTH_DAYS`, so you can keep human-friendly season counts across shards.
+
+| **V3 world boss** | Optional cooperative periodic event: online idlers contribute passive damage and share timer reward on kill (`!boss`). |
+| **V3 guilds / relics / prestige** | Optional social and meta loops: guild tags + bonus (`!guild`), one active relic perk (`!relic`), rebirth for soft permanent bonus (`!prestige`). |
 | **V3 idle streak** | Optional reward loop: uninterrupted in-channel idle grants periodic timer reductions. In strict mode, **any channel activity** (including `!` commands) breaks the streak; penalties/combat outcomes also reset it. |
 | **Level-up action window** | After a level-up, the hero gets a **5-minute hint window** (notice) suggesting currently available `!duel` / `!omen` / `!gauntlet`; one reminder appears at half-window. This is informational only and does **not** bypass cooldowns. |
 | **REGISTER** | PM the bot: one-word **password**; **class** can be multiple words. **Character name** must be unique in the database. |
@@ -182,6 +189,12 @@ All commands are case-insensitive on the `!word` token (e.g. `!HELP`). Optional 
 | **!whoami** | — | Logged-in identity + cooldown summary (omen/duel/gauntlet/daily trial) and, when active, remaining level-up hint window time. |
 | **!records** | — | Realm records / highs (same source as the site). |
 | **!quest** | — | Quest status line (team quest window, etc.). |
+| **!bounty** | — | Daily idle contract progress/reward status (V3 optional). Shows progress, reward size, and quiet-gate countdown when active. |
+| **!season** | — | Current season label, your season XP/tier, and time left before rollover. |
+| **!boss** | — | Current world boss status (HP/time) or next spawn timer. |
+| **!guild** | `[status/create/join/leave ...]` | Minimal clan system: create tag/name, join/leave guild, and status. |
+| **!relic** | `[status/list/equip key]` | Show/equip your single active relic perk. |
+| **!prestige** | `[now]` | Show prestige rank/bonus; with `now`, rebirth at min level and gain permanent soft bonus. |
 | **!realm** | — | One-line **realm pulse**: heroes online, quest, lucky hour, peak level. Alias: **!pulse**. |
 | **!chronicle** | — | Recent **realm events** on one IRC line (newest **15** events, same default count as the web feed; ~480 chars max). |
 | **!omen** | — | Personal omen (~**8h** cooldown); must be **logged in** and in channel; **can change your timer** (boon/curse/rare). |
@@ -210,6 +223,12 @@ Send as **PM** (private message) to the bot nick. For **REGISTER**, **LOGIN**, a
 | **TIME** | `[name]` | Same as **!time**. |
 | **RECORDS** | — | Same as **!records**. |
 | **QUEST** | — | Same as **!quest**. |
+| **BOUNTY** | — | Same as **!bounty** (daily contract status). |
+| **SEASON** | — | Same as **!season**. |
+| **BOSS** | — | Same as **!boss**. |
+| **GUILD** | `status/create/join/leave ...` | Same as **!guild**. |
+| **RELIC** | `status/list/equip key` | Same as **!relic**. |
+| **PRESTIGE** | `[now]` | Same as **!prestige**. |
 | **REALM** / **PULSE** | — | Same as **!realm**. |
 | **CHRONICLE** | — | Same as **!chronicle**. |
 | **OMEN** | — | Same as **!omen** (must be in game channel). |

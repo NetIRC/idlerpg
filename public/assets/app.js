@@ -125,6 +125,12 @@
   const chronicleCollapsible = document.getElementById('chronicle-collapsible');
   const chronicleCountEl = document.getElementById('chronicle-count');
   const chronicleListWrap = document.getElementById('chronicle-list-wrap');
+  const chronicleKindFilterEl = document.getElementById('chronicle-kind-filter');
+  const chronicleSearchEl = document.getElementById('chronicle-search');
+  const chronicleSinceEl = document.getElementById('chronicle-since');
+  const chronicleUntilEl = document.getElementById('chronicle-until');
+  const chronicleApplyEl = document.getElementById('chronicle-apply');
+  let chronicleBeforeId = null;
   /** Must match irpg_chronicle_max_limit() / chronicle-omen.ts CHRONICLE_API_MAX_LIMIT */
   const CHRONICLE_API_MAX = 40;
   const chronicleFetchLimit = Math.min(
@@ -202,17 +208,17 @@
       const tag = hit.tagName && hit.tagName.toLowerCase();
       if (tag === 'rect') {
         const nameW = parseFloat(g.dataset.nameW || '48');
-        const hr = Math.max(22, r0 * 4);
-        const pad = 5;
+        const hr = Math.max(10, r0 * 1.45);
+        const pad = 2;
         const hitW = hr + pad + nameW;
-        const hitH = Math.max(hr * 2, 22);
+        const hitH = Math.max(hr * 2, 16);
         hit.setAttribute('x', (-hr).toFixed(2));
         hit.setAttribute('y', (-hitH / 2).toFixed(2));
         hit.setAttribute('width', hitW.toFixed(2));
         hit.setAttribute('height', hitH.toFixed(2));
-        hit.setAttribute('rx', Math.min(14, hitH / 2).toFixed(2));
+        hit.setAttribute('rx', Math.min(10, hitH / 2).toFixed(2));
       } else {
-        const hr = Math.max(26, r0 * 4.5);
+        const hr = Math.max(12, r0 * 1.8);
         hit.setAttribute('r', hr.toFixed(2));
       }
     }
@@ -413,7 +419,7 @@
     const ATLAS_Y_NORTH = 90;
     const ATLAS_Y_SOUTH = 540;
     const ATLAS_MIN_PX_PER_LEVEL = 52;
-    const ATLAS_SAME_LEVEL_STACK = 15;
+    const ATLAS_SAME_LEVEL_SPREAD_X = 118;
     const latSpan = ATLAS_Y_SOUTH - ATLAS_Y_NORTH;
 
     const countAtLevel = Object.create(null);
@@ -422,6 +428,7 @@
       countAtLevel[L] = (countAtLevel[L] || 0) + 1;
     }
     const idxAtLevel = Object.create(null);
+    const placedPoints = [];
 
     sorted.forEach((p, rank) => {
       const lv = atlasSafeLevel(p);
@@ -439,21 +446,53 @@
       const k = idxAtLevel[lv] ?? 0;
       idxAtLevel[lv] = k + 1;
       const nHere = countAtLevel[lv];
-      const stackY = nHere > 1 ? (k - (nHere - 1) / 2) * ATLAS_SAME_LEVEL_STACK : 0;
+      const stackX = nHere > 1 ? (k - (nHere - 1) / 2) * ATLAS_SAME_LEVEL_SPREAD_X : 0;
       const jitterA = ((hash32(p.name) % 360) * Math.PI) / 180 / 12;
       const a = rank * GOLDEN_ANGLE + jitterA;
-      const spread = 112 + Math.sqrt(rank + 1) * 48;
+      const spread = 200 + Math.sqrt(rank + 1) * 76;
+      const displayName = p.name.length > 24 ? `${p.name.slice(0, 22)}…` : p.name;
+      const estNameW = Math.min(150, 10 + displayName.length * 6.2);
       let x = 500 + Math.cos(a) * spread * 1.02;
       const h0 = hash32(p.name);
-      x += (h0 % 29) - 14;
-      const yJ = ((h0 >>> 7) % 11) - 5;
-      let y = yBand + yJ + stackY;
-      x = clamp(x, 72, 928);
+      x += (h0 % 29) - 14 + stackX;
+      let y = yBand;
+      const xMin = 44;
+      const xMax = 1000 - 20 - (Math.max(4.6, 3.6 + Math.min(13.5, atlasSafeLevel(p) / 6.2)) + 6 + estNameW);
+      if (xMax <= xMin) {
+        x = (xMin + xMax) / 2;
+      } else {
+        x = clamp(x, xMin, xMax);
+      }
       y = clamp(y, 88, 548);
+      const maxBandDrift = 2;
+      const bandMin = clamp(yBand - maxBandDrift, 88, 548);
+      const bandMax = clamp(yBand + maxBandDrift, 88, 548);
 
-      const rad = Math.max(4, 2.8 + Math.min(11.5, atlasSafeLevel(p) / 7));
-      const displayName = p.name.length > 24 ? `${p.name.slice(0, 22)}…` : p.name;
-      const estNameW = Math.min(132, 8 + displayName.length * 5.65);
+      const rad = Math.max(4.6, 3.6 + Math.min(13.5, atlasSafeLevel(p) / 6.2));
+      const minGap = 46 + rad * 2.7;
+      let tries = 0;
+      while (tries < 24) {
+        let overlap = false;
+        for (const q of placedPoints) {
+          const dx = x - q.x;
+          const dy = y - q.y;
+          const distSq = dx * dx + dy * dy;
+          const gap = Math.max(minGap, q.minGap);
+          if (distSq < gap * gap) {
+            overlap = true;
+            break;
+          }
+        }
+        if (!overlap) break;
+        const nudge = 38 + tries * 4.8;
+        x += (k % 2 === 0 ? 1 : -1) * nudge;
+        if (xMax > xMin) {
+          x = clamp(x, xMin, xMax);
+        }
+        y = clamp(y, bandMin, bandMax);
+        tries += 1;
+      }
+      placedPoints.push({ x, y, minGap });
       const g = document.createElementNS(NS, 'g');
       g.setAttribute('class', 'atlas-marker-g' + (p.online ? ' is-online' : '') + (selectedName === p.name ? ' is-selected' : ''));
       g.dataset.wx = String(x);
@@ -536,6 +575,16 @@
     gauntlet_lose: 'Gauntlet',
     daily_trial_win: 'Daily trial',
     daily_trial_lose: 'Daily trial',
+    bounty_claim: 'Bounty',
+    world_boss_start: 'World boss',
+    world_boss_slay: 'World boss',
+    world_boss_fail: 'World boss',
+    guild_create: 'Guild',
+    guild_join: 'Guild',
+    guild_leave: 'Guild',
+    relic_found: 'Relic',
+    relic_equip: 'Relic',
+    prestige: 'Prestige',
   };
 
   function chronicleKindLabel(k) {
@@ -620,13 +669,17 @@
     chroniclePlaceholder.classList.add('hidden');
     if (chronicleCollapsible) chronicleCollapsible.classList.remove('hidden');
     if (chronicleCountEl) chronicleCountEl.textContent = String(events.length);
+    let prevDay = '';
     chronicleList.innerHTML = events
       .map((e) => {
         const kind = chronicleKindLabel(e.kind || '');
         const safeKind = realmEventKindClass(e.kind);
         const ago = formatAgoSec(e.ts);
         const det = escapeHtml(normalizeLegacyDurationText((e.detail || '').trim() || '—'));
-        return `<li class="chronicle-item chronicle-item--${safeKind}"><div class="chronicle-meta">${escapeHtml(kind)} <span class="chronicle-ago">· ${ago} ago</span></div><div class="chronicle-detail">${det}</div></li>`;
+        const dayKey = Number.isFinite(e.ts) ? new Date(e.ts * 1000).toLocaleDateString() : '';
+        const dayHead = dayKey && dayKey !== prevDay ? `<li class="chronicle-day-head mono">${escapeHtml(dayKey)}</li>` : '';
+        prevDay = dayKey || prevDay;
+        return `${dayHead}<li class="chronicle-item chronicle-item--${safeKind}"><div class="chronicle-meta">${escapeHtml(kind)} <span class="chronicle-ago">· ${ago} ago</span></div><div class="chronicle-detail">${det}</div></li>`;
       })
       .join('');
     if (chronicleListWrap) {
@@ -640,7 +693,19 @@
   }
 
   async function fetchChronicle() {
-    const r = await fetch('api/chronicle.php?limit=' + encodeURIComponent(String(chronicleFetchLimit)), { cache: 'no-store' });
+    const params = new URLSearchParams({ limit: String(chronicleFetchLimit) });
+    if (chronicleKindFilterEl && chronicleKindFilterEl.value) params.set('kind', chronicleKindFilterEl.value);
+    if (chronicleSearchEl && chronicleSearchEl.value.trim()) params.set('search', chronicleSearchEl.value.trim());
+    if (chronicleSinceEl && chronicleSinceEl.value) {
+      const v = Math.floor(new Date(chronicleSinceEl.value).getTime() / 1000);
+      if (Number.isFinite(v) && v > 0) params.set('since', String(v));
+    }
+    if (chronicleUntilEl && chronicleUntilEl.value) {
+      const v = Math.floor(new Date(chronicleUntilEl.value).getTime() / 1000);
+      if (Number.isFinite(v) && v > 0) params.set('until', String(v));
+    }
+    if (chronicleBeforeId != null) params.set('before_id', String(chronicleBeforeId));
+    const r = await fetch('api/chronicle.php?' + params.toString(), { cache: 'no-store' });
     const text = await r.text();
     const j = parseJsonSafe(text);
     if (!r.ok || !j || !Array.isArray(j.events)) {
@@ -648,6 +713,7 @@
       err.detail = j || { hint: text.slice(0, 200) };
       throw err;
     }
+    chronicleBeforeId = typeof j.nextBeforeId === 'number' ? j.nextBeforeId : null;
     return j.events;
   }
 
@@ -672,6 +738,9 @@
       botLastSeenMs: typeof j.botLastSeenMs === 'number' ? j.botLastSeenMs : null,
       aiEnabled: j.aiEnabled === true,
       realmPulse: j.realmPulse && typeof j.realmPulse === 'object' ? j.realmPulse : null,
+      season: typeof j.season === 'string' ? j.season : null,
+      worldBoss: typeof j.worldBoss === 'string' ? j.worldBoss : null,
+      guildsPreview: Array.isArray(j.guildsPreview) ? j.guildsPreview : [],
     };
   }
 
@@ -720,6 +789,51 @@
     }
   }
 
+  function setSeasonBanner(label) {
+    const el = document.getElementById('season-banner');
+    if (!el) return;
+    if (!label) {
+      el.textContent = 'Season status unavailable';
+      return;
+    }
+    el.textContent = `${label} live`;
+  }
+
+  function setWorldBossBanner(worldBossText) {
+    const el = document.getElementById('world-boss-banner');
+    if (!el) return;
+    if (!worldBossText) {
+      el.textContent = 'World Boss scouting';
+      return;
+    }
+    el.textContent = `World Boss: ${worldBossText}`;
+  }
+
+  function setGuildPreview(guilds) {
+    const root = document.getElementById('guild-preview');
+    if (!root) return;
+    if (!Array.isArray(guilds) || !guilds.length) {
+      root.innerHTML = '<li class="muted">No guilds yet.</li>';
+      return;
+    }
+    root.innerHTML = guilds
+      .slice(0, 5)
+      .map((g) => {
+        const list = Array.isArray(g.memberList) ? g.memberList : [];
+        const membersHtml =
+          list.length > 0
+            ? `<div class="guild-members">${list
+                .map((m) => {
+                  const role = String(m.role || 'member').toLowerCase() === 'leader' ? 'leader' : 'member';
+                  return `<span class="guild-member-chip guild-member-chip--${role}">${escapeHtml(String(m.name || ''))}</span>`;
+                })
+                .join('')}</div>`
+            : '<div class="guild-members guild-members--empty">No linked members yet.</div>';
+        return `<li class="guild-preview-item"><div class="guild-preview-head">[${escapeHtml(String(g.tag || 'TAG'))}] ${escapeHtml(String(g.name || 'Guild'))} · ${Number(g.members || 0)} members</div>${membersHtml}</li>`;
+      })
+      .join('');
+  }
+
   async function fetchPlayer(name) {
     const r = await fetch('api/player.php?' + new URLSearchParams({ name }), { cache: 'no-store' });
     const text = await r.text();
@@ -755,12 +869,15 @@
     list.forEach((p, i) => {
       const tr = document.createElement('tr');
       tr.dataset.name = p.name;
+      const dotClass = p.online ? 'dot dot--online' : 'dot dot--offline';
+      const dotTitle = p.online ? 'Online' : 'Offline';
+      const offlineTag = p.online ? '' : '<span class="timer-offline-tag">Offline</span>';
       tr.innerHTML = `
         <td class="mono" style="opacity:0.55">${i + 1}</td>
-        <td><strong style="color:#fff">${escapeHtml(p.name)}</strong>${p.online ? '<span class="dot" title="Online"></span>' : ''}</td>
+        <td><span class="player-presence"><strong style="color:#fff">${escapeHtml(p.name)}</strong><span class="${dotClass}" title="${dotTitle}"></span></span></td>
         <td class="lv">${p.level}</td>
         <td class="hide-sm" style="opacity:0.85">${escapeHtml(p.class)}</td>
-        <td class="timer">${escapeHtml(p.nextHuman)}</td>`;
+        <td class="timer"><span class="timer-line">${escapeHtml(p.nextHuman)} ${offlineTag}</span></td>`;
       tr.addEventListener('click', () => openPlayer(p.name));
       tbody.appendChild(tr);
     });
@@ -875,6 +992,9 @@
       const streakSec = d.idleStreakSec != null ? Number(d.idleStreakSec) : 0;
       const streakRewards = d.streakRewardCount != null ? Number(d.streakRewardCount) : 0;
       const streakHuman = Number.isFinite(streakSec) ? formatDurationSec(Math.max(0, streakSec)) : '0s';
+      const guildLabel = d.guild && d.guild.tag ? `[${d.guild.tag}] ${d.guild.name || ''}`.trim() : 'None';
+      const relicLabel = d.activeRelic ? String(d.activeRelic) : 'None';
+      const seasonLabel = d.season && d.season.label ? `${d.season.label} · XP ${d.season.xp || 0}` : 'N/A';
       detailWrite(`
         <div class="detail-name">${escapeHtml(d.name)}</div>
         <p class="detail-sub">L<span class="mono" style="color:var(--arc)">${d.level}</span> · ${escapeHtml(d.class)}</p>
@@ -887,6 +1007,10 @@
           <div class="dl-item"><dt>Gauntlet</dt><dd>${gw} win${gw === 1 ? '' : 's'}</dd></div>
           <div class="dl-item"><dt>Idle streak</dt><dd>${escapeHtml(streakHuman)}</dd></div>
           <div class="dl-item"><dt>Streak rewards</dt><dd>${streakRewards}</dd></div>
+          <div class="dl-item"><dt>Guild</dt><dd>${escapeHtml(guildLabel)}</dd></div>
+          <div class="dl-item"><dt>Prestige</dt><dd>Rank ${Number(d.prestigeRank || 0)} · points ${Number(d.prestigePoints || 0)}</dd></div>
+          <div class="dl-item"><dt>Relic</dt><dd>${escapeHtml(relicLabel)}</dd></div>
+          <div class="dl-item"><dt>Season</dt><dd>${escapeHtml(seasonLabel)}</dd></div>
           ${charmRow}
         </div>
         <div class="stats-label">Medals</div>
@@ -910,17 +1034,21 @@
   async function refresh() {
     setLedgerSyncBusy(true);
     try {
-      const { players, generatedAt, botOnline, botLastSeenMs, aiEnabled, realmPulse } = await fetchLb();
+      const { players, generatedAt, botOnline, botLastSeenMs, aiEnabled, realmPulse, season, worldBoss, guildsPreview } = await fetchLb();
       rows = players;
       lastRealmPulse = realmPulse;
       setLastUpdated(generatedAt);
       setBotStatus(botOnline, botLastSeenMs, aiEnabled);
       setRealmPulse(realmPulse);
+      setSeasonBanner(season);
+      setWorldBossBanner(worldBoss);
+      setGuildPreview(guildsPreview);
       setErr(null);
       applyFilter();
       renderRealmAtlas(rows, realmPulse, selName);
       if (selName) openPlayer(selName);
       try {
+        chronicleBeforeId = null;
         const events = await fetchChronicle();
         renderChronicle(events);
       } catch {
@@ -949,6 +1077,20 @@
   }
 
   qEl.addEventListener('input', applyFilter);
+  if (chronicleApplyEl) {
+    chronicleApplyEl.addEventListener('click', async () => {
+      try {
+        chronicleBeforeId = null;
+        const events = await fetchChronicle();
+        renderChronicle(events);
+      } catch {
+        if (chroniclePlaceholder) {
+          chroniclePlaceholder.textContent = 'Chronicle filter failed — check API.';
+          chroniclePlaceholder.classList.remove('hidden');
+        }
+      }
+    });
+  }
 
   if (detail) {
     detail.addEventListener('click', (ev) => {

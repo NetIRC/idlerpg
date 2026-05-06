@@ -51,7 +51,7 @@ export function runGauntlet(
 
   const announcements: GameAnnouncement[] = [];
   const name = p.character_name;
-  const cls = p.class.trim().split(/\s+/)[0] || 'hero';
+  const cls = p.class.trim() || 'hero';
 
   if (win) {
     const mult = epic ? 0.982 : 0.99;

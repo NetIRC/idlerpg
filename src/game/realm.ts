@@ -15,12 +15,17 @@ const MK_QUEST_ENDS = 'quest_ends_at';
 const MK_QUEST_T0 = 'quest_t0';
 const MK_QUEST_T1 = 'quest_t1';
 const MK_QUEST_TEAMS = 'quest_teams_json';
+const MK_QUEST_VARIANT = 'quest_variant';
 const MK_QUEST_NEXT = 'quest_next_at';
 const MK_LUCKY_UNTIL = 'lucky_until';
 const MK_LUCKY_CHECK = 'lucky_check_at';
 const MK_V3_DAILY_TRIAL_NEXT = 'v3_daily_trial_next';
+const MK_WORLD_BOSS_NEXT = 'v3_world_boss_next';
+const MK_SEASON_LABEL = 'v3_season_label';
 
 const TEAM_NAMES = ['Sunbound', 'Moonveil'];
+type QuestVariant = 'classic' | 'escort' | 'relic_rush' | 'survival';
+const QUEST_VARIANTS: QuestVariant[] = ['classic', 'escort', 'relic_rush', 'survival'];
 
 function shuffleInPlace<T>(arr: T[]): void {
   for (let i = arr.length - 1; i > 0; i--) {
@@ -57,6 +62,12 @@ export function realmTick(db: Database, cfg: AppConfig, channelNicks: Set<string
   if (cfg.v3ModeEnabled && cfg.v3DailyTrialEnabled) {
     maybeDailyTrial(db, cfg, now, channelNicks, an);
   }
+  if (cfg.v3ModeEnabled && cfg.v3WorldBossEnabled) {
+    maybeWorldBoss(db, cfg, now, channelNicks, an);
+  }
+  if (cfg.v3ModeEnabled && cfg.v3SeasonEnabled) {
+    ensureCurrentSeason(db, cfg, now);
+  }
 }
 
 function clearQuestState(db: Database, now: number): void {
@@ -65,11 +76,44 @@ function clearQuestState(db: Database, now: number): void {
   metaSetInt(db, MK_QUEST_T0, 0);
   metaSetInt(db, MK_QUEST_T1, 0);
   metaSetInt(db, MK_QUEST_ENDS, 0);
+  metaSetText(db, MK_QUEST_VARIANT, null);
   metaSetInt(db, MK_QUEST_NEXT, now + 600);
 }
 
 function questActive(db: Database): boolean {
   return (metaGetInt(db, MK_QUEST_ACTIVE) ?? 0) === 1;
+}
+
+function pickQuestVariant(cfg: AppConfig): QuestVariant {
+  if (!cfg.v3ModeEnabled || !cfg.v3QuestVariantsEnabled) return 'classic';
+  return QUEST_VARIANTS[Math.floor(Math.random() * QUEST_VARIANTS.length)] ?? 'classic';
+}
+
+function questVariantMultiplier(variant: QuestVariant, level: number): number {
+  if (variant === 'escort') return Math.max(1, Math.floor(level * 0.75 + 5));
+  if (variant === 'relic_rush') return Math.max(1, Math.floor(level * 1.15));
+  if (variant === 'survival') return Math.max(1, Math.floor(level * 0.9));
+  return Math.max(1, level);
+}
+
+function questVariantLabel(variant: QuestVariant): string {
+  if (variant === 'escort') return 'Escort';
+  if (variant === 'relic_rush') return 'Relic Rush';
+  if (variant === 'survival') return 'Survival';
+  return 'Classic';
+}
+
+function activeRelicKey(db: Database, playerId: number): string | null {
+  const row = db
+    .prepare(
+      `SELECT relic_key FROM player_relics
+       WHERE player_id = ? AND is_active = 1
+       ORDER BY acquired_at DESC
+       LIMIT 1`,
+    )
+    .get(playerId) as { relic_key: string } | undefined;
+  const key = row?.relic_key?.trim() ?? '';
+  return key || null;
 }
 
 function tickQuestScores(db: Database, channelNicks: Set<string>): void {
@@ -81,6 +125,10 @@ function tickQuestScores(db: Database, channelNicks: Set<string>): void {
   } catch {
     return;
   }
+  const variantRaw = (metaGetText(db, MK_QUEST_VARIANT) ?? 'classic').trim().toLowerCase();
+  const variant: QuestVariant = QUEST_VARIANTS.includes(variantRaw as QuestVariant)
+    ? (variantRaw as QuestVariant)
+    : 'classic';
   const online = db.prepare('SELECT * FROM players WHERE online = 1').all() as PlayerRow[];
   for (const p of online) {
     if (!p.irc_nick || !ircNickInChannel(p.irc_nick, channelNicks)) continue;
@@ -88,7 +136,7 @@ function tickQuestScores(db: Database, channelNicks: Set<string>): void {
     if (t !== 0 && t !== 1) continue;
     const key = t === 0 ? MK_QUEST_T0 : MK_QUEST_T1;
     const cur = metaGetInt(db, key) ?? 0;
-    metaSetInt(db, key, cur + Math.max(1, p.level));
+    metaSetInt(db, key, cur + questVariantMultiplier(variant, p.level));
   }
 }
 
@@ -123,6 +171,7 @@ function tryStartQuest(
 
   const shuffled = [...candidates];
   shuffleInPlace(shuffled);
+  const variant = pickQuestVariant(cfg);
   const teams: Record<string, number> = {};
   shuffled.forEach((p, i) => {
     teams[p.character_name] = i < Math.ceil(shuffled.length / 2) ? 0 : 1;
@@ -131,6 +180,7 @@ function tryStartQuest(
   metaSetInt(db, MK_QUEST_T0, 0);
   metaSetInt(db, MK_QUEST_T1, 0);
   metaSetText(db, MK_QUEST_TEAMS, JSON.stringify(teams));
+  metaSetText(db, MK_QUEST_VARIANT, variant);
   metaSetInt(db, MK_QUEST_ENDS, now + cfg.questDurationSec);
   metaSetInt(db, MK_QUEST_ACTIVE, 1);
 
@@ -139,9 +189,9 @@ function tryStartQuest(
   const d = durationIt(cfg.questDurationSec);
   an.push({
     target: 'chan',
-    text: `⚔ Quest started: ${TEAM_NAMES[0]} vs ${TEAM_NAMES[1]} — ${n0.join(', ')} vs ${n1.join(', ')}. Scoring uses your level while idling in channel. Duration: ${d}.`,
+    text: `⚔ Quest started (${questVariantLabel(variant)}): ${TEAM_NAMES[0]} vs ${TEAM_NAMES[1]} — ${n0.join(', ')} vs ${n1.join(', ')}. Scoring uses your level while idling in channel. Duration: ${d}.`,
   });
-  insertRealmEvent(db, 'quest_start', `${TEAM_NAMES[0]} vs ${TEAM_NAMES[1]}`);
+  insertRealmEvent(db, 'quest_start', `${questVariantLabel(variant)} · ${TEAM_NAMES[0]} vs ${TEAM_NAMES[1]}`);
 }
 
 function finishQuest(db: Database, cfg: AppConfig, channelNicks: Set<string>, an: GameAnnouncement[]): void {
@@ -156,13 +206,26 @@ function finishQuest(db: Database, cfg: AppConfig, channelNicks: Set<string>, an
   }
   const s0 = metaGetInt(db, MK_QUEST_T0) ?? 0;
   const s1 = metaGetInt(db, MK_QUEST_T1) ?? 0;
+  const variantRaw = (metaGetText(db, MK_QUEST_VARIANT) ?? 'classic').trim().toLowerCase();
+  const variant: QuestVariant = QUEST_VARIANTS.includes(variantRaw as QuestVariant)
+    ? (variantRaw as QuestVariant)
+    : 'classic';
   const winner = s0 === s1 ? (Math.random() < 0.5 ? 0 : 1) : s0 > s1 ? 0 : 1;
 
-  const bonusWin = Math.min(
+  let bonusWin = Math.min(
     cfg.limitpen > 0 ? cfg.limitpen : Number.MAX_SAFE_INTEGER,
     Math.max(30, Math.floor(cfg.rpbase * cfg.questWinnerBonusMult)),
   );
-  const penLose = Math.max(20, Math.floor(cfg.rpbase * cfg.questLoserPenaltyMult));
+  let penLose = Math.max(20, Math.floor(cfg.rpbase * cfg.questLoserPenaltyMult));
+  if (variant === 'escort') {
+    bonusWin = Math.floor(bonusWin * 0.95);
+    penLose = Math.floor(penLose * 0.9);
+  } else if (variant === 'relic_rush') {
+    bonusWin = Math.floor(bonusWin * 1.18);
+  } else if (variant === 'survival') {
+    bonusWin = Math.floor(bonusWin * 0.85);
+    penLose = Math.floor(penLose * 0.78);
+  }
 
   const winners: string[] = [];
   const losers: string[] = [];
@@ -189,11 +252,15 @@ function finishQuest(db: Database, cfg: AppConfig, channelNicks: Set<string>, an
   for (const name of losers) {
     const p = findByCharacterName(db, name, cfg.caseSensitiveNames);
     if (!p) continue;
+    const relic = activeRelicKey(db, p.id);
+    const relicLevyReduction =
+      cfg.v3ModeEnabled && cfg.v3RelicEnabled && relic === 'levy_guard' ? cfg.v3RelicQuestLevyReductionPct : 0;
+    const effectivePenalty = Math.max(1, Math.floor(penLose * (1 - Math.max(0, relicLevyReduction))));
     db.prepare(
       'UPDATE players SET pen_quest = pen_quest + ?, next_seconds = next_seconds + ?, idle_streak_sec = 0 WHERE id = ?',
     ).run(
-      penLose,
-      penLose,
+      effectivePenalty,
+      effectivePenalty,
       p.id,
     );
   }
@@ -207,15 +274,18 @@ function finishQuest(db: Database, cfg: AppConfig, channelNicks: Set<string>, an
       s1,
       durationIt(bonusWin),
       durationIt(penLose),
+      winners.length,
+      losers.length,
     ),
     preStyled: true,
   });
-  insertRealmEvent(db, 'quest_end', `${winName} wins ${s0}-${s1}`);
+  insertRealmEvent(db, 'quest_end', `${winName} wins ${s0}-${s1} · applied W:${winners.length} L:${losers.length}`);
 
   metaSetInt(db, MK_QUEST_ACTIVE, 0);
   metaSetText(db, MK_QUEST_TEAMS, null);
   metaSetInt(db, MK_QUEST_T0, 0);
   metaSetInt(db, MK_QUEST_T1, 0);
+  metaSetText(db, MK_QUEST_VARIANT, null);
   const now = Math.floor(Date.now() / 1000);
   metaSetInt(
     db,
@@ -294,6 +364,121 @@ function maybeDailyTrial(
   metaSetInt(db, MK_V3_DAILY_TRIAL_NEXT, now + cfg.v3DailyTrialCooldownSec);
 }
 
+function ensureCurrentSeason(db: Database, cfg: AppConfig, now: number): void {
+  const seasonLen = Math.max(7, cfg.v3SeasonLengthDays);
+  const seasonLenSec = seasonLen * 86400;
+  const epoch = Math.max(0, cfg.v3SeasonEpochSec);
+  const rel = Math.max(0, now - epoch);
+  const seasonId = Math.floor(rel / seasonLenSec) + 1;
+  const startsAt = epoch + (seasonId - 1) * seasonLenSec;
+  const endsAt = startsAt + seasonLen * 86400;
+  const label = `Season ${seasonId}`;
+  db.prepare(
+    `INSERT INTO seasons (id, label, starts_at, ends_at, pass_tier_count)
+     VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET
+       label = excluded.label,
+       starts_at = excluded.starts_at,
+       ends_at = excluded.ends_at`,
+  ).run(seasonId, label, startsAt, endsAt, 20);
+  metaSetText(db, MK_SEASON_LABEL, label);
+}
+
+function maybeWorldBoss(
+  db: Database,
+  cfg: AppConfig,
+  now: number,
+  channelNicks: Set<string>,
+  an: GameAnnouncement[],
+): void {
+  const active = db
+    .prepare(
+      `SELECT id, boss_name, hp_max, hp_left, starts_at, ends_at, reward_sec
+       FROM world_boss_runs
+       WHERE state = 'active'
+       ORDER BY id DESC
+       LIMIT 1`,
+    )
+    .get() as
+    | { id: number; boss_name: string; hp_max: number; hp_left: number; starts_at: number; ends_at: number; reward_sec: number }
+    | undefined;
+  if (active) {
+    if (now >= active.ends_at) {
+      db.prepare(`UPDATE world_boss_runs SET state = 'failed' WHERE id = ?`).run(active.id);
+      metaSetInt(db, MK_WORLD_BOSS_NEXT, now + Math.max(600, cfg.v3WorldBossIntervalSec));
+      insertRealmEvent(db, 'world_boss_fail', `${active.boss_name} escaped at ${active.hp_left}/${active.hp_max} HP`);
+      an.push({
+        target: 'chan',
+        text: `☠ World Boss: ${active.boss_name} escaped with ${active.hp_left} HP.`,
+        tone: 'loss',
+      });
+      return;
+    }
+    const contributors = (
+      db.prepare('SELECT id, character_name, level, irc_nick FROM players WHERE online = 1').all() as PlayerRow[]
+    ).filter((p) => p.irc_nick && ircNickInChannel(p.irc_nick, channelNicks));
+    if (!contributors.length) return;
+    let damage = 0;
+    const upsert = db.prepare(
+      `INSERT INTO world_boss_contrib (run_id, player_id, damage, last_hit_at)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT(run_id, player_id) DO UPDATE SET
+         damage = damage + excluded.damage,
+         last_hit_at = excluded.last_hit_at`,
+    );
+    for (const p of contributors) {
+      const hit = Math.max(1, Math.floor(p.level * (0.45 + Math.random() * 0.7)));
+      damage += hit;
+      upsert.run(active.id, p.id, hit, now);
+    }
+    const hpLeft = Math.max(0, active.hp_left - damage);
+    db.prepare(`UPDATE world_boss_runs SET hp_left = ? WHERE id = ?`).run(hpLeft, active.id);
+    if (hpLeft > 0) return;
+    db.prepare(`UPDATE world_boss_runs SET state = 'slain', hp_left = 0 WHERE id = ?`).run(active.id);
+    metaSetInt(db, MK_WORLD_BOSS_NEXT, now + Math.max(600, cfg.v3WorldBossIntervalSec));
+    const winners = db
+      .prepare(
+        `SELECT p.id, p.character_name, p.next_seconds
+         FROM world_boss_contrib c
+         JOIN players p ON p.id = c.player_id
+         WHERE c.run_id = ?`,
+      )
+      .all(active.id) as { id: number; character_name: string; next_seconds: number }[];
+    const reward = Math.max(1, active.reward_sec);
+    for (const w of winners) {
+      const next = Math.max(1, w.next_seconds - reward);
+      db.prepare(`UPDATE players SET next_seconds = ? WHERE id = ?`).run(next, w.id);
+    }
+    insertRealmEvent(db, 'world_boss_slay', `${active.boss_name} slain · reward -${durationIt(reward)} each`);
+    an.push({
+      target: 'chan',
+      text: `☀ World Boss defeated: ${active.boss_name}. All contributors gain -${durationIt(reward)} on level timer.`,
+      tone: 'gain',
+    });
+    return;
+  }
+  const nextAt = metaGetInt(db, MK_WORLD_BOSS_NEXT) ?? 0;
+  if (nextAt > now) return;
+  const online = db.prepare('SELECT level FROM players WHERE online = 1').all() as { level: number }[];
+  const totalLevel = online.reduce((acc, r) => acc + Math.max(1, r.level), 0);
+  const hpMax = Math.max(1500, totalLevel * Math.max(1, cfg.v3WorldBossHpPerLevel));
+  const names = ['Ash Tyrant', 'Clockwork Hydra', 'Silent Leviathan', 'Rift Colossus'];
+  const bossName = names[Math.floor(Math.random() * names.length)] ?? 'Rift Colossus';
+  const duration = Math.max(300, cfg.v3WorldBossDurationSec);
+  const reward = Math.max(1, cfg.v3WorldBossRewardSec);
+  db.prepare(
+    `INSERT INTO world_boss_runs (season_id, boss_name, hp_max, hp_left, starts_at, ends_at, state, reward_sec)
+     VALUES (?, ?, ?, ?, ?, ?, 'active', ?)`,
+  ).run(0, bossName, hpMax, hpMax, now, now + duration, reward);
+  metaSetInt(db, MK_WORLD_BOSS_NEXT, now + duration);
+  insertRealmEvent(db, 'world_boss_start', `${bossName} HP ${hpMax}`);
+  an.push({
+    target: 'chan',
+    text: `☠ World Boss spawned: ${bossName} (${hpMax} HP). Idle in channel to contribute passive damage for ${durationIt(duration)}.`,
+    tone: 'neutral',
+  });
+}
+
 export function questPublicLine(db: Database, cfg: AppConfig): string {
   const v3Hints: string[] = [];
   if (cfg.v3ModeEnabled && cfg.v3DailyTrialEnabled) {
@@ -309,11 +494,15 @@ export function questPublicLine(db: Database, cfg: AppConfig): string {
     return `No quest active — party skirmishes start when enough logged-in players idle in channel.${suffix}`;
   }
   const ends = metaGetInt(db, MK_QUEST_ENDS) ?? 0;
+  const variantRaw = (metaGetText(db, MK_QUEST_VARIANT) ?? 'classic').trim().toLowerCase();
+  const variant: QuestVariant = QUEST_VARIANTS.includes(variantRaw as QuestVariant)
+    ? (variantRaw as QuestVariant)
+    : 'classic';
   const now = Math.floor(Date.now() / 1000);
   const left = Math.max(0, ends - now);
   const s0 = metaGetInt(db, MK_QUEST_T0) ?? 0;
   const s1 = metaGetInt(db, MK_QUEST_T1) ?? 0;
-  return `Quest: ${TEAM_NAMES[0]} ${s0} vs ${TEAM_NAMES[1]} ${s1} · ${durationIt(left)} left. Idle in channel to score for your band.${suffix}`;
+  return `Quest (${questVariantLabel(variant)}): ${TEAM_NAMES[0]} ${s0} vs ${TEAM_NAMES[1]} ${s1} · ${durationIt(left)} left. Idle in channel to score for your band.${suffix}`;
 }
 
 export function realmRecordsLine(db: Database): string {
@@ -400,6 +589,11 @@ export function adminDeleteCharacter(
   const id = p.id;
   const name = p.character_name;
   db.prepare('DELETE FROM player_medals WHERE player_id = ?').run(id);
+  db.prepare('DELETE FROM player_season_progress WHERE player_id = ?').run(id);
+  db.prepare('DELETE FROM season_rewards_claimed WHERE player_id = ?').run(id);
+  db.prepare('DELETE FROM world_boss_contrib WHERE player_id = ?').run(id);
+  db.prepare('DELETE FROM guild_members WHERE player_id = ?').run(id);
+  db.prepare('DELETE FROM player_relics WHERE player_id = ?').run(id);
   db.prepare('DELETE FROM players WHERE id = ?').run(id);
   const recName = metaGetText(db, 'realm_record_name');
   const recLv = metaGetInt(db, 'realm_record_level');
@@ -452,6 +646,8 @@ export type RealmPulseJson = {
   luckySecondsLeft: number;
   recordName: string | null;
   recordLevel: number | null;
+  worldBoss: string | null;
+  seasonLabel: string | null;
   /** Single headline line (already includes ◆). */
   display: string;
 };
@@ -481,6 +677,15 @@ export function realmPulseData(db: Database, cfg: AppConfig): RealmPulseJson {
   const recNameRaw = metaGetText(db, 'realm_record_name');
   const recordLevel = recLv != null && recLv > 0 ? recLv : null;
   const recordName = recNameRaw?.trim() ? recNameRaw.trim() : null;
+  const seasonLabel = cfg.v3ModeEnabled && cfg.v3SeasonEnabled ? metaGetText(db, MK_SEASON_LABEL) : null;
+  const worldBoss = db
+    .prepare(
+      `SELECT boss_name, hp_left, hp_max FROM world_boss_runs
+       WHERE state = 'active'
+       ORDER BY id DESC
+       LIMIT 1`,
+    )
+    .get() as { boss_name: string; hp_left: number; hp_max: number } | undefined;
 
   const segments: string[] = [];
   segments.push(`${onlineHeroes} hero${onlineHeroes !== 1 ? 'es' : ''} with open session`);
@@ -498,6 +703,18 @@ export function realmPulseData(db: Database, cfg: AppConfig): RealmPulseJson {
   if (cfg.v3ModeEnabled && cfg.v3StreakEnabled) {
     segments.push('Idle streak rewards active');
   }
+  if (cfg.v3ModeEnabled && cfg.v3WorldBossEnabled) {
+    if (worldBoss) {
+      const pct = worldBoss.hp_max > 0 ? Math.max(0, Math.floor((worldBoss.hp_left / worldBoss.hp_max) * 100)) : 0;
+      segments.push(`World Boss ${worldBoss.boss_name} ${pct}% HP`);
+    } else {
+      const wbNext = Math.max(0, (metaGetInt(db, MK_WORLD_BOSS_NEXT) ?? 0) - now);
+      segments.push(wbNext > 0 ? `World Boss in ${durationIt(wbNext)}` : 'World Boss scouting');
+    }
+  }
+  if (seasonLabel) {
+    segments.push(seasonLabel);
+  }
   if (recordName && recordLevel) {
     segments.push(`Realm peak · ${recordName} L${recordLevel}`);
   } else {
@@ -513,6 +730,8 @@ export function realmPulseData(db: Database, cfg: AppConfig): RealmPulseJson {
     luckySecondsLeft,
     recordName,
     recordLevel,
+    worldBoss: worldBoss ? `${worldBoss.boss_name} ${worldBoss.hp_left}/${worldBoss.hp_max}` : null,
+    seasonLabel,
     display,
   };
 }

@@ -41,6 +41,12 @@ export type PlayerRow = {
   idle_streak_sec: number;
   /** Number of streak milestone rewards granted (for stats/telemetry). */
   streak_reward_count: number;
+  /** Optional guild id for social systems. */
+  guild_id: number | null;
+  /** Prestige/rebirth rank (soft permanent progression). */
+  prestige_rank: number;
+  /** Prestige points spent/unspent ledger. */
+  prestige_points: number;
 };
 
 let _db: Database.Database | null = null;
@@ -171,7 +177,10 @@ function initSchema(db: Database.Database) {
       pen_logout INTEGER NOT NULL DEFAULT 0,
       is_admin INTEGER NOT NULL DEFAULT 0,
       created_at INTEGER NOT NULL,
-      last_login INTEGER NOT NULL DEFAULT 0
+      last_login INTEGER NOT NULL DEFAULT 0,
+      guild_id INTEGER DEFAULT NULL,
+      prestige_rank INTEGER NOT NULL DEFAULT 0,
+      prestige_points INTEGER NOT NULL DEFAULT 0
     );
     CREATE INDEX IF NOT EXISTS idx_players_nick ON players(irc_nick);
     CREATE INDEX IF NOT EXISTS idx_players_online ON players(online);
@@ -188,6 +197,7 @@ function initSchema(db: Database.Database) {
   ensurePlayerMedalsTable(db);
   ensureCombatStatColumns(db);
   ensureV3Columns(db);
+  ensureV3FeatureTables(db);
   normalizeIrcNickAssignments(db);
   ensureUniqueIrcNickIndex(db);
 }
@@ -242,6 +252,8 @@ function ensureRealmEventsTable(db: Database.Database) {
       detail TEXT NOT NULL DEFAULT ''
     );
     CREATE INDEX IF NOT EXISTS idx_realm_events_ts ON realm_events(ts);
+    CREATE INDEX IF NOT EXISTS idx_realm_events_kind ON realm_events(kind);
+    CREATE INDEX IF NOT EXISTS idx_realm_events_kind_ts ON realm_events(kind, ts);
   `);
 }
 
@@ -283,6 +295,93 @@ function ensureV3Columns(db: Database.Database) {
   if (!cols.some((c) => c.name === 'streak_reward_count')) {
     db.exec('ALTER TABLE players ADD COLUMN streak_reward_count INTEGER NOT NULL DEFAULT 0');
   }
+  if (!cols.some((c) => c.name === 'guild_id')) {
+    db.exec('ALTER TABLE players ADD COLUMN guild_id INTEGER DEFAULT NULL');
+  }
+  if (!cols.some((c) => c.name === 'prestige_rank')) {
+    db.exec('ALTER TABLE players ADD COLUMN prestige_rank INTEGER NOT NULL DEFAULT 0');
+  }
+  if (!cols.some((c) => c.name === 'prestige_points')) {
+    db.exec('ALTER TABLE players ADD COLUMN prestige_points INTEGER NOT NULL DEFAULT 0');
+  }
+}
+
+function ensureV3FeatureTables(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS seasons (
+      id INTEGER PRIMARY KEY,
+      label TEXT NOT NULL,
+      starts_at INTEGER NOT NULL,
+      ends_at INTEGER NOT NULL,
+      pass_tier_count INTEGER NOT NULL DEFAULT 20
+    );
+    CREATE INDEX IF NOT EXISTS idx_seasons_time ON seasons(starts_at, ends_at);
+
+    CREATE TABLE IF NOT EXISTS player_season_progress (
+      player_id INTEGER NOT NULL,
+      season_id INTEGER NOT NULL,
+      xp INTEGER NOT NULL DEFAULT 0,
+      level INTEGER NOT NULL DEFAULT 0,
+      updated_at INTEGER NOT NULL,
+      PRIMARY KEY (player_id, season_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_player_season_progress_season ON player_season_progress(season_id, level, xp);
+
+    CREATE TABLE IF NOT EXISTS season_rewards_claimed (
+      player_id INTEGER NOT NULL,
+      season_id INTEGER NOT NULL,
+      tier INTEGER NOT NULL,
+      claimed_at INTEGER NOT NULL,
+      PRIMARY KEY (player_id, season_id, tier)
+    );
+
+    CREATE TABLE IF NOT EXISTS world_boss_runs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      season_id INTEGER NOT NULL DEFAULT 0,
+      boss_name TEXT NOT NULL,
+      hp_max INTEGER NOT NULL,
+      hp_left INTEGER NOT NULL,
+      starts_at INTEGER NOT NULL,
+      ends_at INTEGER NOT NULL,
+      state TEXT NOT NULL DEFAULT 'active',
+      reward_sec INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE INDEX IF NOT EXISTS idx_world_boss_runs_state ON world_boss_runs(state, ends_at);
+
+    CREATE TABLE IF NOT EXISTS world_boss_contrib (
+      run_id INTEGER NOT NULL,
+      player_id INTEGER NOT NULL,
+      damage INTEGER NOT NULL DEFAULT 0,
+      last_hit_at INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (run_id, player_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_world_boss_contrib_damage ON world_boss_contrib(run_id, damage DESC);
+
+    CREATE TABLE IF NOT EXISTS guilds (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      tag TEXT NOT NULL UNIQUE,
+      name TEXT NOT NULL UNIQUE,
+      created_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS guild_members (
+      guild_id INTEGER NOT NULL,
+      player_id INTEGER NOT NULL UNIQUE,
+      role TEXT NOT NULL DEFAULT 'member',
+      joined_at INTEGER NOT NULL,
+      PRIMARY KEY (guild_id, player_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_guild_members_guild ON guild_members(guild_id);
+
+    CREATE TABLE IF NOT EXISTS player_relics (
+      player_id INTEGER NOT NULL,
+      relic_key TEXT NOT NULL,
+      is_active INTEGER NOT NULL DEFAULT 0,
+      acquired_at INTEGER NOT NULL,
+      PRIMARY KEY (player_id, relic_key)
+    );
+    CREATE INDEX IF NOT EXISTS idx_player_relics_active ON player_relics(player_id, is_active);
+  `);
 }
 
 /**

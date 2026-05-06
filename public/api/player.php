@@ -27,12 +27,14 @@ $sql = $case
     ? 'SELECT id, character_name, class, level, next_seconds, idled, online, alignment, irc_nick,
               pen_mesg, pen_nick, pen_part, pen_quit, pen_kick, pen_quest, pen_logout, trinket,
               COALESCE(duel_wins, 0) AS duel_wins, COALESCE(gauntlet_wins, 0) AS gauntlet_wins,
-              COALESCE(idle_streak_sec, 0) AS idle_streak_sec, COALESCE(streak_reward_count, 0) AS streak_reward_count
+              COALESCE(idle_streak_sec, 0) AS idle_streak_sec, COALESCE(streak_reward_count, 0) AS streak_reward_count,
+              COALESCE(guild_id, 0) AS guild_id, COALESCE(prestige_rank, 0) AS prestige_rank, COALESCE(prestige_points, 0) AS prestige_points
        FROM players WHERE character_name = ? LIMIT 1'
     : 'SELECT id, character_name, class, level, next_seconds, idled, online, alignment, irc_nick,
               pen_mesg, pen_nick, pen_part, pen_quit, pen_kick, pen_quest, pen_logout, trinket,
               COALESCE(duel_wins, 0) AS duel_wins, COALESCE(gauntlet_wins, 0) AS gauntlet_wins,
-              COALESCE(idle_streak_sec, 0) AS idle_streak_sec, COALESCE(streak_reward_count, 0) AS streak_reward_count
+              COALESCE(idle_streak_sec, 0) AS idle_streak_sec, COALESCE(streak_reward_count, 0) AS streak_reward_count,
+              COALESCE(guild_id, 0) AS guild_id, COALESCE(prestige_rank, 0) AS prestige_rank, COALESCE(prestige_points, 0) AS prestige_points
        FROM players WHERE character_name COLLATE NOCASE = ? LIMIT 1';
 
 try {
@@ -51,6 +53,10 @@ try {
     $pid = (int) $r['id'];
     $medals = [];
     $recentFinds = [];
+    $guild = null;
+    $relics = [];
+    $activeRelic = null;
+    $season = null;
     try {
         $mstmt = $pdo->prepare('SELECT medal_key FROM player_medals WHERE player_id = ? ORDER BY ts ASC');
         $mstmt->execute([$pid]);
@@ -86,6 +92,64 @@ try {
     } catch (Throwable $ignore) {
         $recentFinds = [];
     }
+    try {
+        if ((int) $r['guild_id'] > 0) {
+            $gstmt = $pdo->prepare('SELECT tag, name FROM guilds WHERE id = ? LIMIT 1');
+            $gstmt->execute([(int) $r['guild_id']]);
+            $g = $gstmt->fetch(PDO::FETCH_ASSOC);
+            if ($g) {
+                $guild = [
+                    'id' => (int) $r['guild_id'],
+                    'tag' => (string) $g['tag'],
+                    'name' => (string) $g['name'],
+                ];
+            }
+        }
+    } catch (Throwable $ignore) {
+        $guild = null;
+    }
+    try {
+        $rst = $pdo->prepare('SELECT relic_key, is_active FROM player_relics WHERE player_id = ? ORDER BY acquired_at ASC');
+        $rst->execute([$pid]);
+        $rows = $rst->fetchAll(PDO::FETCH_ASSOC);
+        foreach ($rows as $rr) {
+            $key = (string) ($rr['relic_key'] ?? '');
+            if ($key === '') {
+                continue;
+            }
+            $relics[] = $key;
+            if ((int) ($rr['is_active'] ?? 0) === 1) {
+                $activeRelic = $key;
+            }
+        }
+    } catch (Throwable $ignore) {
+        $relics = [];
+        $activeRelic = null;
+    }
+    try {
+        $sst = $pdo->prepare(
+            'SELECT s.id, s.label, s.ends_at, COALESCE(psp.xp, 0) AS xp, COALESCE(psp.level, 0) AS level
+             FROM seasons s
+             LEFT JOIN player_season_progress psp
+               ON psp.season_id = s.id AND psp.player_id = ?
+             WHERE s.ends_at >= ?
+             ORDER BY s.id DESC
+             LIMIT 1'
+        );
+        $sst->execute([$pid, time()]);
+        $sr = $sst->fetch(PDO::FETCH_ASSOC);
+        if ($sr) {
+            $season = [
+                'id' => (int) $sr['id'],
+                'label' => (string) $sr['label'],
+                'endsAt' => (int) $sr['ends_at'],
+                'xp' => (int) $sr['xp'],
+                'level' => (int) $sr['level'],
+            ];
+        }
+    } catch (Throwable $ignore) {
+        $season = null;
+    }
     echo json_encode([
         'id' => $pid,
         'name' => $r['character_name'],
@@ -100,6 +164,12 @@ try {
         'gauntletWins' => (int) $r['gauntlet_wins'],
         'idleStreakSec' => (int) $r['idle_streak_sec'],
         'streakRewardCount' => (int) $r['streak_reward_count'],
+        'guild' => $guild,
+        'prestigeRank' => (int) $r['prestige_rank'],
+        'prestigePoints' => (int) $r['prestige_points'],
+        'relics' => $relics,
+        'activeRelic' => $activeRelic,
+        'season' => $season,
         'medals' => array_map(static function ($key) {
             return [
                 'key' => (string) $key,

@@ -34,13 +34,13 @@ function combatPower(p: PlayerRow): number {
 function pickEpic(winner: PlayerRow, loser: PlayerRow, crit: boolean): string {
   const W = winner.character_name;
   const L = loser.character_name;
-  const wShort = winner.class.trim().split(/\s+/)[0] || 'hero';
-  const lShort = loser.class.trim().split(/\s+/)[0] || 'hero';
+  const wClass = winner.class.trim() || 'hero';
+  const lClass = loser.class.trim() || 'hero';
   const critNote = crit ? 'Critical strike — ' : '';
   const pool = [
-    `⚔ Duel — ${critNote}${W} (${wShort}, L${winner.level}) defeats ${L} (${lShort}, L${loser.level}) in the arena.`,
-    `⚔ Duel — ${critNote}${W} (${wShort}) prevails over ${L} (L${loser.level}). Outcome applied to level timers.`,
-    `⚔ Duel — ${critNote}${W}, L${winner.level}, outlasts ${L}, L${loser.level}. ${wShort} vs ${lShort}.`,
+    `⚔ Duel — ${critNote}${W} (${wClass}, L${winner.level}) defeats ${L} (${lClass}, L${loser.level}) in the arena.`,
+    `⚔ Duel — ${critNote}${W} (${wClass}) prevails over ${L} (L${loser.level}). Outcome applied to level timers.`,
+    `⚔ Duel — ${critNote}${W}, L${winner.level}, outlasts ${L}, L${loser.level}. ${wClass} vs ${lClass}.`,
   ];
   return pool[Math.floor(Math.random() * pool.length)]!;
 }

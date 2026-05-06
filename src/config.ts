@@ -50,6 +50,7 @@ function normalizeSqliteDbFilename(p: string): string {
 }
 
 const schema = z.object({
+  publicUrl: z.string().optional().default('').transform((s: string) => (s ?? '').trim()),
   ircHost: z
     .string()
     .default('chat.netirc.eu')
@@ -105,6 +106,9 @@ const schema = z.object({
   hogChance: z.coerce.number().min(0).max(1).default(0.0008),
   /** Milliseconds between optional ambient lines in the game channel; 0 = disabled. */
   ircChanBanterMs: z.coerce.number().min(0).max(3_600_000).default(420_000),
+  /** Periodically refresh #channel TOPIC with live realm status (requires topic privileges). */
+  ircTopicEnabled: z.boolean().default(true),
+  ircTopicIntervalSec: z.coerce.number().int().min(30).max(3600).default(180),
 
   questEnabled: z.boolean().default(true),
   questMinPlayers: z.coerce.number().min(2).max(40).default(4),
@@ -130,6 +134,31 @@ const schema = z.object({
   v3StreakEnabled: z.boolean().default(false),
   v3StreakStepSec: z.coerce.number().int().min(60).max(86_400).default(1800),
   v3StreakRewardSec: z.coerce.number().int().min(1).max(1800).default(15),
+  v3BountyEnabled: z.boolean().default(false),
+  v3BountyTargetSec: z.coerce.number().int().min(300).max(86_400).default(5400),
+  v3BountyRewardSec: z.coerce.number().int().min(10).max(7200).default(180),
+  v3BountyQuietSec: z.coerce.number().int().min(0).max(3600).default(120),
+  v3SeasonEnabled: z.boolean().default(true),
+  v3SeasonEpochSec: z.coerce.number().int().min(0).default(1767225600),
+  v3SeasonLengthDays: z.coerce.number().int().min(7).max(120).default(30),
+  v3SeasonPassXpPerMinute: z.coerce.number().int().min(1).max(240).default(6),
+  v3SeasonTierXp: z.coerce.number().int().min(30).max(100_000).default(600),
+  v3WorldBossEnabled: z.boolean().default(true),
+  v3WorldBossIntervalSec: z.coerce.number().int().min(600).max(604_800).default(21_600),
+  v3WorldBossDurationSec: z.coerce.number().int().min(120).max(86_400).default(5_400),
+  v3WorldBossHpPerLevel: z.coerce.number().int().min(1).max(20_000).default(140),
+  v3WorldBossRewardSec: z.coerce.number().int().min(5).max(10_800).default(240),
+  v3GuildEnabled: z.boolean().default(true),
+  v3GuildIdleBonusPct: z.coerce.number().min(0).max(0.25).default(0.01),
+  v3RelicEnabled: z.boolean().default(true),
+  v3RelicQuestLevyReductionPct: z.coerce.number().min(0).max(0.3).default(0.08),
+  v3RelicOmenLuckBonusPct: z.coerce.number().min(0).max(0.3).default(0.07),
+  v3RelicStreakBonusPct: z.coerce.number().min(0).max(0.5).default(0.15),
+  v3PrestigeEnabled: z.boolean().default(true),
+  v3PrestigeMinLevel: z.coerce.number().int().min(20).max(500).default(60),
+  v3PrestigeIdleRateBonusPct: z.coerce.number().min(0).max(0.05).default(0.01),
+  v3QuestVariantsEnabled: z.boolean().default(true),
+  webChronicleFiltersEnabled: z.boolean().default(true),
 
   /** Max private messages per IRC nick per sliding window; 0 = disable. */
   pmFloodMaxMessages: z.coerce.number().int().min(0).max(500).default(18),
@@ -169,6 +198,7 @@ const schema = z.object({
 
 function load() {
   const raw = {
+    publicUrl: decr(process.env.IRPG_PUBLIC_URL) ?? '',
     ircHost: decr(process.env.IRPG_IRC_HOST),
     ircPort: decr(process.env.IRPG_IRC_PORT),
     ircTls: bool(process.env.IRPG_IRC_TLS, false),
@@ -198,6 +228,8 @@ function load() {
     ownerAccount: decr(process.env.IRPG_OWNER_ACCOUNT) ?? '',
     hogChance: decr(process.env.IRPG_HOG_CHANCE),
     ircChanBanterMs: decr(process.env.IRPG_IRC_CHAN_BANTER_MS),
+    ircTopicEnabled: bool(process.env.IRPG_IRC_TOPIC_ENABLED, true),
+    ircTopicIntervalSec: decr(process.env.IRPG_IRC_TOPIC_INTERVAL_SEC),
     questEnabled: bool(process.env.IRPG_QUEST_ENABLED, true),
     questMinPlayers: decr(process.env.IRPG_QUEST_MIN_PLAYERS),
     questDurationSec: decr(process.env.IRPG_QUEST_DURATION_SEC),
@@ -216,6 +248,31 @@ function load() {
     v3StreakEnabled: bool(process.env.IRPG_V3_STREAK_ENABLED, false),
     v3StreakStepSec: decr(process.env.IRPG_V3_STREAK_STEP_SEC),
     v3StreakRewardSec: decr(process.env.IRPG_V3_STREAK_REWARD_SEC),
+    v3BountyEnabled: bool(process.env.IRPG_V3_BOUNTY_ENABLED, false),
+    v3BountyTargetSec: decr(process.env.IRPG_V3_BOUNTY_TARGET_SEC),
+    v3BountyRewardSec: decr(process.env.IRPG_V3_BOUNTY_REWARD_SEC),
+    v3BountyQuietSec: decr(process.env.IRPG_V3_BOUNTY_QUIET_SEC),
+    v3SeasonEnabled: bool(process.env.IRPG_V3_SEASON_ENABLED, true),
+    v3SeasonEpochSec: decr(process.env.IRPG_V3_SEASON_EPOCH_SEC),
+    v3SeasonLengthDays: decr(process.env.IRPG_V3_SEASON_LENGTH_DAYS),
+    v3SeasonPassXpPerMinute: decr(process.env.IRPG_V3_SEASON_PASS_XP_PER_MINUTE),
+    v3SeasonTierXp: decr(process.env.IRPG_V3_SEASON_TIER_XP),
+    v3WorldBossEnabled: bool(process.env.IRPG_V3_WORLD_BOSS_ENABLED, true),
+    v3WorldBossIntervalSec: decr(process.env.IRPG_V3_WORLD_BOSS_INTERVAL_SEC),
+    v3WorldBossDurationSec: decr(process.env.IRPG_V3_WORLD_BOSS_DURATION_SEC),
+    v3WorldBossHpPerLevel: decr(process.env.IRPG_V3_WORLD_BOSS_HP_PER_LEVEL),
+    v3WorldBossRewardSec: decr(process.env.IRPG_V3_WORLD_BOSS_REWARD_SEC),
+    v3GuildEnabled: bool(process.env.IRPG_V3_GUILD_ENABLED, true),
+    v3GuildIdleBonusPct: decr(process.env.IRPG_V3_GUILD_IDLE_BONUS_PCT),
+    v3RelicEnabled: bool(process.env.IRPG_V3_RELIC_ENABLED, true),
+    v3RelicQuestLevyReductionPct: decr(process.env.IRPG_V3_RELIC_QUEST_LEVY_REDUCTION_PCT),
+    v3RelicOmenLuckBonusPct: decr(process.env.IRPG_V3_RELIC_OMEN_LUCK_BONUS_PCT),
+    v3RelicStreakBonusPct: decr(process.env.IRPG_V3_RELIC_STREAK_BONUS_PCT),
+    v3PrestigeEnabled: bool(process.env.IRPG_V3_PRESTIGE_ENABLED, true),
+    v3PrestigeMinLevel: decr(process.env.IRPG_V3_PRESTIGE_MIN_LEVEL),
+    v3PrestigeIdleRateBonusPct: decr(process.env.IRPG_V3_PRESTIGE_IDLE_RATE_BONUS_PCT),
+    v3QuestVariantsEnabled: bool(process.env.IRPG_V3_QUEST_VARIANTS_ENABLED, true),
+    webChronicleFiltersEnabled: bool(process.env.IRPG_WEB_CHRONICLE_FILTERS_ENABLED, true),
     pmFloodMaxMessages: decr(process.env.IRPG_PM_FLOOD_MAX),
     pmFloodWindowMs: decr(process.env.IRPG_PM_FLOOD_WINDOW_MS),
     adminIrcNicks: decr(process.env.IRPG_ADMIN_IRC_NICKS) ?? '',
