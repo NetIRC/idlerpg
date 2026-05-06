@@ -56,7 +56,7 @@ if ($configFile === null) {
 /** Project root for resolving relative db_path (same folder as the loaded config). */
 $ROOT = dirname($configFile);
 
-/** @var array{db_path: string, case_sensitive_names: bool, debug?: bool} $IRPG */
+/** @var array{db_path: string, case_sensitive_names: bool, debug?: bool, ai_enabled?: bool} $IRPG */
 $IRPG = require $configFile;
 
 $dbPath = $IRPG['db_path'];
@@ -142,13 +142,26 @@ function irpg_duration_it(float $totalSec): string
 
         return sprintf('%dm %ds', $m, $sec);
     }
-    $clock = sprintf('%d:%02d:%02d', $h, $m, $sec);
     if ($days === 0) {
-        return $clock;
-    }
-    $dayWord = $days === 1 ? 'day' : 'days';
+        if ($sec === 0) {
+            if ($m > 0) {
+                return sprintf('%dh %dm', $h, $m);
+            }
 
-    return sprintf('%d %s, %s', $days, $dayWord, $clock);
+            return sprintf('%dh', $h);
+        }
+
+        return sprintf('%dh %dm %ds', $h, $m, $sec);
+    }
+    if ($sec === 0) {
+        if ($m === 0) {
+            return sprintf('%dd %dh', $days, $h);
+        }
+
+        return sprintf('%dd %dh %dm', $days, $h, $m);
+    }
+
+    return sprintf('%dd %dh %dm %ds', $days, $h, $m, $sec);
 }
 
 /** Display labels for `player_medals.medal_key` — keep in sync with `src/game/medals.ts` MEDAL_DEF. */
@@ -192,7 +205,7 @@ function irpg_medal_tier(string $key): string
 /**
  * Apply additive schema for production DBs that predate medals / combat stats.
  * Idempotent; safe with existing rows (new columns default to 0). Keep in sync with
- * `ensurePlayerMedalsTable` + `ensureCombatStatColumns` in src/db/index.ts.
+ * `ensurePlayerMedalsTable`, `ensureCombatStatColumns`, and `ensureV3Columns` in src/db/index.ts.
  */
 function irpg_ensure_db_schema(PDO $pdo): void
 {
@@ -223,6 +236,12 @@ function irpg_ensure_db_schema(PDO $pdo): void
     }
     if (!isset($names['gauntlet_wins'])) {
         $pdo->exec('ALTER TABLE players ADD COLUMN gauntlet_wins INTEGER NOT NULL DEFAULT 0');
+    }
+    if (!isset($names['idle_streak_sec'])) {
+        $pdo->exec('ALTER TABLE players ADD COLUMN idle_streak_sec INTEGER NOT NULL DEFAULT 0');
+    }
+    if (!isset($names['streak_reward_count'])) {
+        $pdo->exec('ALTER TABLE players ADD COLUMN streak_reward_count INTEGER NOT NULL DEFAULT 0');
     }
 }
 
@@ -274,6 +293,8 @@ function irpg_realm_pulse(PDO $pdo): array
     }
     $luckyUntil = irpg_meta_int($pdo, 'lucky_until') ?? 0;
     $luckyLeft = max(0, $luckyUntil - $now);
+    $trialNext = irpg_meta_int($pdo, 'v3_daily_trial_next') ?? 0;
+    $trialLeft = max(0, $trialNext - $now);
     $recLv = irpg_meta_int($pdo, 'realm_record_level');
     $st = $pdo->prepare('SELECT text_value FROM meta WHERE key = ? LIMIT 1');
     $st->execute(['realm_record_name']);
@@ -290,6 +311,9 @@ function irpg_realm_pulse(PDO $pdo): array
         $segments[] = 'Lucky hour ' . irpg_duration_it((float) $luckyLeft);
     } else {
         $segments[] = 'Lucky quiet';
+    }
+    if ($trialNext > 0) {
+        $segments[] = $trialLeft > 0 ? ('Daily trial in ' . irpg_duration_it((float) $trialLeft)) : 'Daily trial ready';
     }
     if ($recName !== null && $recLv !== null && $recLv > 0) {
         $segments[] = 'Peak ' . $recName . ' L' . $recLv;
@@ -377,6 +401,33 @@ function irpg_json_headers(): void
 {
     header('Content-Type: application/json; charset=utf-8');
     header('Cache-Control: no-store');
+}
+
+/**
+ * AI feature flag for web status line.
+ * Priority: DB meta `ai_enabled` (written by bot runtime) → site.config.php `ai_enabled` →
+ * IRPG_AI_ENABLED env → false.
+ */
+function irpg_ai_enabled(PDO $pdo): bool
+{
+    $dbFlag = irpg_meta_int($pdo, 'ai_enabled');
+    if ($dbFlag !== null) {
+        return $dbFlag > 0;
+    }
+    global $IRPG;
+    if (array_key_exists('ai_enabled', $IRPG)) {
+        return (bool) $IRPG['ai_enabled'];
+    }
+    $env = getenv('IRPG_AI_ENABLED');
+    if ($env === false) {
+        return false;
+    }
+    $v = strtolower(trim((string) $env));
+    if ($v === '') {
+        return false;
+    }
+
+    return in_array($v, ['1', 'true', 'yes', 'on'], true);
 }
 
 /**

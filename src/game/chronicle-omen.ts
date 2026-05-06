@@ -1,3 +1,5 @@
+/** Chronicle formatting and omen mechanics shared by IRC and API surfaces. */
+
 import type Database from 'better-sqlite3';
 import {
   findOnlineByNickCi,
@@ -7,6 +9,7 @@ import {
   recentRealmEvents,
 } from '../db/index.js';
 import { durationIt, formatRelativeAgoSec } from './duration.js';
+import { ircNickInChannelWithCase } from './irc-presence.js';
 
 /** Events packed into one IRC/PM line (also capped by CHRONICLE_IRC_MAX_CHARS). Same count as default web feed. */
 export const CHRONICLE_IRC_MAX_EVENTS = 15;
@@ -20,7 +23,7 @@ export const CHRONICLE_IRC_MAX_CHARS = 480;
 export const CHRONICLE_API_DEFAULT_LIMIT = 15;
 export const CHRONICLE_API_MAX_LIMIT = 40;
 
-const OMEN_COOLDOWN_SEC = 8 * 3600;
+export const OMEN_COOLDOWN_SEC = 8 * 3600;
 const OMEN_META_PREFIX = 'omen_cd_';
 
 const CHRONICLE_KIND_LABEL: Record<string, string> = {
@@ -45,6 +48,8 @@ const CHRONICLE_KIND_LABEL: Record<string, string> = {
   medal: 'Medal',
   gauntlet_win: 'Gauntlet',
   gauntlet_lose: 'Gauntlet',
+  daily_trial_win: 'Daily trial',
+  daily_trial_lose: 'Daily trial',
 };
 
 const OMEN_FLUFF = [
@@ -90,15 +95,7 @@ export function consultOmen(
 ): { err: string } | { text: string; tone?: 'gain' | 'loss' | 'neutral' } {
   const p = findOnlineByNickCi(db, ircNick);
   if (!p) return { err: 'Log in via PM (LOGIN) before consulting the omen.' };
-  const raw = (p.irc_nick || '').replace(/^@|%|\+/, '');
-  let seen = false;
-  for (const n of channelNicks) {
-    if (nickEquals(n, raw)) {
-      seen = true;
-      break;
-    }
-  }
-  if (!seen) {
+  if (!ircNickInChannelWithCase(p.irc_nick, channelNicks, nickEquals)) {
     return { err: 'Join the game channel — the omen only reads players who are present.' };
   }
 
@@ -119,19 +116,21 @@ export function consultOmen(
   }
   if (r < 0.78) {
     const ns = Math.max(30, p.next_seconds * 0.998);
-    db.prepare('UPDATE players SET next_seconds = ? WHERE id = ?').run(ns, p.id);
+    const gain = Math.max(0, p.next_seconds - ns);
+    db.prepare('UPDATE players SET next_seconds = ?, idle_streak_sec = 0 WHERE id = ?').run(ns, p.id);
     insertRealmEvent(db, 'omen_boon', p.character_name);
     return {
-      text: `🜁 Omen (favorable): ${p.character_name}'s level timer is shortened. Next level in ${durationIt(ns)}.`,
+      text: `🜁 Omen (favorable): -${durationIt(gain)} effective gain. Next level in ${durationIt(ns)}.`,
       tone: 'gain',
     };
   }
   if (r < 0.93) {
     const ns = p.next_seconds * 1.004;
-    db.prepare('UPDATE players SET next_seconds = ? WHERE id = ?').run(ns, p.id);
+    const loss = Math.max(0, ns - p.next_seconds);
+    db.prepare('UPDATE players SET next_seconds = ?, idle_streak_sec = 0 WHERE id = ?').run(ns, p.id);
     insertRealmEvent(db, 'omen_curse', p.character_name);
     return {
-      text: `🜁 Omen (unfavorable): ${p.character_name}'s level timer is extended. Next level in ${durationIt(ns)}.`,
+      text: `🜁 Omen (unfavorable): +${durationIt(loss)} effective loss. Next level in ${durationIt(ns)}.`,
       tone: 'loss',
     };
   }
@@ -151,15 +150,7 @@ export function omenHintEligible(
 ): boolean {
   const p = findOnlineByNickCi(db, ircNick);
   if (!p || !p.irc_nick) return false;
-  const raw = p.irc_nick.replace(/^@|%|\+/, '');
-  let seen = false;
-  for (const n of channelNicks) {
-    if (caseEq(n, raw)) {
-      seen = true;
-      break;
-    }
-  }
-  if (!seen) return false;
+  if (!ircNickInChannelWithCase(p.irc_nick, channelNicks, caseEq)) return false;
   const now = Math.floor(Date.now() / 1000);
   const key = `${OMEN_META_PREFIX}${p.id}`;
   const last = metaGetInt(db, key) ?? 0;

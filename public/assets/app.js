@@ -1,14 +1,13 @@
+/** Frontend runtime for leaderboard dashboard, chronicle, and realm atlas interactions. */
+
 (() => {
   const REFRESH_SEC = 30;
-  /** Minimum time the full-page blur overlay stays visible (auto-refresh); avoids sub-second flashes on fast LAN. */
-  const FULL_PAGE_SYNC_MIN_MS = 1000;
   const tbody = document.getElementById('tbody');
   const detail = document.getElementById('detail');
   const detailContent = document.getElementById('detail-content');
   const detailLoading = document.getElementById('detail-loading');
   const atlasLedgerLoading = document.getElementById('atlas-ledger-loading');
   const lbLedgerLoading = document.getElementById('lb-ledger-loading');
-  const fullPageSyncEl = document.getElementById('full-page-sync');
   const qEl = document.getElementById('q');
   const errEl = document.getElementById('err');
   const lastUpdatedEl = document.getElementById('last-updated');
@@ -89,14 +88,6 @@
       if (busy) lbPanel.setAttribute('aria-busy', 'true');
       else lbPanel.removeAttribute('aria-busy');
     }
-  }
-
-  /** Full viewport blur + spinner (timed auto-refresh only). */
-  function setFullPageSyncBusy(busy) {
-    if (!fullPageSyncEl) return;
-    fullPageSyncEl.classList.toggle('hidden', !busy);
-    fullPageSyncEl.setAttribute('aria-hidden', busy ? 'false' : 'true');
-    document.body.classList.toggle('full-page-sync--locked', busy);
   }
 
   function detailWrite(html) {
@@ -543,6 +534,8 @@
     medal: 'Medal',
     gauntlet_win: 'Gauntlet',
     gauntlet_lose: 'Gauntlet',
+    daily_trial_win: 'Daily trial',
+    daily_trial_lose: 'Daily trial',
   };
 
   function chronicleKindLabel(k) {
@@ -562,6 +555,48 @@
     if (ago < 3600) return `${Math.floor(ago / 60)}m`;
     if (ago < 86400) return `${Math.floor(ago / 3600)}h`;
     return `${Math.floor(ago / 86400)}d`;
+  }
+
+  function formatDurationSec(totalSec) {
+    const s = Math.max(0, Math.floor(Number(totalSec) || 0));
+    if (s < 60) return `${s}s`;
+    if (s < 3600) {
+      const m = Math.floor(s / 60);
+      const sec = s % 60;
+      return sec > 0 ? `${m}m ${sec}s` : `${m}m`;
+    }
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const sec = s % 60;
+    if (sec > 0) return `${h}h ${m}m ${sec}s`;
+    if (m > 0) return `${h}h ${m}m`;
+    return `${h}h`;
+  }
+
+  function formatDurationWithDays(totalSec) {
+    const s = Math.max(0, Math.floor(Number(totalSec) || 0));
+    if (s < 86400) return formatDurationSec(s);
+    const d = Math.floor(s / 86400);
+    const rem = s % 86400;
+    const h = Math.floor(rem / 3600);
+    const m = Math.floor((rem % 3600) / 60);
+    const sec = rem % 60;
+    if (sec > 0) return `${d}d ${h}h ${m}m ${sec}s`;
+    if (m > 0) return `${d}d ${h}h ${m}m`;
+    return `${d}d ${h}h`;
+  }
+
+  /** Keep chronicle readable when old rows still contain legacy H:MM:SS text. */
+  function normalizeLegacyDurationText(detail) {
+    const src = String(detail || '');
+    const withDays = src.replace(/(\d+)\s+day(?:s)?,\s*(\d+):([0-5]\d):([0-5]\d)/gi, (_m, d, h, m, s) => {
+      const total = Number(d) * 86400 + Number(h) * 3600 + Number(m) * 60 + Number(s);
+      return formatDurationWithDays(total);
+    });
+    return withDays.replace(/\b(\d+):([0-5]\d):([0-5]\d)\b/g, (_m, h, m, s) => {
+      const total = Number(h) * 3600 + Number(m) * 60 + Number(s);
+      return formatDurationSec(total);
+    });
   }
 
   function renderChronicle(events) {
@@ -590,7 +625,7 @@
         const kind = chronicleKindLabel(e.kind || '');
         const safeKind = realmEventKindClass(e.kind);
         const ago = formatAgoSec(e.ts);
-        const det = escapeHtml((e.detail || '').trim() || '—');
+        const det = escapeHtml(normalizeLegacyDurationText((e.detail || '').trim() || '—'));
         return `<li class="chronicle-item chronicle-item--${safeKind}"><div class="chronicle-meta">${escapeHtml(kind)} <span class="chronicle-ago">· ${ago} ago</span></div><div class="chronicle-detail">${det}</div></li>`;
       })
       .join('');
@@ -635,6 +670,7 @@
       generatedAt: j.generatedAt ?? null,
       botOnline: j.botOnline === true,
       botLastSeenMs: typeof j.botLastSeenMs === 'number' ? j.botLastSeenMs : null,
+      aiEnabled: j.aiEnabled === true,
       realmPulse: j.realmPulse && typeof j.realmPulse === 'object' ? j.realmPulse : null,
     };
   }
@@ -649,7 +685,7 @@
     }
   }
 
-  function setBotStatus(botOnline, botLastSeenMs) {
+  function setBotStatus(botOnline, botLastSeenMs, aiEnabled) {
     const led = document.getElementById('bot-status-led');
     const txt = document.getElementById('bot-status-text');
     const banner = document.getElementById('bot-offline-banner');
@@ -657,10 +693,11 @@
     if (led) led.classList.toggle('is-bot-offline', !botOnline);
     if (txt) {
       txt.classList.toggle('is-bot-offline', !botOnline);
+      const aiLabel = aiEnabled ? 'AI: active' : 'AI: inactive';
       if (botOnline) {
-        txt.textContent = 'IRC bot: online';
+        txt.textContent = `IRC bot: online · ${aiLabel}`;
       } else {
-        txt.textContent = 'IRC bot: offline';
+        txt.textContent = `IRC bot: offline · ${aiLabel}`;
       }
     }
     if (banner) {
@@ -787,7 +824,7 @@
         const kindLabel = chronicleKindLabel(e.kind || '');
         const safeKind = realmEventKindClass(e.kind);
         const ago = formatAgoSec(e.ts);
-        const det = escapeHtml((e.detail || '').trim() || '—');
+        const det = escapeHtml(normalizeLegacyDurationText((e.detail || '').trim() || '—'));
         return `<li class="finds-item finds-item--${safeKind}"><span class="finds-kind">${escapeHtml(kindLabel)}</span><span class="finds-detail">${det}</span><span class="finds-ago">${ago} ago</span></li>`;
       })
       .join('');
@@ -835,6 +872,9 @@
           : '';
       const dw = d.duelWins != null ? Number(d.duelWins) : 0;
       const gw = d.gauntletWins != null ? Number(d.gauntletWins) : 0;
+      const streakSec = d.idleStreakSec != null ? Number(d.idleStreakSec) : 0;
+      const streakRewards = d.streakRewardCount != null ? Number(d.streakRewardCount) : 0;
+      const streakHuman = Number.isFinite(streakSec) ? formatDurationSec(Math.max(0, streakSec)) : '0s';
       detailWrite(`
         <div class="detail-name">${escapeHtml(d.name)}</div>
         <p class="detail-sub">L<span class="mono" style="color:var(--arc)">${d.level}</span> · ${escapeHtml(d.class)}</p>
@@ -845,6 +885,8 @@
           <div class="dl-item"><dt>Alignment</dt><dd>${escapeHtml(formatAlignment(d.alignment))}</dd></div>
           <div class="dl-item"><dt>Arena</dt><dd>${dw} duel win${dw === 1 ? '' : 's'}</dd></div>
           <div class="dl-item"><dt>Gauntlet</dt><dd>${gw} win${gw === 1 ? '' : 's'}</dd></div>
+          <div class="dl-item"><dt>Idle streak</dt><dd>${escapeHtml(streakHuman)}</dd></div>
+          <div class="dl-item"><dt>Streak rewards</dt><dd>${streakRewards}</dd></div>
           ${charmRow}
         </div>
         <div class="stats-label">Medals</div>
@@ -865,17 +907,14 @@
     }
   }
 
-  async function refresh(options = {}) {
-    const fullPage = options.fullPage === true;
-    const fullPageSyncStartedAt = fullPage ? Date.now() : 0;
-    if (fullPage) setFullPageSyncBusy(true);
-    else setLedgerSyncBusy(true);
+  async function refresh() {
+    setLedgerSyncBusy(true);
     try {
-      const { players, generatedAt, botOnline, botLastSeenMs, realmPulse } = await fetchLb();
+      const { players, generatedAt, botOnline, botLastSeenMs, aiEnabled, realmPulse } = await fetchLb();
       rows = players;
       lastRealmPulse = realmPulse;
       setLastUpdated(generatedAt);
-      setBotStatus(botOnline, botLastSeenMs);
+      setBotStatus(botOnline, botLastSeenMs, aiEnabled);
       setRealmPulse(realmPulse);
       setErr(null);
       applyFilter();
@@ -887,7 +926,7 @@
       } catch {
         if (chroniclePlaceholder) {
           chroniclePlaceholder.textContent =
-            'Chronicle offline — open api/chronicle.php in the browser to debug.';
+            'Chronicle offline — open api/chronicle.php in the browser to troubleshoot.';
           chroniclePlaceholder.classList.remove('hidden');
           if (chronicleCollapsible) chronicleCollapsible.classList.add('hidden');
           if (chronicleList) {
@@ -905,15 +944,7 @@
       setErr(msg);
       tbody.innerHTML = '';
     } finally {
-      if (fullPage) {
-        const elapsed = Date.now() - fullPageSyncStartedAt;
-        if (elapsed < FULL_PAGE_SYNC_MIN_MS) {
-          await new Promise((r) => setTimeout(r, FULL_PAGE_SYNC_MIN_MS - elapsed));
-        }
-        setFullPageSyncBusy(false);
-      } else {
-        setLedgerSyncBusy(false);
-      }
+      setLedgerSyncBusy(false);
     }
   }
 
@@ -966,7 +997,7 @@
     if (refreshInFlight) return;
     refreshInFlight = true;
     try {
-      await refresh({ fullPage: true });
+      await refresh();
       countdown = REFRESH_SEC;
     } finally {
       refreshInFlight = false;

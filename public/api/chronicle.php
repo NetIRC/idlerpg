@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+/** Chronicle feed endpoint for recent realm events. */
+
 require_once dirname(__DIR__) . '/includes/bootstrap.php';
 
 global $IRPG;

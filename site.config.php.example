@@ -25,4 +25,8 @@ return [
 
     // Production: false. Set true temporarily to see exact paths/errors in API JSON (then turn off).
     'debug' => false,
+
+    // Optional web flag for status line ("AI: active/inactive"). If omitted, bootstrap falls back
+    // to IRPG_AI_ENABLED from the environment; if neither is present, web shows inactive.
+    'ai_enabled' => false,
 ];

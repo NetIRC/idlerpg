@@ -1,3 +1,5 @@
+/** Vite configuration for local React dashboard development. */
+
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 

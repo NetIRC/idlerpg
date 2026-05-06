@@ -1,3 +1,5 @@
+/** Nick fallback candidate builder for IRC connect and collision recovery. */
+
 import type { AppConfig } from './config.js';
 
 function truncateNick(n: string, maxLen: number): string {

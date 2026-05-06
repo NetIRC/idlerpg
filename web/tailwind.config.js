@@ -1,3 +1,5 @@
+/** Tailwind theme tokens and utility extensions for the React dev UI. */
+
 /** @type {import('tailwindcss').Config} */
 export default {
   content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],

@@ -1,5 +1,7 @@
 <?php
 declare(strict_types=1);
+
+/** Public web dashboard shell for leaderboard, hero detail, atlas, and chronicle. */
 $appCssPath = __DIR__ . '/assets/app.css';
 $appCssVer = is_file($appCssPath) ? (string) filemtime($appCssPath) : '0';
 $atlasTopPath = __DIR__ . '/assets/realm-atlas-top.png';
@@ -158,7 +160,9 @@ $jsonLdScript = json_encode($jsonLd, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNI
           <ul class="rules-list">
             <li><strong>Stay idle</strong> in the game channel to shrink your level timer. Silence levels you up.</li>
             <li><strong>Talking in the channel</strong> adds a time penalty (length matters). Lines starting with <span class="rules-cmd">!</span> (see below) are free.</li>
-            <li><strong>In-channel (no penalty):</strong> <span class="rules-cmd">!help</span> &middot; <span class="rules-cmd">!cmds</span> (extra) &middot; <span class="rules-cmd">!rules</span> &middot; <span class="rules-cmd">!top</span> &middot; <span class="rules-cmd">!ping</span> &middot; <span class="rules-cmd">!stats</span> [name] &middot; <span class="rules-cmd">!time</span> [name] &middot; <span class="rules-cmd">!whoami</span> &middot; <span class="rules-cmd">!records</span> &middot; <span class="rules-cmd">!quest</span> &middot; <span class="rules-cmd">!realm</span> &middot; <span class="rules-cmd">!chronicle</span> &middot; <span class="rules-cmd">!omen</span> &middot; <span class="rules-cmd">!duel</span> <span class="mono muted-strong">&lt;irc_nick&gt;</span> &middot; <span class="rules-cmd">!gauntlet</span> &middot; <span class="rules-cmd">!medals</span> [name].</li>
+            <li><strong>In-channel (no penalty):</strong> <span class="rules-cmd">!help</span> &middot; <span class="rules-cmd">!cmds</span> (extra) &middot; <span class="rules-cmd">!rules</span> &middot; <span class="rules-cmd">!top</span> &middot; <span class="rules-cmd">!ping</span> &middot; <span class="rules-cmd">!stats</span> [name] &middot; <span class="rules-cmd">!time</span> [name] &middot; <span class="rules-cmd">!whoami</span> &middot; <span class="rules-cmd">!records</span> &middot; <span class="rules-cmd">!quest</span> &middot; <span class="rules-cmd">!realm</span> &middot; <span class="rules-cmd">!chronicle</span> &middot; <span class="rules-cmd">!lore</span> <span class="mono muted-strong">(if enabled)</span> &middot; <span class="rules-cmd">!omen</span> &middot; <span class="rules-cmd">!duel</span> <span class="mono muted-strong">&lt;irc_nick&gt;</span> &middot; <span class="rules-cmd">!gauntlet</span> &middot; <span class="rules-cmd">!medals</span> [name].</li>
+            <li><strong>Daily trial (V3)</strong> runs automatically for eligible online heroes and can reduce or increase the level timer. Status appears in <span class="rules-cmd">!realm</span>.</li>
+            <li><strong>Idle streak (V3)</strong> grants small periodic timer reductions while you remain online and visible; penalties/combat outcomes reset streak progress.</li>
             <li><strong>Private message</strong> the bot (from IRC) while <strong>your nick is in the game channel</strong>: <span class="rules-cmd mono">REGISTER Name Password Class…</span> &mdash; password one word; class can be several words. <span class="rules-cmd mono">LOGIN Name Password</span> to return. Also: <span class="rules-cmd mono">LOGOUT</span>, <span class="rules-cmd mono">STATS</span>, <span class="rules-cmd mono">TOP</span>, <span class="rules-cmd mono">HELP</span>, <span class="rules-cmd mono">CMDS</span>, etc.</li>
           </ul>
         </aside>

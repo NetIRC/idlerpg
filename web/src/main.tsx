@@ -1,3 +1,5 @@
+/** Web dev entry point for the React leaderboard shell. */
+
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';

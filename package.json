@@ -1,6 +1,6 @@
 {
   "name": "idlerpg",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "private": true,
   "license": "MIT",
   "description": "IdleRPG bot + dashboard — inspired by the original IdleRPG (http://idlerpg.net) for IRC networks",
@@ -11,7 +11,8 @@
     "dev:api": "tsx watch src/api/server.ts",
     "bot": "tsx src/irc/bot.ts",
     "api": "tsx src/api/server.ts",
-    "build": "tsc"
+    "build": "tsc",
+    "test": "tsx --test test/**/*.test.ts"
   },
   "engines": {
     "node": ">=20"

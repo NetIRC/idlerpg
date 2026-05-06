@@ -1,3 +1,5 @@
+/** SQLite schema, migrations, and data-access helpers shared by bot and APIs. */
+
 import fs from 'node:fs';
 import path from 'node:path';
 import Database from 'better-sqlite3';
@@ -35,6 +37,10 @@ export type PlayerRow = {
   duel_wins: number;
   /** Shadow gauntlet victories (PvE). */
   gauntlet_wins: number;
+  /** Continuous in-channel idle streak in seconds (V3 optional mechanic). */
+  idle_streak_sec: number;
+  /** Number of streak milestone rewards granted (for stats/telemetry). */
+  streak_reward_count: number;
 };
 
 let _db: Database.Database | null = null;
@@ -181,6 +187,9 @@ function initSchema(db: Database.Database) {
   ensureRealmEventsTable(db);
   ensurePlayerMedalsTable(db);
   ensureCombatStatColumns(db);
+  ensureV3Columns(db);
+  normalizeIrcNickAssignments(db);
+  ensureUniqueIrcNickIndex(db);
 }
 
 export function metaGetInt(db: Database.Database, key: string): number | null {
@@ -266,8 +275,55 @@ function ensureCombatStatColumns(db: Database.Database) {
   }
 }
 
+function ensureV3Columns(db: Database.Database) {
+  const cols = db.prepare('PRAGMA table_info(players)').all() as { name: string }[];
+  if (!cols.some((c) => c.name === 'idle_streak_sec')) {
+    db.exec('ALTER TABLE players ADD COLUMN idle_streak_sec INTEGER NOT NULL DEFAULT 0');
+  }
+  if (!cols.some((c) => c.name === 'streak_reward_count')) {
+    db.exec('ALTER TABLE players ADD COLUMN streak_reward_count INTEGER NOT NULL DEFAULT 0');
+  }
+}
+
+/**
+ * Legacy rows may contain duplicate IRC nick bindings.
+ * Keep the best candidate and clear stale/conflicting bindings.
+ */
+function normalizeIrcNickAssignments(db: Database.Database): void {
+  const rows = db
+    .prepare(
+      `SELECT id, irc_nick, online, session_open, last_login
+       FROM players
+       WHERE TRIM(irc_nick) != ''
+       ORDER BY online DESC, session_open DESC, last_login DESC, id DESC`,
+    )
+    .all() as { id: number; irc_nick: string; online: number; session_open: number; last_login: number }[];
+  const seen = new Set<string>();
+  const clear = db.prepare(`UPDATE players SET irc_nick = '', online = 0, session_open = 0 WHERE id = ?`);
+  for (const r of rows) {
+    const key = r.irc_nick.trim().toLowerCase();
+    if (!key) continue;
+    if (seen.has(key)) {
+      clear.run(r.id);
+      continue;
+    }
+    seen.add(key);
+  }
+}
+
+/** Enforce one IRC nick per account row (case-insensitive, blanks excluded). */
+function ensureUniqueIrcNickIndex(db: Database.Database): void {
+  db.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_players_irc_nick_unique_ci
+    ON players(irc_nick COLLATE NOCASE)
+    WHERE irc_nick != '';
+  `);
+}
+
 /** Written by the IRC bot while connected; web tier treats stale rows as offline. */
 export const META_KEY_BOT_LAST_SEEN_MS = 'bot_last_seen_ms';
+/** Runtime AI flag mirrored by the IRC bot for web status rendering. */
+export const META_KEY_AI_ENABLED = 'ai_enabled';
 
 /** Heartbeat older than this (ms) ⇒ site shows bot offline (crashed / stopped). */
 export const BOT_HEARTBEAT_STALE_MS = 120_000;
@@ -327,7 +383,10 @@ export function findOnlineByNickCi(db: Database.Database, nick: string): PlayerR
 export function findPlayerByIrcNickCi(db: Database.Database, nick: string): PlayerRow | undefined {
   return db
     .prepare(
-      `SELECT * FROM players WHERE irc_nick != '' AND irc_nick COLLATE NOCASE = ? ORDER BY online DESC, session_open DESC LIMIT 1`,
+      `SELECT * FROM players
+       WHERE irc_nick != '' AND irc_nick COLLATE NOCASE = ?
+       ORDER BY online DESC, session_open DESC, last_login DESC, id DESC
+       LIMIT 1`,
     )
     .get(nick) as PlayerRow | undefined;
 }
@@ -339,6 +398,26 @@ export function findLoggedOutByIrcNickCi(db: Database.Database, nick: string): P
       `SELECT * FROM players WHERE online = 0 AND session_open = 0 AND irc_nick != '' AND irc_nick COLLATE NOCASE = ? LIMIT 1`,
     )
     .get(nick) as PlayerRow | undefined;
+}
+
+/**
+ * Ensure a nick is attached to at most one character row.
+ * Conflicting rows are detached and forced offline.
+ */
+export function clearIrcNickConflicts(db: Database.Database, nick: string, keepPlayerId?: number): void {
+  const n = nick.trim();
+  if (!n) return;
+  if (keepPlayerId == null) {
+    db.prepare(`UPDATE players SET irc_nick = '', online = 0, session_open = 0 WHERE irc_nick COLLATE NOCASE = ?`).run(
+      n,
+    );
+    return;
+  }
+  db.prepare(
+    `UPDATE players
+     SET irc_nick = '', online = 0, session_open = 0
+     WHERE irc_nick COLLATE NOCASE = ? AND id != ?`,
+  ).run(n, keepPlayerId);
 }
 
 export function leaderboard(db: Database.Database, limit = 50): PlayerRow[] {

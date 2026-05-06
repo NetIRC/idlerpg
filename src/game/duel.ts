@@ -1,9 +1,11 @@
+/** PvP duel resolution, cooldown enforcement, and duel hint targeting. */
+
 import type Database from 'better-sqlite3';
 import { formatDuelTimers } from '../irc/channel-style.js';
 import type { PlayerRow } from '../db/index.js';
 import { findOnlineByNickCi, insertRealmEvent, metaGetInt, metaSetInt } from '../db/index.js';
 import { durationIt } from './duration.js';
-import { ircNickInChannel } from './irc-presence.js';
+import { ircNickInChannel, ircNickInChannelWithCase } from './irc-presence.js';
 import { medalsAfterDuelWin } from './medals.js';
 import type { GameAnnouncement } from './announce.js';
 
@@ -116,8 +118,10 @@ export function runDuel(
 
   const wNs = Math.max(45, winner.next_seconds * winMult);
   const lNs = Math.max(45, loser.next_seconds * loseMult);
-  db.prepare('UPDATE players SET next_seconds = ? WHERE id = ?').run(wNs, winner.id);
-  db.prepare('UPDATE players SET next_seconds = ? WHERE id = ?').run(lNs, loser.id);
+  const winDelta = Math.max(0, winner.next_seconds - wNs);
+  const loseDelta = Math.max(0, lNs - loser.next_seconds);
+  db.prepare('UPDATE players SET next_seconds = ?, idle_streak_sec = 0 WHERE id = ?').run(wNs, winner.id);
+  db.prepare('UPDATE players SET next_seconds = ?, idle_streak_sec = 0 WHERE id = ?').run(lNs, loser.id);
 
   insertRealmEvent(
     db,
@@ -129,6 +133,8 @@ export function runDuel(
   const line2 = formatDuelTimers(
     winner.character_name,
     loser.character_name,
+    durationIt(winDelta),
+    durationIt(loseDelta),
     durationIt(wNs),
     durationIt(lNs),
   );
@@ -155,14 +161,7 @@ export function pickDuelHintFoe(
   const ini = findOnlineByNickCi(db, initiatorIrcNick);
   if (!ini) return null;
 
-  const seen = (p: PlayerRow) => {
-    if (!p.irc_nick) return false;
-    const raw = p.irc_nick.replace(/^@|%|\+/, '');
-    for (const n of channelNicks) {
-      if (caseEq(n, raw)) return true;
-    }
-    return false;
-  };
+  const seen = (p: PlayerRow) => ircNickInChannelWithCase(p.irc_nick, channelNicks, caseEq);
 
   if (!seen(ini)) return null;
 

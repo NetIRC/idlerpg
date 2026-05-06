@@ -1,3 +1,5 @@
+/** Contextual channel tips for register/login and available gameplay commands. */
+
 import type Database from 'better-sqlite3';
 import type { AppConfig } from '../config.js';
 import type { PlayerRow } from '../db/index.js';
@@ -5,18 +7,14 @@ import { findLoggedOutByIrcNickCi, findOnlineByNickCi } from '../db/index.js';
 import { omenHintEligible } from './chronicle-omen.js';
 import { pickDuelHintFoe } from './duel.js';
 import { gauntletHintEligible } from './gauntlet.js';
+import { ircNickInChannelWithCase } from './irc-presence.js';
 
 function visibleInChannel(
   p: PlayerRow,
   channelNicks: Set<string>,
   caseEq: (a: string, b: string) => boolean,
 ): boolean {
-  if (!p.irc_nick) return false;
-  const raw = p.irc_nick.replace(/^@|%|\+/, '');
-  for (const n of channelNicks) {
-    if (caseEq(n, raw)) return true;
-  }
-  return false;
+  return ircNickInChannelWithCase(p.irc_nick, channelNicks, caseEq);
 }
 
 function shuffleInPlace<T>(arr: T[]): void {
@@ -81,7 +79,7 @@ export function pickChannelHint(
       const ch = cfg.ircChannel;
       return {
         nick,
-        body: `"${loggedOut.character_name}" matches this nick — PM this bot LOGIN ${loggedOut.character_name} <password> while you stay in ${ch}.`,
+        body: `Character "${loggedOut.character_name}" is linked to this nick. Stay in ${ch} and PM LOGIN ${loggedOut.character_name} <password>.`,
       };
     }
 
@@ -94,7 +92,7 @@ export function pickChannelHint(
       if (susp) continue;
       return {
         nick,
-        body: `No character on this nick — PM this bot REGISTER <name> <password> <class…> while in ${cfg.ircChannel} (!rules). !commands never add level-timer penalty.`,
+        body: `No character linked to this nick. While in ${cfg.ircChannel}, PM REGISTER <name> <password> <class...>. See !rules. Public !commands never add level-timer penalty.`,
       };
     }
 

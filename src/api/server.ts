@@ -1,3 +1,5 @@
+/** Optional local JSON API for leaderboard, player details, and chronicle data. */
+
 import cors from 'cors';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import fs from 'node:fs';
@@ -10,7 +12,6 @@ import { CHRONICLE_API_DEFAULT_LIMIT, CHRONICLE_API_MAX_LIMIT } from '../game/ch
 import { listMedalKeys, MEDAL_DEF } from '../game/medals.js';
 import { realmPulseData } from '../game/realm.js';
 
-/** Optional Express API for local dev. Production can use PHP under public/api/. */
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const app = express();

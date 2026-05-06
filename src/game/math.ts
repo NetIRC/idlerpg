@@ -1,3 +1,5 @@
+/** Progression math formulas for next-level timer and penalty scaling. */
+
 import type { AppConfig } from '../config.js';
 
 /** Seconds until next level — `ttl` in bot.pl */

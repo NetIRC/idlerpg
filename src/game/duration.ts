@@ -2,14 +2,13 @@
  * Human-readable duration for level timers, lucky hour, penalties, etc.
  *
  * - Under 1 minute: `45s`
- * - Under 1 hour: `13m 5s` or `10m` (unambiguous vs `H:MM:SS` clock style)
- * - Under 1 day: `H:MM:SS`
- * - 1+ days: `N day(s), H:MM:SS`
+ * - Under 1 hour: `13m 5s` or `10m`
+ * - Under 1 day: `14h 18m 29s`
+ * - 1+ days: `2d 14h 18m 29s`
  */
 export function durationIt(totalSec: number): string {
   if (!Number.isFinite(totalSec) || totalSec < 0) return `n/a (${totalSec})`;
   const s = Math.floor(totalSec);
-  const pad2 = (n: number) => String(n).padStart(2, '0');
   if (s < 60) return `${s}s`;
   const days = Math.floor(s / 86400);
   const h = Math.floor((s % 86400) / 3600);
@@ -19,10 +18,15 @@ export function durationIt(totalSec: number): string {
     if (sec === 0) return `${m}m`;
     return `${m}m ${sec}s`;
   }
-  const clock = `${h}:${pad2(m)}:${pad2(sec)}`;
-  if (days === 0) return clock;
-  const dayWord = days === 1 ? 'day' : 'days';
-  return `${days} ${dayWord}, ${clock}`;
+  if (days === 0) {
+    if (sec === 0) return m > 0 ? `${h}h ${m}m` : `${h}h`;
+    return `${h}h ${m}m ${sec}s`;
+  }
+  if (sec === 0) {
+    if (m === 0) return `${days}d ${h}h`;
+    return `${days}d ${h}h ${m}m`;
+  }
+  return `${days}d ${h}h ${m}m ${sec}s`;
 }
 
 /**

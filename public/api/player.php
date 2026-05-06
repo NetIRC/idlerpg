@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+/** Player detail endpoint with stats, medals, and recent realm chronicle events. */
+
 require_once dirname(__DIR__) . '/includes/bootstrap.php';
 
 global $IRPG;
@@ -24,11 +26,13 @@ $case = !empty($IRPG['case_sensitive_names']);
 $sql = $case
     ? 'SELECT id, character_name, class, level, next_seconds, idled, online, alignment, irc_nick,
               pen_mesg, pen_nick, pen_part, pen_quit, pen_kick, pen_quest, pen_logout, trinket,
-              COALESCE(duel_wins, 0) AS duel_wins, COALESCE(gauntlet_wins, 0) AS gauntlet_wins
+              COALESCE(duel_wins, 0) AS duel_wins, COALESCE(gauntlet_wins, 0) AS gauntlet_wins,
+              COALESCE(idle_streak_sec, 0) AS idle_streak_sec, COALESCE(streak_reward_count, 0) AS streak_reward_count
        FROM players WHERE character_name = ? LIMIT 1'
     : 'SELECT id, character_name, class, level, next_seconds, idled, online, alignment, irc_nick,
               pen_mesg, pen_nick, pen_part, pen_quit, pen_kick, pen_quest, pen_logout, trinket,
-              COALESCE(duel_wins, 0) AS duel_wins, COALESCE(gauntlet_wins, 0) AS gauntlet_wins
+              COALESCE(duel_wins, 0) AS duel_wins, COALESCE(gauntlet_wins, 0) AS gauntlet_wins,
+              COALESCE(idle_streak_sec, 0) AS idle_streak_sec, COALESCE(streak_reward_count, 0) AS streak_reward_count
        FROM players WHERE character_name COLLATE NOCASE = ? LIMIT 1';
 
 try {
@@ -94,6 +98,8 @@ try {
         'trinket' => isset($r['trinket']) && (string) $r['trinket'] !== '' ? (string) $r['trinket'] : null,
         'duelWins' => (int) $r['duel_wins'],
         'gauntletWins' => (int) $r['gauntlet_wins'],
+        'idleStreakSec' => (int) $r['idle_streak_sec'],
+        'streakRewardCount' => (int) $r['streak_reward_count'],
         'medals' => array_map(static function ($key) {
             return [
                 'key' => (string) $key,
@@ -112,6 +118,8 @@ try {
             'penKick' => (int) $r['pen_kick'],
             'penQuest' => (int) $r['pen_quest'],
             'penLogout' => (int) $r['pen_logout'],
+            'idleStreakSec' => (int) $r['idle_streak_sec'],
+            'streakRewardCount' => (int) $r['streak_reward_count'],
         ],
     ], JSON_THROW_ON_ERROR);
 } catch (Throwable $e) {

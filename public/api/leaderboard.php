@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+/** Leaderboard endpoint consumed by PHP/JS web UIs. */
+
 require_once dirname(__DIR__) . '/includes/bootstrap.php';
 
 global $IRPG;
@@ -38,6 +40,7 @@ try {
             'generatedAt' => gmdate('c'),
             'botOnline' => $presence['botOnline'],
             'botLastSeenMs' => $presence['botLastSeenMs'],
+            'aiEnabled' => irpg_ai_enabled($pdo),
             'realmPulse' => $pulse,
         ],
         JSON_THROW_ON_ERROR,

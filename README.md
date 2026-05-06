@@ -114,8 +114,11 @@ Point the virtual host **document root** at **`public/`**. Enable **mod_rewrite*
 |---------|------|
 | Bot: IRC, database path, timers, quests, lucky hour, owner account, … | [`.env.example`](.env.example) → copy to `.env` (the real `.env` is not in the repo). |
 | Site: database path, `debug` | `site.config.php` (copy from `site.config.php.example`) |
+| Optional AI lore/banter (`!lore` / `LORE`) | Set `IRPG_AI_*` in `.env` (`IRPG_AI_ENABLED=true`, Groq key/model/timeout/cooldowns). Default model is `llama-3.1-8b-instant` for low-cost/free-friendly usage. |
 
 **Release branding:** `IDLE_RPG_VERSION` in [`src/config.ts`](src/config.ts) drives CTCP `VERSION`, channel `!ping`, and the default `IRPG_IRC_GECOS` real name. Keep it in step with `.env` / [`.env.example`](.env.example) and bump [`package.json`](package.json) `version` when you tag a release.
+
+Keep your AI API key only in your local `.env` (gitignored). Preferred variable is `IRPG_AI_GROQ_API_KEY` (or `GROQ_API_KEY`); never paste or commit real API keys to the repository.
 
 For production, set **`debug` ⇒ false** in `site.config.php`. Do not place the SQLite file under the public document root.
 
@@ -127,7 +130,7 @@ For production, set **`debug` ⇒ false** in `site.config.php`. Do not place the
 
 Private commands are rate-limited per nick via `IRPG_PM_FLOOD_MAX` and `IRPG_PM_FLOOD_WINDOW_MS` (see `.env.example`; set max to `0` to disable). **CTCP VERSION** does not count toward that limit.
 
-**Durations (timers, lucky hour, penalties):** the bot and PHP API use the same human-readable rules: under **1 minute** as `45s`; under **1 hour** as `13m 5s` or `10m` (minutes, not clock digits); under **1 day** as `H:MM:SS`; **1+ days** as `N day(s), H:MM:SS`. Chronicle / site “time ago” uses compact `s` / `m` / `h` / `d`.
+**Durations (timers, lucky hour, penalties):** the bot and PHP API use the same human-readable rules: under **1 minute** as `45s`; under **1 hour** as `13m 5s` or `10m`; under **1 day** as `14h 18m 29s`; **1+ days** as `2d 14h 18m 29s`. Chronicle / site “time ago” uses compact `s` / `m` / `h` / `d`.
 
 If **`IRPG_IRC_CHAN_BANTER_MS`** is set **`> 0`**, the bot also posts occasional ambient lines and **contextual tips** (REGISTER / LOGIN / `!` commands you can actually use right then). Set to **`0`** to disable.
 
@@ -145,6 +148,9 @@ If **`IRPG_IRC_CHAN_BANTER_MS`** is set **`> 0`**, the bot also posts occasional
 | **Charm / trinket** | Milestone levels may grant a cosmetic trinket (~0.3% faster idle while set). |
 | **Quests** | If enabled, party quests start automatically when enough heroes are online (see `IRPG_QUEST_*` in `.env`). |
 | **Lucky hour** | If enabled, random windows where Hand-of-God odds are boosted. |
+| **V3 daily trial** | Optional shard event (`IRPG_V3_*`): one online hero gets a timed challenge with bounded timer reward/penalty and chronicle log. |
+| **V3 idle streak** | Optional reward loop: uninterrupted in-channel idle grants periodic timer reductions. In strict mode, **any channel activity** (including `!` commands) breaks the streak; penalties/combat outcomes also reset it. |
+| **Level-up action window** | After a level-up, the hero gets a **5-minute hint window** (notice) suggesting currently available `!duel` / `!omen` / `!gauntlet`; one reminder appears at half-window. This is informational only and does **not** bypass cooldowns. |
 | **REGISTER** | PM the bot: one-word **password**; **class** can be multiple words. **Character name** must be unique in the database. |
 | **LOGIN / LOGOUT** | **LOGIN** / **LOGOUT** via PM. **LOGOUT** applies a **logout penalty** (timer increase). |
 | **PART** (leave channel) while logged in | **Suspended session:** `online` clears and **PART penalty** applies; **`session_open` stays 1**. **Rejoin the channel** → session resumes (**no second LOGIN**). Idle time did not advance while you were gone. |
@@ -169,11 +175,11 @@ All commands are case-insensitive on the `!word` token (e.g. `!HELP`). Optional 
 | **!help** | — | Short help (registration / login); use **!cmds** for the full channel list. |
 | **!cmds** | — | Longer list of channel commands. Alias: **!commands**. |
 | **!rules** | — | One-line summary (idle, penalties, PM register/login, quests/lucky). |
-| **!ping** | — | Bot check (`pong — IdleRPG V2.0 NetIRC`). |
+| **!ping** | — | Bot check (`pong — IdleRPG V3.0 NetIRC`). |
 | **!top** | — | Top **3** heroes (name, level, class, time to level). |
 | **!stats** | `[character name]` | Your stats if omitted; otherwise lookup by character name (may be case-sensitive; see `IRPG_CASE_SENSITIVE_NAMES`). |
 | **!time** | `[character name]` | Time to next level (self or named character). |
-| **!whoami** | — | Logged-in identity: character, level, class, alignment, timer. |
+| **!whoami** | — | Logged-in identity + cooldown summary (omen/duel/gauntlet/daily trial) and, when active, remaining level-up hint window time. |
 | **!records** | — | Realm records / highs (same source as the site). |
 | **!quest** | — | Quest status line (team quest window, etc.). |
 | **!realm** | — | One-line **realm pulse**: heroes online, quest, lucky hour, peak level. Alias: **!pulse**. |
@@ -181,6 +187,7 @@ All commands are case-insensitive on the `!word` token (e.g. `!HELP`). Optional 
 | **!omen** | — | Personal omen (~**8h** cooldown); must be **logged in** and in channel; **can change your timer** (boon/curse/rare). |
 | **!duel** | `⟨irc_nick⟩` | Arena **PvP** vs another **logged-in** hero **in channel**; **±11** levels; initiator cooldown ~**5h**; same pair ~**20h**; timer shifts + flair; medals possible. |
 | **!gauntlet** | — | **PvE** shadow trial; **~16h** cooldown after a run; timer swing + medals at milestones. |
+| **!lore** | `[topic]` | Optional AI flavor line (Groq) with cooldown and local fallback. Replies show `AI lore:` on successful API output, otherwise `AI unavailable...` + local lore fallback. When AI is enabled, ambient channel banter may also become hero-aware. |
 | **!medals** | `[character name]` | Medal rack + duel/gauntlet win counts (self if omitted; otherwise by **character** look‑up). Alias: **!badges**. |
 
 ---
@@ -199,7 +206,7 @@ Send as **PM** (private message) to the bot nick. For **REGISTER**, **LOGIN**, a
 | **PING** | — | Bot check (same build id as **!ping** / CTCP **VERSION**). |
 | **STATS** | `[name]` | Same idea as **!stats**. |
 | **TOP** | — | Top **5** (PM uses wider list than **!top**). |
-| **WHOAMI** | — | Same as **!whoami**. |
+| **WHOAMI** | — | Same as **!whoami** (includes cooldown summary and level-up hint window status when active). |
 | **TIME** | `[name]` | Same as **!time**. |
 | **RECORDS** | — | Same as **!records**. |
 | **QUEST** | — | Same as **!quest**. |
@@ -208,10 +215,11 @@ Send as **PM** (private message) to the bot nick. For **REGISTER**, **LOGIN**, a
 | **OMEN** | — | Same as **!omen** (must be in game channel). |
 | **DUEL** | `irc_nick` | Same rules as **!duel** (must be in game channel). |
 | **GAUNTLET** | — | Same as **!gauntlet** (must be in game channel). |
+| **LORE** | `[topic]` | Optional AI lore line via Groq (assistive flavor only, no gameplay impact). Same source labels as `!lore` (`AI lore:` vs `AI unavailable...` fallback). |
 | **MEDALS** / **BADGES** | `[name]` | Same as **!medals**. |
 | **ADMIN** | `subcommand …` | [Staff](#staff-admin-over-pm) only. Try **`ADMIN HELP`**. |
 
-When you **join the game channel** logged out but your IRC nick is still tied to a hero on file, the bot may send a **NOTICE** reminding you to **LOGIN** (throttled).
+When you **join the game channel**, the bot sends a throttled onboarding **NOTICE**: if your prior session was suspended after `PART`, it confirms automatic resume; if your nick is registered but logged out, it prompts **LOGIN**; otherwise it shows a welcome with **REGISTER** syntax.
 
 ---
 

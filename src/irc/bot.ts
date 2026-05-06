@@ -1,10 +1,14 @@
+/** IRC runtime wiring: command routing, delivery formatting, and connection lifecycle. */
+
 import dns from 'node:dns';
 import net from 'node:net';
 import { Client } from 'irc-framework';
 import { config, IDLE_RPG_VERSION } from '../config.js';
 import { GameEngine } from '../game/engine.js';
+import { MSG } from '../game/messages.js';
 import { buildNickCandidates } from '../nick-candidates.js';
 import { randomChannelBanter } from '../game/channel-banter.js';
+import { askGrokBanter, askGrokLore } from '../ai/grok.js';
 import { chanReplyPrefix, stripStatusPrefix, styleAmbientBanter, styleChannelLine, ircGreen, ircRed } from './channel-style.js';
 import type { GameAnnouncement } from '../game/engine.js';
 
@@ -45,6 +49,8 @@ function isPrivateToMe(target: string | undefined): boolean {
 
 /** Sliding-window PM rate limit per IRC nick (CTCP VERSION is excluded earlier). */
 const pmFloodTimestamps = new Map<string, number[]>();
+const loreLastByNick = new Map<string, number>();
+let aiBanterLastAt = 0;
 
 function allowPmFlood(fromNick: string): boolean {
   const max = config.pmFloodMaxMessages;
@@ -62,6 +68,42 @@ function allowPmFlood(fromNick: string): boolean {
   recent.push(now);
   pmFloodTimestamps.set(key, recent);
   return true;
+}
+
+function loreCooldownLeftSec(nick: string): number {
+  const cd = Math.max(0, config.aiLoreCooldownSec);
+  if (cd <= 0) return 0;
+  const key = nick.toLowerCase();
+  const last = loreLastByNick.get(key) ?? 0;
+  if (last <= 0) return 0;
+  const left = cd - Math.floor((Date.now() - last) / 1000);
+  return Math.max(0, left);
+}
+
+function markLoreCooldown(nick: string): void {
+  loreLastByNick.set(nick.toLowerCase(), Date.now());
+}
+
+async function replyLore(fromNick: string, prompt: string, viaPm: boolean): Promise<void> {
+  const left = loreCooldownLeftSec(fromNick);
+  if (left > 0) {
+    const msg = ircRed(`Lore cooldown active. Try again in ${left}s.`);
+    if (viaPm) bot.notice(fromNick, msg);
+    else bot.say(channel, `${chanReplyPrefix(fromNick)} ${msg}`);
+    return;
+  }
+  markLoreCooldown(fromNick);
+  const asked = prompt.trim() || 'the current realm';
+  const out = await askGrokLore(config, asked);
+  if (out.ok) {
+    const line = styleChannelLine(`AI lore: ${out.text}`);
+    if (viaPm) bot.notice(fromNick, line);
+    else bot.say(channel, `${chanReplyPrefix(fromNick)} ${line}`);
+    return;
+  }
+  const fallback = styleChannelLine(`AI unavailable right now. ${out.err}`);
+  if (viaPm) bot.notice(fromNick, fallback);
+  else bot.say(channel, `${chanReplyPrefix(fromNick)} ${fallback}`);
 }
 
 /** Server numerics that usually explain a failed JOIN (logged to stderr / bot.log). */
@@ -149,9 +191,9 @@ bot.on('close', (hadError?: boolean) => {
   }, 4000 + Math.floor(Math.random() * 2500));
 });
 
-/** Cooldown between join LOGIN reminders per IRC nick (anti-spam on flappy clients). */
-const JOIN_LOGIN_REMIND_COOLDOWN_MS = 4 * 60 * 60 * 1000;
-const joinLoginRemindLast = new Map<string, number>();
+/** Cooldown between join onboarding notices per IRC nick (anti-spam on flappy clients). */
+const JOIN_ONBOARD_NOTICE_COOLDOWN_MS = 5 * 60 * 1000;
+const joinOnboardNoticeLast = new Map<string, number>();
 
 bot.on('join', (event) => {
   const chLower = event.channel.toLowerCase();
@@ -166,14 +208,14 @@ bot.on('join', (event) => {
   }
   if (chLower !== chanLower) return;
   namesInChannel.add(who);
-  engine.resumeSuspendedSessionOnJoin(who);
-  const loginRemind = engine.joinLoginReminderNotice(who);
-  if (loginRemind) {
+  const resumed = engine.resumeSuspendedSessionOnJoin(who);
+  const onboarding = engine.joinOnboardingNotice(who, resumed);
+  if (onboarding) {
     const key = who.toLowerCase();
     const now = Date.now();
-    if (now - (joinLoginRemindLast.get(key) ?? 0) >= JOIN_LOGIN_REMIND_COOLDOWN_MS) {
-      joinLoginRemindLast.set(key, now);
-      bot.notice(who, loginRemind);
+    if (now - (joinOnboardNoticeLast.get(key) ?? 0) >= JOIN_ONBOARD_NOTICE_COOLDOWN_MS) {
+      joinOnboardNoticeLast.set(key, now);
+      bot.notice(who, onboarding);
     }
   }
 });
@@ -261,7 +303,7 @@ function tryPublicChannelCommand(fromNick: string, text: string): boolean {
       bot.say(
         channel,
         `${replyPfx} ${styleChannelLine(
-          `Idle to gain levels; normal channel chat adds to your level timer. !commands do not. PM this bot REGISTER or LOGIN while your nick is in this channel. Quests and lucky hours start when enough players are present.`,
+          `Idle to gain levels; normal channel chat adds to your level timer. Public !commands never add level-timer penalty. PM this bot REGISTER or LOGIN while your nick is in this channel. Quests and lucky hours start when enough players are present.`,
         )}`,
       );
       return true;
@@ -270,6 +312,9 @@ function tryPublicChannelCommand(fromNick: string, text: string): boolean {
       return true;
     case 'ping':
       bot.say(channel, `${replyPfx} ${styleChannelLine(`pong — ${IDLE_RPG_VERSION}`)}`);
+      return true;
+    case 'lore':
+      void replyLore(fromNick, rest, false);
       return true;
     case 'time': {
       const nameArg = rest.split(/\s+/).filter(Boolean)[0];
@@ -347,6 +392,8 @@ bot.on('message', (event) => {
     !event.message.startsWith('\u0001');
 
   if (isChanMsg) {
+    // Strict streak rule: any channel activity (including !commands) breaks idle streak.
+    engine.noteChannelActivity(from);
     if (tryPublicChannelCommand(from, event.message)) return;
     for (const a of engine.onChannelMessage(from, event.message.length)) {
       deliver(a);
@@ -396,6 +443,11 @@ bot.on('message', (event) => {
 
   if (cmd === 'ping') {
     bot.notice(from, `pong — ${IDLE_RPG_VERSION}`);
+    return;
+  }
+
+  if (cmd === 'lore') {
+    void replyLore(from, rest.join(' '), true);
     return;
   }
 
@@ -541,7 +593,7 @@ bot.on('message', (event) => {
     return;
   }
 
-  bot.notice(from, ircRed('Unknown command. PM HELP or CMDS for the command list.'));
+  bot.notice(from, ircRed(MSG.unknownPmCommand));
 });
 
 function formatAnnouncement(a: GameAnnouncement): string {
@@ -646,12 +698,32 @@ if (config.ircChanBanterMs > 0) {
     if (!bot.connected) return;
     const me = bot.user.nick;
     if (!me) return;
+    if (namesInChannel.size < 1) return;
+
     const hint = engine.channelHint(namesInChannel, (a, b) => bot.caseCompare(a, b), me);
-    if (hint && Math.random() < 0.55) {
+    if (hint && Math.random() < 0.5) {
       bot.say(channel, `${chanReplyPrefix(hint.nick)} ${hint.body}`);
-    } else {
-      bot.say(channel, styleAmbientBanter(randomChannelBanter()));
+      return;
     }
+    const now = Date.now();
+    const aiReady =
+      config.aiEnabled &&
+      config.aiBanterCooldownSec > 0 &&
+      now - aiBanterLastAt >= config.aiBanterCooldownSec * 1000 &&
+      Math.random() < 0.35;
+    if (aiReady) {
+      aiBanterLastAt = now;
+      const heroes = [...namesInChannel].slice(0, 6);
+      void askGrokBanter(config, heroes).then((out) => {
+        if (out.ok) {
+          bot.say(channel, styleAmbientBanter(out.text));
+          return;
+        }
+        bot.say(channel, styleAmbientBanter(randomChannelBanter()));
+      });
+      return;
+    }
+    bot.say(channel, styleAmbientBanter(randomChannelBanter()));
   }, config.ircChanBanterMs);
 }
 

@@ -1,8 +1,10 @@
+/** Runtime configuration loader and validator for all IRPG_* environment settings. */
+
 import 'dotenv/config';
 import { z } from 'zod';
 
 /** Human-readable release id: CTCP VERSION, !ping, default GECOS, banter. Bump when shipping. */
-export const IDLE_RPG_VERSION = 'IdleRPG V2.0 NetIRC';
+export const IDLE_RPG_VERSION = 'IdleRPG V3.0 NetIRC';
 
 /** Environment loaded from process.env (IRPG_*), validated with zod. */
 
@@ -119,6 +121,16 @@ const schema = z.object({
   /** Rolled roughly every ~100s; typical 0.05–0.15. */
   luckyHourRollChance: z.coerce.number().min(0).max(1).default(0.1),
 
+  /** Master switch for V3 mechanics (daily trial + idle streak). */
+  v3ModeEnabled: z.boolean().default(false),
+  v3DailyTrialEnabled: z.boolean().default(false),
+  v3DailyTrialCooldownSec: z.coerce.number().int().min(300).max(604_800).default(86_400),
+  v3DailyTrialRewardSec: z.coerce.number().int().min(10).max(7200).default(180),
+  v3DailyTrialPenaltySec: z.coerce.number().int().min(5).max(7200).default(90),
+  v3StreakEnabled: z.boolean().default(false),
+  v3StreakStepSec: z.coerce.number().int().min(60).max(86_400).default(1800),
+  v3StreakRewardSec: z.coerce.number().int().min(1).max(1800).default(15),
+
   /** Max private messages per IRC nick per sliding window; 0 = disable. */
   pmFloodMaxMessages: z.coerce.number().int().min(0).max(500).default(18),
   /** Sliding window (ms) for PM flood counting. */
@@ -144,6 +156,15 @@ const schema = z.object({
         )
         .filter(Boolean);
     }),
+
+  /** Optional AI lore integration via Groq (assistive only, never gameplay-critical). */
+  aiEnabled: z.boolean().default(false),
+  aiGrokApiKey: z.string().optional().default('').transform((s: string) => (s ?? '').trim()),
+  aiGrokModel: z.string().default('llama-3.1-8b-instant'),
+  aiTimeoutMs: z.coerce.number().int().min(1000).max(30000).default(8000),
+  aiMaxTokens: z.coerce.number().int().min(32).max(512).default(120),
+  aiLoreCooldownSec: z.coerce.number().int().min(0).max(3600).default(45),
+  aiBanterCooldownSec: z.coerce.number().int().min(0).max(86_400).default(900),
 });
 
 function load() {
@@ -187,9 +208,28 @@ function load() {
     luckyHourEnabled: bool(process.env.IRPG_LUCKY_HOUR_ENABLED, true),
     luckyHourDurationSec: decr(process.env.IRPG_LUCKY_HOUR_DURATION_SEC),
     luckyHourRollChance: decr(process.env.IRPG_LUCKY_HOUR_CHANCE),
+    v3ModeEnabled: bool(process.env.IRPG_V3_MODE_ENABLED, false),
+    v3DailyTrialEnabled: bool(process.env.IRPG_V3_DAILY_TRIAL_ENABLED, false),
+    v3DailyTrialCooldownSec: decr(process.env.IRPG_V3_DAILY_TRIAL_COOLDOWN_SEC),
+    v3DailyTrialRewardSec: decr(process.env.IRPG_V3_DAILY_TRIAL_REWARD_SEC),
+    v3DailyTrialPenaltySec: decr(process.env.IRPG_V3_DAILY_TRIAL_PENALTY_SEC),
+    v3StreakEnabled: bool(process.env.IRPG_V3_STREAK_ENABLED, false),
+    v3StreakStepSec: decr(process.env.IRPG_V3_STREAK_STEP_SEC),
+    v3StreakRewardSec: decr(process.env.IRPG_V3_STREAK_REWARD_SEC),
     pmFloodMaxMessages: decr(process.env.IRPG_PM_FLOOD_MAX),
     pmFloodWindowMs: decr(process.env.IRPG_PM_FLOOD_WINDOW_MS),
     adminIrcNicks: decr(process.env.IRPG_ADMIN_IRC_NICKS) ?? '',
+    aiEnabled: bool(process.env.IRPG_AI_ENABLED, false),
+    aiGrokApiKey:
+      decr(process.env.IRPG_AI_GROQ_API_KEY) ??
+      decr(process.env.GROQ_API_KEY) ??
+      decr(process.env.IRPG_AI_GROK_API_KEY) ??
+      '',
+    aiGrokModel: decr(process.env.IRPG_AI_GROQ_MODEL) ?? decr(process.env.IRPG_AI_GROK_MODEL),
+    aiTimeoutMs: decr(process.env.IRPG_AI_TIMEOUT_MS),
+    aiMaxTokens: decr(process.env.IRPG_AI_MAX_TOKENS),
+    aiLoreCooldownSec: decr(process.env.IRPG_AI_LORE_COOLDOWN_SEC),
+    aiBanterCooldownSec: decr(process.env.IRPG_AI_BANTER_COOLDOWN_SEC),
   };
   return schema.parse(raw);
 }

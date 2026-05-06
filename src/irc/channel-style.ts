@@ -32,8 +32,8 @@ export function formatQuestEndLine(
 ): string {
   return (
     `⚔ Quest result: ${winTeam} wins (${s0}–${s1}) over ${loseTeam}. ` +
-    `${ircGreen(`Winners: level timer reduced by ${bonusLabel}.`)} ` +
-    `${ircRed(`Losers: level timer increased by ${penaltyLabel} (quest levy).`)}`
+    `${ircGreen(`Winners: level timer reduced by -${bonusLabel}.`)} ` +
+    `${ircRed(`Losers: level timer increased by +${penaltyLabel} (quest levy).`)}`
   );
 }
 
@@ -41,12 +41,14 @@ export function formatQuestEndLine(
 export function formatDuelTimers(
   winnerName: string,
   loserName: string,
+  winnerDeltaLabel: string,
+  loserDeltaLabel: string,
   winnerNextLabel: string,
   loserNextLabel: string,
 ): string {
   return (
-    `${ircGreen(`${winnerName}: next level in ${winnerNextLabel} (timer improved).`)} ` +
-    `${ircRed(`${loserName}: next level in ${loserNextLabel} (timer penalized).`)}`
+    `${ircGreen(`${winnerName}: -${winnerDeltaLabel}, next level in ${winnerNextLabel}.`)} ` +
+    `${ircRed(`${loserName}: +${loserDeltaLabel}, next level in ${loserNextLabel}.`)}`
   );
 }
 

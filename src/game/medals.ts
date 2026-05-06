@@ -1,3 +1,5 @@
+/** Medal definitions and helpers for level/duel/gauntlet/quest achievements. */
+
 import type Database from 'better-sqlite3';
 import { insertRealmEvent } from '../db/index.js';
 import type { PlayerRow } from '../db/index.js';

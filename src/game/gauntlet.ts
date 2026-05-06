@@ -1,8 +1,10 @@
+/** PvE gauntlet trial flow, rewards/penalties, and eligibility helpers. */
+
 import type Database from 'better-sqlite3';
 import type { PlayerRow } from '../db/index.js';
 import { findOnlineByNickCi, insertRealmEvent, metaGetInt, metaSetInt } from '../db/index.js';
 import { durationIt } from './duration.js';
-import { ircNickInChannel } from './irc-presence.js';
+import { ircNickInChannel, ircNickInChannelWithCase } from './irc-presence.js';
 import { grantMedal } from './medals.js';
 import type { GameAnnouncement } from './announce.js';
 
@@ -54,7 +56,8 @@ export function runGauntlet(
   if (win) {
     const mult = epic ? 0.982 : 0.99;
     const ns = Math.max(40, p.next_seconds * mult);
-    db.prepare('UPDATE players SET next_seconds = ? WHERE id = ?').run(ns, p.id);
+    const gain = Math.max(0, p.next_seconds - ns);
+    db.prepare('UPDATE players SET next_seconds = ?, idle_streak_sec = 0 WHERE id = ?').run(ns, p.id);
     const gw =
       (
         db.prepare('SELECT gauntlet_wins FROM players WHERE id = ?').get(p.id) as {
@@ -66,12 +69,12 @@ export function runGauntlet(
 
     announcements.push({
       target: 'chan',
-      text: `◇ Gauntlet — ${name} (${cls}, L${p.level}) clears the trial.${epic ? ' Exceptional performance.' : ''} Level timer shortened.`,
+      text: `◇ Gauntlet — ${name} (${cls}, L${p.level}) clears the trial.${epic ? ' Exceptional performance.' : ''} Level timer shortened (-${durationIt(gain)} effective gain).`,
       tone: 'gain',
     });
     announcements.push({
       target: 'chan',
-      text: `◇ ${name}: next level in ${durationIt(ns)} · Gauntlet victories: ${gnext}.`,
+      text: `◇ ${name}: -${durationIt(gain)} effective gain · next level in ${durationIt(ns)} · Gauntlet victories: ${gnext}.`,
       tone: 'gain',
     });
     insertRealmEvent(db, 'gauntlet_win', `${name}${epic ? ' (epic)' : ''}`);
@@ -86,15 +89,16 @@ export function runGauntlet(
   } else {
     const mult = epic ? 1.012 : 1.005;
     const ns = p.next_seconds * mult;
-    db.prepare('UPDATE players SET next_seconds = ? WHERE id = ?').run(ns, p.id);
+    const loss = Math.max(0, ns - p.next_seconds);
+    db.prepare('UPDATE players SET next_seconds = ?, idle_streak_sec = 0 WHERE id = ?').run(ns, p.id);
     announcements.push({
       target: 'chan',
-      text: `◇ Gauntlet — ${name} (${cls}) fails the trial. Level timer extended.`,
+      text: `◇ Gauntlet — ${name} (${cls}) fails the trial. Level timer extended (+${durationIt(loss)} effective loss).`,
       tone: 'loss',
     });
     announcements.push({
       target: 'chan',
-      text: `◇ ${name}: next level in ${durationIt(ns)}. Cooldown active; try again later.`,
+      text: `◇ ${name}: +${durationIt(loss)} effective loss · next level in ${durationIt(ns)}. Cooldown active; try again later.`,
       tone: 'loss',
     });
     insertRealmEvent(db, 'gauntlet_lose', name);
@@ -112,15 +116,7 @@ export function gauntletHintEligible(
 ): boolean {
   const p = findOnlineByNickCi(db, ircNick);
   if (!p || !p.irc_nick) return false;
-  const raw = p.irc_nick.replace(/^@|%|\+/, '');
-  let seen = false;
-  for (const n of channelNicks) {
-    if (caseEq(n, raw)) {
-      seen = true;
-      break;
-    }
-  }
-  if (!seen) return false;
+  if (!ircNickInChannelWithCase(p.irc_nick, channelNicks, caseEq)) return false;
   const now = Math.floor(Date.now() / 1000);
   const last = metaGetInt(db, `gauntlet_cd_${p.id}`) ?? 0;
   return !(last > 0 && now - last < GAUNTLET_COOLDOWN_SEC);

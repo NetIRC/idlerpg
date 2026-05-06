@@ -1,6 +1,9 @@
+/** Core gameplay engine: sessions, penalties, progression, commands, and tick loop. */
+
 import bcrypt from 'bcryptjs';
 import type Database from 'better-sqlite3';
 import {
+  clearIrcNickConflicts,
   clearBotHeartbeat as dbClearBotHeartbeat,
   findByCharacter,
   findLoggedOutByIrcNickCi,
@@ -8,6 +11,9 @@ import {
   findPlayerByIrcNickCi,
   getDb,
   insertRealmEvent,
+  META_KEY_AI_ENABLED,
+  metaGetInt,
+  metaSetInt,
   touchBotHeartbeat as dbTouchBotHeartbeat,
   type PlayerRow,
 } from '../db/index.js';
@@ -17,11 +23,12 @@ import { reservedBotNicksLower } from '../nick-candidates.js';
 import { alignmentIdleHint, alignmentIdleRate, alignmentLabel } from './alignment.js';
 import { durationIt } from './duration.js';
 import { penttl, ttl } from './math.js';
-import { consultOmen, formatChronicleLine } from './chronicle-omen.js';
+import { MSG } from './messages.js';
+import { consultOmen, formatChronicleLine, OMEN_COOLDOWN_SEC, omenHintEligible } from './chronicle-omen.js';
 import { pickChannelHint } from './channel-hint.js';
-import { ircNickInChannel } from './irc-presence.js';
-import { runDuel } from './duel.js';
-import { runGauntlet } from './gauntlet.js';
+import { ircNickInChannel, normalizeIrcNick } from './irc-presence.js';
+import { DUEL_INITIATOR_COOLDOWN_SEC, pickDuelHintFoe, runDuel } from './duel.js';
+import { GAUNTLET_COOLDOWN_SEC, gauntletHintEligible, runGauntlet } from './gauntlet.js';
 import { medalsDisplayLine, medalsForLevel } from './medals.js';
 import {
   adminDeleteCharacter,
@@ -38,14 +45,17 @@ import {
   realmTick,
 } from './realm.js';
 
-/** Game logic: timers, penalties, and tick aligned with classic IdleRPG / bot.pl. */
-
 import type { GameAnnouncement } from './announce.js';
 export type { GameAnnouncement } from './announce.js';
 
 export class GameEngine {
   private lastTick = 0;
   private readonly reservedBotNicks: Set<string>;
+  private static readonly MAX_TICK_DELTA_SEC = 30;
+  private static readonly MAX_LEVELUPS_PER_TICK = 8;
+  private static readonly LEVEL_ACTION_WINDOW_SEC = 5 * 60;
+  private static readonly LEVEL_ACTION_REMINDER_AFTER_SEC = Math.floor(GameEngine.LEVEL_ACTION_WINDOW_SEC / 2);
+  private static readonly STREAK_NOTICE_MIN_GAP_SEC = 20 * 60;
 
   constructor(private cfg: AppConfig) {
     this.reservedBotNicks = reservedBotNicksLower(cfg);
@@ -58,6 +68,8 @@ export class GameEngine {
   /** Persist IRC bot liveness for the public site (SQLite `meta` row). */
   touchBotHeartbeat(): void {
     dbTouchBotHeartbeat(this.db);
+    // Mirror runtime AI toggle so the PHP site can show true status without separate config.
+    metaSetInt(this.db, META_KEY_AI_ENABLED, this.cfg.aiEnabled ? 1 : 0);
   }
 
   clearBotHeartbeat(): void {
@@ -91,15 +103,16 @@ export class GameEngine {
     pclass: string,
     inChannel: boolean,
   ): { ok: true; announcements: GameAnnouncement[] } | { ok: false; err: string } {
+    const nick = normalizeIrcNick(ircNick) || ircNick.trim();
     if (!inChannel)
       return {
         ok: false,
         err: `REGISTER requires your nick in ${this.cfg.ircChannel}. Join, stay visible, then send REGISTER again by PM to this bot.`,
       };
-    if (findOnlineByNickCi(this.db, ircNick))
+    if (findPlayerByIrcNickCi(this.db, nick))
       return {
         ok: false,
-        err: 'This IRC nick already has an active session. Send LOGOUT first, or use another nick, before REGISTER.',
+        err: MSG.nickAlreadyLinked,
       };
     const name = this.resolveNameLookup(charName.trim());
     const pass = password.trim();
@@ -121,20 +134,19 @@ export class GameEngine {
         `INSERT INTO players (character_name, password_hash, class, level, next_seconds, idled, online, session_open, irc_nick, userhost, created_at, last_login, is_admin)
          VALUES (?, ?, ?, 0, ?, 0, 1, 1, ?, ?, ?, ?, ?)`,
       )
-      .run(name, hash, cls, this.cfg.rpbase, ircNick, userhost, now, now, isOwner);
-
+      .run(name, hash, cls, this.cfg.rpbase, nick, userhost, now, now, isOwner);
     insertRealmEvent(this.db, 'register', name);
     const ann: GameAnnouncement[] = [
       {
         target: 'chan',
-        text: pickRegisterWelcome(ircNick, name, cls, this.cfg.rpbase),
+        text: pickRegisterWelcome(nick, name, cls, this.cfg.rpbase),
         tone: 'gain',
       },
       {
         target: 'notice',
-        nick: ircNick,
+        nick,
         text: [
-          `Session opened: character "${name}" is linked to ${ircNick}.`,
+          `Session opened: character "${name}" is linked to ${nick}.`,
           `Remain in ${this.cfg.ircChannel} (visible in /names) or your level timer will not advance.`,
           `Idling in channel counts toward the next level. Lines starting with ! are free; normal chat adds time to your level timer.`,
           `First milestone: ~${durationIt(this.cfg.rpbase)} to level 1. PM HELP for commands. LOGOUT applies a small timer cost.`,
@@ -151,12 +163,13 @@ export class GameEngine {
     password: string,
     inChannel: boolean,
   ): { ok: true; announcements: GameAnnouncement[] } | { ok: false; err: string } {
+    const nick = normalizeIrcNick(ircNick) || ircNick.trim();
     if (!inChannel)
       return {
         ok: false,
         err: `LOGIN requires your nick in ${this.cfg.ircChannel}. Join, stay visible, then send LOGIN again by PM.`,
       };
-    if (findOnlineByNickCi(this.db, ircNick))
+    if (findOnlineByNickCi(this.db, nick))
       return {
         ok: false,
         err: 'This nick already has an open session. Send LOGOUT first to switch character.',
@@ -173,7 +186,8 @@ export class GameEngine {
     const now = Math.floor(Date.now() / 1000);
     this.db
       .prepare(`UPDATE players SET online = 1, session_open = 1, irc_nick = ?, userhost = ?, last_login = ? WHERE id = ?`)
-      .run(ircNick, userhost, now, p.id);
+      .run(nick, userhost, now, p.id);
+    clearIrcNickConflicts(this.db, nick, p.id);
 
     const row = this.db.prepare('SELECT * FROM players WHERE id = ?').get(p.id) as PlayerRow;
     this.ensureOwner(row);
@@ -181,17 +195,17 @@ export class GameEngine {
     const ann: GameAnnouncement[] = [
       {
         target: 'chan',
-        text: pickLoginWelcome(ircNick, row.character_name, row.level, row.class, row.next_seconds),
+        text: pickLoginWelcome(nick, row.character_name, row.level, row.class, row.next_seconds),
         tone: 'gain',
       },
-      { target: 'notice', nick: ircNick, text: loginSuccessNotice(this.cfg.ircChannel, row) },
+      { target: 'notice', nick, text: loginSuccessNotice(this.cfg.ircChannel, row) },
     ];
     return { ok: true, announcements: ann };
   }
 
   logout(ircNick: string): { ok: true; announcements: GameAnnouncement[] } | { ok: false; err: string } {
     const p = findOnlineByNickCi(this.db, ircNick);
-    if (!p) return { ok: false, err: 'No active session. PM LOGIN <CharacterName> <Password> while in the game channel.' };
+    if (!p) return { ok: false, err: MSG.activeSessionRequired };
     insertRealmEvent(this.db, 'logout', p.character_name);
     const pen = this.applyPenaltyAmount(p, 20);
     this.db
@@ -199,6 +213,7 @@ export class GameEngine {
         `UPDATE players SET online = 0, session_open = 0, pen_logout = pen_logout + ?, next_seconds = next_seconds + ? WHERE id = ?`,
       )
       .run(pen, pen, p.id);
+    this.resetIdleStreak(p.id);
     return {
       ok: true,
       announcements: [
@@ -213,19 +228,36 @@ export class GameEngine {
   }
 
   /**
-   * NOTICE when someone joins with a stored IRC nick but is fully logged out (LOGOUT / QUIT / KICK / etc.).
+   * JOIN onboarding notice.
+   * - Resumed session (after PART): confirm automatic resume
+   * - Registered but logged out: guide LOGIN
+   * - Unknown nick: guide REGISTER
    */
-  joinLoginReminderNotice(ircNick: string): string | null {
-    const nick = ircNick.replace(/^@|%|\+/, '');
+  joinOnboardingNotice(ircNick: string, resumedSession: boolean): string | null {
+    const nick = normalizeIrcNick(ircNick);
     if (!nick || this.reservedBotNicks.has(nick.toLowerCase())) return null;
-    const p = findLoggedOutByIrcNickCi(this.db, nick);
-    if (!p) return null;
-    const name = p.character_name;
     const ch = this.cfg.ircChannel;
-    const caseHint = this.cfg.caseSensitiveNames ? ' Character name must match exactly (case-sensitive).' : '';
+    if (resumedSession) {
+      const active = findOnlineByNickCi(this.db, nick);
+      if (!active) return null;
+      return (
+        `Welcome back: your session for "${active.character_name}" resumed automatically after rejoining ${ch}. ` +
+        `Need status? Use !whoami or !time.`
+      );
+    }
+    const p = findLoggedOutByIrcNickCi(this.db, nick);
+    if (p) {
+      const name = p.character_name;
+      const caseHint = this.cfg.caseSensitiveNames ? ' Character name must match exactly (case-sensitive).' : '';
+      return (
+        `Welcome back. Character "${name}" is registered but not logged in.${caseHint} ` +
+        `From this nick in ${ch}, PM this bot: LOGIN ${name} <password> (password = one word). ` +
+        `Need help? PM HELP.`
+      );
+    }
     return (
-      `IdleRPG — character "${name}" is not logged in.${caseHint} Stay in ${ch}, then PM this bot: LOGIN ${name} <password> (password = one word). ` +
-      `Password recovery: contact a channel admin. PM HELP for the full command list.`
+      `Welcome to IdleRPG. To create your hero from this nick in ${ch}, PM this bot: ` +
+      `REGISTER <name> <password> <class...> (password = one word). PM HELP for examples.`
     );
   }
 
@@ -276,20 +308,52 @@ export class GameEngine {
       if (!p) return { err: 'No character matches that name.' };
     } else {
       p = findOnlineByNickCi(this.db, ircNick);
-      if (!p) return { err: 'Not logged in. Use: !stats <character_name> to look up another player.' };
+      if (!p) return { err: MSG.notLoggedInStats };
     }
     const idleH = (p.idled / 3600).toFixed(1);
     const charm = (p.trinket ?? '').trim();
     const charmS = charm ? ` · charm: ${charm} (~0.3% faster idle rate)` : '';
-    const text = `${p.character_name} · L${p.level} ${p.class} · next level in ${durationIt(p.next_seconds)} · idle logged ~${idleH}h · ${alignmentIdleHint(p.alignment)}${charmS}`;
+    const streakS =
+      this.cfg.v3ModeEnabled && this.cfg.v3StreakEnabled
+        ? ` · streak: ${durationIt(p.idle_streak_sec ?? 0)}`
+        : '';
+    const text = `${p.character_name} · L${p.level} ${p.class} · next level in ${durationIt(p.next_seconds)} · idle logged ~${idleH}h · ${alignmentIdleHint(p.alignment)}${streakS}${charmS}`;
     return { text };
   }
 
   whoami(ircNick: string): { text: string } | { err: string } {
     const p = findOnlineByNickCi(this.db, ircNick);
     if (!p) return { err: 'No session on this nick. PM LOGIN while in the game channel, or use REGISTER to create a character.' };
+    const now = Math.floor(Date.now() / 1000);
+    const cooldowns: string[] = [];
+
+    const omenLast = metaGetInt(this.db, `omen_cd_${p.id}`) ?? 0;
+    const omenLeft = Math.max(0, OMEN_COOLDOWN_SEC - (now - omenLast));
+    cooldowns.push(omenLeft > 0 ? `omen in ${durationIt(omenLeft)}` : 'omen ready');
+
+    const duelLast = metaGetInt(this.db, `duel_cd_${p.id}`) ?? 0;
+    const duelLeft = Math.max(0, DUEL_INITIATOR_COOLDOWN_SEC - (now - duelLast));
+    cooldowns.push(duelLeft > 0 ? `duel in ${durationIt(duelLeft)}` : 'duel ready');
+
+    const gauntletLast = metaGetInt(this.db, `gauntlet_cd_${p.id}`) ?? 0;
+    const gauntletLeft = Math.max(0, GAUNTLET_COOLDOWN_SEC - (now - gauntletLast));
+    cooldowns.push(gauntletLeft > 0 ? `gauntlet in ${durationIt(gauntletLeft)}` : 'gauntlet ready');
+
+    if (this.cfg.v3ModeEnabled && this.cfg.v3DailyTrialEnabled) {
+      const trialNext = metaGetInt(this.db, 'v3_daily_trial_next') ?? 0;
+      const trialLeft = Math.max(0, trialNext - now);
+      cooldowns.push(trialLeft > 0 ? `daily trial in ${durationIt(trialLeft)}` : 'daily trial ready');
+    }
+    const levelActionWindowUntil = metaGetInt(this.db, `lvl_action_window_until_${p.id}`) ?? 0;
+    const levelActionWindowLeft = Math.max(0, levelActionWindowUntil - now);
+    if (levelActionWindowLeft > 0) {
+      cooldowns.push(`level-up hint window in ${durationIt(levelActionWindowLeft)}`);
+    }
+
     return {
-      text: `Session: ${p.character_name} · L${p.level} ${p.class} · alignment: ${alignmentLabel(p.alignment)} · next level in ${durationIt(p.next_seconds)}.`,
+      text:
+        `Session: ${p.character_name} · L${p.level} ${p.class} · alignment: ${alignmentLabel(p.alignment)} · next level in ${durationIt(p.next_seconds)}.\n` +
+        `Cooldowns: ${cooldowns.join(' · ')}.`,
     };
   }
 
@@ -300,7 +364,7 @@ export class GameEngine {
       if (!p) return { err: 'No character matches that name.' };
     } else {
       p = findOnlineByNickCi(this.db, ircNick);
-      if (!p) return { err: 'Not logged in. Use: !time <character_name> to query another player.' };
+      if (!p) return { err: MSG.notLoggedInTime };
     }
     return {
       text: `${p.character_name}: next level in ${durationIt(p.next_seconds)} · L${p.level} ${p.class}.`,
@@ -310,8 +374,8 @@ export class GameEngine {
   helpPm(page: number): string {
     if (page >= 2) {
       return (
-        'PM: STATS [name], TOP, PING, REALM, CHRONICLE, QUEST, LOGOUT. ' +
-        'Channel (no timer cost): !time !whoami !stats !records !quest !realm !chronicle !omen !duel !gauntlet !medals !top. ' +
+        'PM: STATS [name], TOP, PING, REALM, CHRONICLE, QUEST, LORE [topic], LOGOUT. ' +
+        'Channel (no timer cost): !time !whoami !stats !records !quest !realm !chronicle !omen !duel !gauntlet !medals !top !lore. ' +
         'Admin (if authorized): ADMIN HELP — FORCELOGOUT, DELETEUSER, RESETPASS, STARTQUEST, LUCKY, SAY, SHUTDOWN.'
       );
     }
@@ -324,8 +388,8 @@ export class GameEngine {
   helpChannel(page: number, viewerIrcNick?: string): string {
     if (page >= 2) {
       return (
-        'Commands here do not add level-timer penalty: !time !whoami !stats !records !quest !realm !chronicle !omen !duel !gauntlet !medals !top. ' +
-        '!realm — snapshot: online count, quest, lucky hour, realm peak level.'
+        'Commands here do not add level-timer penalty: !time !whoami !stats !records !quest !realm !chronicle !omen !duel !gauntlet !medals !top !lore. ' +
+        '!realm — snapshot: online count, quest, lucky hour, daily trial, realm peak level.'
       );
     }
     const viewer = viewerIrcNick?.trim();
@@ -334,7 +398,7 @@ export class GameEngine {
       if (p) {
         return (
           `Logged in as ${p.character_name} (L${p.level} ${p.class}). ` +
-          `Try !time, !stats, !realm, !top — !help 2 lists all public commands. Account changes: PM this bot (HELP).`
+          `Try !time, !stats, !realm, !top — use !cmds for the full public command list. Account changes: PM this bot (HELP).`
         );
       }
       const loggedOut = findLoggedOutByIrcNickCi(this.db, viewer);
@@ -348,7 +412,7 @@ export class GameEngine {
     }
     return (
       'Welcome: create a character by PM — REGISTER <name> <password> <class> — while your nick is in this channel (password = one word). ' +
-      'Returning: LOGIN <name> <password>. Then use !help 2 for commands.'
+      'Returning: LOGIN <name> <password>. Then use !cmds for commands.'
     );
   }
 
@@ -396,7 +460,7 @@ export class GameEngine {
       if (!p) return { err: 'No character matches that name.' };
     } else {
       p = findOnlineByNickCi(this.db, ircNick);
-      if (!p) return { err: 'Not logged in. Use: !medals <character_name> to view another player.' };
+      if (!p) return { err: MSG.notLoggedInMedals };
     }
     return { text: medalsDisplayLine(this.db, p) };
   }
@@ -557,6 +621,7 @@ export class GameEngine {
     this.db
       .prepare(`UPDATE players SET pen_mesg = pen_mesg + ?, next_seconds = next_seconds + ? WHERE id = ?`)
       .run(pen, pen, p.id);
+    this.resetIdleStreak(p.id);
     return [
       {
         target: 'notice',
@@ -565,6 +630,17 @@ export class GameEngine {
         tone: 'loss',
       },
     ];
+  }
+
+  /**
+   * Strict streak mode: any channel activity from the logged-in player breaks the idle streak,
+   * including `!` commands (which remain penalty-free but no longer streak-free).
+   */
+  noteChannelActivity(ircNick: string): void {
+    if (!this.cfg.v3ModeEnabled || !this.cfg.v3StreakEnabled) return;
+    const p = findOnlineByNickCi(this.db, ircNick);
+    if (!p) return;
+    this.resetIdleStreak(p.id);
   }
 
   onNick(oldNick: string, newNick: string): GameAnnouncement[] {
@@ -577,6 +653,7 @@ export class GameEngine {
         `UPDATE players SET pen_nick = pen_nick + ?, next_seconds = next_seconds + ?, irc_nick = ?, userhost = ? WHERE id = ?`,
       )
       .run(pen, pen, newNick, uh, p.id);
+    this.resetIdleStreak(p.id);
     return [{ target: 'notice', nick: newNick, text: `Nick change penalty: +${durationIt(pen)} on your level timer.`, tone: 'loss' }];
   }
 
@@ -592,6 +669,7 @@ export class GameEngine {
           `UPDATE players SET online = 0, session_open = 1, ${col} = ${col} + ?, next_seconds = next_seconds + ? WHERE id = ?`,
         )
         .run(pen, pen, p.id);
+      this.resetIdleStreak(p.id);
       const ch = this.cfg.ircChannel;
       return [
         {
@@ -607,6 +685,7 @@ export class GameEngine {
           `UPDATE players SET online = 0, session_open = 0, ${col} = ${col} + ?, next_seconds = next_seconds + ? WHERE id = ?`,
         )
         .run(pen, pen, p.id);
+      this.resetIdleStreak(p.id);
       return [
         {
           target: 'notice',
@@ -627,6 +706,7 @@ export class GameEngine {
         `UPDATE players SET online = 0, session_open = 0, pen_kick = pen_kick + ?, next_seconds = next_seconds + ? WHERE id = ?`,
       )
       .run(pen, pen, p.id);
+    this.resetIdleStreak(p.id);
     return [
       {
         target: 'notice',
@@ -646,15 +726,49 @@ export class GameEngine {
     return Math.min(pen, this.cfg.limitpen);
   }
 
+  private resetIdleStreak(playerId: number): void {
+    if (!this.cfg.v3ModeEnabled || !this.cfg.v3StreakEnabled) return;
+    this.db.prepare('UPDATE players SET idle_streak_sec = 0 WHERE id = ?').run(playerId);
+    metaSetInt(this.db, `streak_notice_pending_${playerId}`, 0);
+    metaSetInt(this.db, `streak_notice_next_at_${playerId}`, 0);
+  }
+
+  private levelActionOptions(player: PlayerRow, channelNicks: Set<string>): string[] {
+    if (!player.irc_nick) return [];
+
+    const caseEq = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
+    const actions: string[] = [];
+    const foe = pickDuelHintFoe(this.db, player.irc_nick, channelNicks, caseEq);
+    if (foe) actions.push(`!duel ${foe}`);
+    if (omenHintEligible(this.db, player.irc_nick, channelNicks, caseEq)) actions.push('!omen');
+    if (gauntletHintEligible(this.db, player.irc_nick, channelNicks, caseEq)) actions.push('!gauntlet');
+    return actions;
+  }
+
+  private levelActionHint(player: PlayerRow, channelNicks: Set<string>): string | null {
+    const actions = this.levelActionOptions(player, channelNicks);
+    if (!actions.length) return null;
+    return `Level-up window active for ${durationIt(GameEngine.LEVEL_ACTION_WINDOW_SEC)}: try ${actions.join(', ')}.`;
+  }
+
+  private levelActionReminder(player: PlayerRow, channelNicks: Set<string>, leftSec: number): string {
+    const actions = this.levelActionOptions(player, channelNicks);
+    if (actions.length) {
+      return `Level-up window reminder (${durationIt(leftSec)} left): try ${actions.join(', ')}.`;
+    }
+    return `Level-up window reminder (${durationIt(leftSec)} left): check !whoami for live cooldowns.`;
+  }
+
   tick(channelNicks: Set<string>): GameAnnouncement[] {
     const now = Math.floor(Date.now() / 1000);
     if (this.lastTick === 0) {
       this.lastTick = now;
       return [];
     }
-    const dt = now - this.lastTick;
+    const dtRaw = now - this.lastTick;
     this.lastTick = now;
-    if (dt <= 0) return [];
+    if (dtRaw <= 0) return [];
+    const dt = Math.min(dtRaw, GameEngine.MAX_TICK_DELTA_SEC);
 
     const online = this.db.prepare(`SELECT * FROM players WHERE online = 1`).all() as PlayerRow[];
 
@@ -671,9 +785,62 @@ export class GameEngine {
         alignmentIdleRate(p.alignment) * ((p.trinket ?? '').trim() ? 1.003 : 1);
       let next = p.next_seconds - dt * rate;
       let level = p.level;
+      const prevLevel = p.level;
       const idled = p.idled + dt;
+      let streakSec = p.idle_streak_sec ?? 0;
+      let streakRewards = p.streak_reward_count ?? 0;
 
+      if (this.cfg.v3ModeEnabled && this.cfg.v3StreakEnabled) {
+        const step = Math.max(1, this.cfg.v3StreakStepSec);
+        const reward = Math.max(1, this.cfg.v3StreakRewardSec);
+        const beforeBand = Math.floor(streakSec / step);
+        streakSec += dt;
+        const afterBand = Math.floor(streakSec / step);
+        const gainedBands = Math.max(0, afterBand - beforeBand);
+        if (gainedBands > 0) {
+          const bonus = gainedBands * reward;
+          next = Math.max(1, next - bonus);
+          streakRewards += gainedBands;
+          // Aggregate streak notices to avoid spammy fixed-interval messaging.
+          const pendingKey = `streak_notice_pending_${p.id}`;
+          const nextNoticeKey = `streak_notice_next_at_${p.id}`;
+          const pending = Math.max(0, metaGetInt(this.db, pendingKey) ?? 0) + bonus;
+          const nextNoticeAt = Math.max(0, metaGetInt(this.db, nextNoticeKey) ?? 0);
+          const noticeGapBase = Math.max(
+            GameEngine.STREAK_NOTICE_MIN_GAP_SEC,
+            Math.floor(step * 1.75),
+          );
+          const noticeJitter = p.id % 91;
+          if (p.irc_nick && (nextNoticeAt === 0 || now >= nextNoticeAt)) {
+            announcements.push({
+              target: 'notice',
+              nick: p.irc_nick,
+              text: `Idle streak momentum: -${durationIt(pending)} total from your level timer.`,
+              tone: 'gain',
+            });
+            metaSetInt(this.db, pendingKey, 0);
+            metaSetInt(this.db, nextNoticeKey, now + noticeGapBase + noticeJitter);
+          } else {
+            metaSetInt(this.db, pendingKey, pending);
+          }
+        }
+      }
+
+      let lvlsThisTick = 0;
       while (next < 1) {
+        if (lvlsThisTick >= GameEngine.MAX_LEVELUPS_PER_TICK) {
+          next = 1;
+          if (p.irc_nick) {
+            announcements.push({
+              target: 'notice',
+              nick: p.irc_nick,
+              text: 'Catch-up safety cap reached for this tick. Remaining level updates will continue automatically.',
+              tone: 'neutral',
+            });
+          }
+          break;
+        }
+        lvlsThisTick += 1;
         const add = Math.floor(ttl(level, this.cfg));
         level += 1;
         next += add;
@@ -701,8 +868,43 @@ export class GameEngine {
       }
 
       this.db
-        .prepare(`UPDATE players SET level = ?, next_seconds = ?, idled = ? WHERE id = ?`)
-        .run(level, next, idled, p.id);
+        .prepare(
+          `UPDATE players SET level = ?, next_seconds = ?, idled = ?, idle_streak_sec = ?, streak_reward_count = ? WHERE id = ?`,
+        )
+        .run(level, next, idled, streakSec, streakRewards, p.id);
+
+      if (level > prevLevel && p.irc_nick) {
+        metaSetInt(this.db, `lvl_action_window_until_${p.id}`, now + GameEngine.LEVEL_ACTION_WINDOW_SEC);
+        metaSetInt(this.db, `lvl_action_window_reminder_at_${p.id}`, now + GameEngine.LEVEL_ACTION_REMINDER_AFTER_SEC);
+        metaSetInt(this.db, `lvl_action_window_reminder_sent_${p.id}`, 0);
+        const hint = this.levelActionHint(p, channelNicks);
+        if (hint) {
+          announcements.push({
+            target: 'notice',
+            nick: p.irc_nick,
+            text: hint,
+            tone: 'neutral',
+          });
+        }
+      }
+
+      if (p.irc_nick) {
+        const windowUntil = metaGetInt(this.db, `lvl_action_window_until_${p.id}`) ?? 0;
+        if (windowUntil > now) {
+          const reminderAt = metaGetInt(this.db, `lvl_action_window_reminder_at_${p.id}`) ?? 0;
+          const reminderSent = metaGetInt(this.db, `lvl_action_window_reminder_sent_${p.id}`) ?? 0;
+          if (reminderSent === 0 && reminderAt > 0 && now >= reminderAt) {
+            const leftSec = Math.max(1, windowUntil - now);
+            announcements.push({
+              target: 'notice',
+              nick: p.irc_nick,
+              text: this.levelActionReminder(p, channelNicks, leftSec),
+              tone: 'neutral',
+            });
+            metaSetInt(this.db, `lvl_action_window_reminder_sent_${p.id}`, 1);
+          }
+        }
+      }
     }
 
     maybeHandOfGod(this.db, this.cfg, channelNicks, announcements, hogMult);
@@ -723,9 +925,9 @@ function loginSuccessNotice(channel: string, row: PlayerRow): string {
 function pickRegisterWelcome(ircNick: string, name: string, cls: string, rpbase: number): string {
   const d = durationIt(rpbase);
   const o = [
-    `✦ A new name hits the ledger: ${ircNick} → ${name}, the ${cls}! First milestone in ${d}.`,
-    `Welcome ${ircNick}! ${name} (${cls}) joins the idle war. Next level: ${d}.`,
-    `The realm whispers: ${name}, a ${cls}, walks in behind ${ircNick}. Timer: ${d}.`,
+    `Registered: ${ircNick} linked to ${name} (${cls}). Next level in ${d}.`,
+    `Welcome ${name} (${cls}). Session opened for ${ircNick}; next level in ${d}.`,
+    `Account created: ${name} (${cls}) is now active on ${ircNick}. Next level in ${d}.`,
   ];
   return o[Math.floor(Math.random() * o.length)]!;
 }
@@ -733,9 +935,9 @@ function pickRegisterWelcome(ircNick: string, name: string, cls: string, rpbase:
 function pickLoginWelcome(ircNick: string, charName: string, level: number, cls: string, nextSec: number): string {
   const d = durationIt(nextSec);
   const o = [
-    `◇ ${charName} (L${level} ${cls}) returns via ${ircNick}. Next level in ${d}.`,
-    `Back in channel: ${charName}, ${cls} · L${level} — ${ircNick}. ${d} on the clock.`,
-    `${ircNick} brings ${charName} online again · ${cls}, L${level}. Next: ${d}.`,
+    `Login: ${charName} (L${level} ${cls}) is active on ${ircNick}. Next level in ${d}.`,
+    `${charName} returned on ${ircNick} · L${level} ${cls} · next level in ${d}.`,
+    `Session resumed for ${charName} (${cls}, L${level}) on ${ircNick}. Next level in ${d}.`,
   ];
   return o[Math.floor(Math.random() * o.length)]!;
 }
@@ -743,26 +945,14 @@ function pickLoginWelcome(ircNick: string, charName: string, level: number, cls:
 function levelUpLine(charName: string, cls: string, level: number, nextSec: number): string {
   const tail = `Next level in ${durationIt(nextSec)}.`;
   if (isMilestoneLevel(level)) {
-    const flair = milestoneFlair(level);
     const forms = [
-      `◆ ${flair} ◆ ${charName}, the ${cls}, BREACHES LEVEL ${level}! ${tail}`,
-      `── ✧ LEVEL ${level} ✧ ── ${charName} (${cls}) breaks through! ${tail}`,
-      `⚡ MILESTONE: ${charName} · ${cls} · L${level}. The realm applauds in whispers. ${tail}`,
-      `▸ ${charName} ascends to ${level} as a ${cls}! ${flair} ${tail}`,
+      `Milestone reached: ${charName} (${cls}) is now level ${level}. ${tail}`,
+      `${charName} advanced to milestone level ${level} (${cls}). ${tail}`,
+      `Level ${level} milestone for ${charName} (${cls}). ${tail}`,
     ];
     return forms[Math.floor(Math.random() * forms.length)]!;
   }
-  const roll = Math.floor(Math.random() * 10);
-  if (roll === 0) return `★ ${charName}, the ${cls}, claims level ${level}! ${tail}`;
-  if (roll === 1) return `⚔ ${charName} (${cls}) forges onward — now level ${level}. ${tail}`;
-  if (roll === 2) return `The idle flame grows: ${charName} is level ${level} ${cls}. ${tail}`;
-  if (roll === 3) return `⌛ ${charName} out-waits the clock: level ${level} ${cls}. ${tail}`;
-  if (roll === 4) return `Echoes spread: ${charName} has reached level ${level} as ${cls}. ${tail}`;
-  if (roll === 5) return `✦ ${charName} · ${cls} · L${level} — another rung on the endless ladder. ${tail}`;
-  if (roll === 6) return `Steady. ${charName} (${cls}) hits level ${level} without breaking silence. ${tail}`;
-  if (roll === 7) return `Legend update: ${charName}, ${cls}, level ${level}. ${tail}`;
-  if (roll === 8) return `${charName} levels up! (${cls}, ${level}) ${tail}`;
-  return `${charName}, the ${cls}, reaches level ${level}! ${tail}`;
+  return `${charName} (${cls}) reached level ${level}. ${tail}`;
 }
 
 function isMilestoneLevel(level: number): boolean {
@@ -770,16 +960,6 @@ function isMilestoneLevel(level: number): boolean {
   if (level >= 10 && level < 100 && level % 10 === 0) return true;
   if (level > 100 && level % 25 === 0) return true;
   return false;
-}
-
-function milestoneFlair(level: number): string {
-  if (level >= 100) return 'MYTHIC';
-  if (level >= 75) return 'LEGENDARY QUIET';
-  if (level >= 50) return 'VETERAN OF SILENCE';
-  if (level >= 25) return 'STORM OF STILLNESS';
-  if (level >= 10) return 'ASCENDANT';
-  if (level === 69) return 'NICE.';
-  return 'AWAKENED';
 }
 
 function maybeHandOfGod(
@@ -799,11 +979,12 @@ function maybeHandOfGod(
   const delta = Math.floor(frac * p.next_seconds);
   if (win) {
     const nn = Math.max(1, p.next_seconds - delta);
+    const gainLabel = `-${durationIt(delta)}`;
     db.prepare(`UPDATE players SET next_seconds = ? WHERE id = ?`).run(nn, p.id);
     const lines = [
-      `★ Hand of God: ${p.character_name}'s level timer is reduced by ${durationIt(delta)} (favorable).`,
-      `★ Hand of God: ${p.character_name} gains ${durationIt(delta)} toward the next level (timer shortened).`,
-      `★ Hand of God: fortune favors ${p.character_name} — wait until next level cut by ${durationIt(delta)}.`,
+      `★ Hand of God: ${p.character_name}'s level timer is reduced (${gainLabel} effective gain).`,
+      `★ Hand of God: ${p.character_name} gains ${gainLabel} toward the next level (timer shortened).`,
+      `★ Hand of God: fortune favors ${p.character_name} — wait until next level cut by ${gainLabel}.`,
     ];
     announcements.push({
       target: 'chan',
@@ -814,11 +995,12 @@ function maybeHandOfGod(
     nudgeAlignmentAfterHog(db, p, true);
   } else {
     const nn = p.next_seconds + delta;
+    const lossLabel = `+${durationIt(delta)}`;
     db.prepare(`UPDATE players SET next_seconds = ? WHERE id = ?`).run(nn, p.id);
     const lines = [
-      `★ Hand of God: ${p.character_name}'s level timer increases by ${durationIt(delta)} (unfavorable).`,
-      `★ Hand of God: ${p.character_name} loses ${durationIt(delta)} of progress toward the next level.`,
-      `★ Hand of God: harsh roll for ${p.character_name} — extra ${durationIt(delta)} on the level timer.`,
+      `★ Hand of God: ${p.character_name}'s level timer increases (${lossLabel} effective loss).`,
+      `★ Hand of God: ${p.character_name} loses ${lossLabel} of progress toward the next level.`,
+      `★ Hand of God: harsh roll for ${p.character_name} — extra ${lossLabel} on the level timer.`,
     ];
     announcements.push({
       target: 'chan',

@@ -1,3 +1,5 @@
+/** React development UI for leaderboard and player detail exploration. */
+
 import { useEffect, useMemo, useState } from 'react';
 
 type Row = {
