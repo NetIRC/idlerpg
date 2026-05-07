@@ -11,14 +11,12 @@ import type { GameAnnouncement } from './announce.js';
 
 /** Challenger cooldown (seconds). */
 export const DUEL_INITIATOR_COOLDOWN_SEC = 5 * 3600;
-/** Same pair cannot duel again this soon. */
+/** Same challenger->target pairing cannot duel again this soon. */
 export const DUEL_PAIR_COOLDOWN_SEC = 20 * 3600;
 export const DUEL_MAX_LEVEL_GAP = 11;
 
 export function duelPairMetaKey(idA: number, idB: number): string {
-  const lo = Math.min(idA, idB);
-  const hi = Math.max(idA, idB);
-  return `duel_pair_${lo}_${hi}`;
+  return `duel_pair_${idA}_${idB}`;
 }
 
 function combatPower(p: PlayerRow): number {
@@ -47,7 +45,7 @@ function pickEpic(winner: PlayerRow, loser: PlayerRow, crit: boolean): string {
 
 /**
  * In-channel duel: both logged in, both nicks present in channel.
- * Initiator pays cooldown; pair shares longer debuff.
+ * Initiator pays cooldown; challenger->target pairing has longer cooldown.
  */
 export function runDuel(
   db: Database,

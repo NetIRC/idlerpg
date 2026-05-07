@@ -39,10 +39,10 @@ try {
     $guildPreview = [];
     try {
         $gstmt = $pdo->query(
-            'SELECT g.tag, g.name, COUNT(m.player_id) AS members
+            'SELECT g.tag, g.name, g.created_at, COUNT(m.player_id) AS members
              FROM guilds g
              LEFT JOIN guild_members m ON m.guild_id = g.id
-             GROUP BY g.id, g.tag, g.name
+             GROUP BY g.id, g.tag, g.name, g.created_at
              ORDER BY members DESC, g.created_at ASC
              LIMIT 5'
         );
@@ -75,11 +75,66 @@ try {
                 'tag' => (string) $g['tag'],
                 'name' => (string) $g['name'],
                 'members' => (int) $g['members'],
+                'createdAt' => (int) ($g['created_at'] ?? 0),
                 'memberList' => $members,
             ];
         }
     } catch (Throwable) {
         $guildPreview = [];
+    }
+    $seasonPreview = [];
+    $seasonMeta = null;
+    try {
+        $seasonNow = time();
+        $tierXpRaw = getenv('IRPG_V3_SEASON_TIER_XP');
+        $tierXp = (int) ($tierXpRaw !== false ? $tierXpRaw : 600);
+        if ($tierXp < 1) {
+            $tierXp = 600;
+        }
+        $sst = $pdo->prepare(
+            'SELECT id, label, starts_at, ends_at
+             FROM seasons
+             WHERE ends_at >= ?
+             ORDER BY id DESC
+             LIMIT 1'
+        );
+        $sst->execute([$seasonNow]);
+        $seasonRow = $sst->fetch(PDO::FETCH_ASSOC);
+        if ($seasonRow !== false) {
+            $seasonId = (int) ($seasonRow['id'] ?? 0);
+            $seasonMeta = [
+                'id' => $seasonId,
+                'label' => (string) ($seasonRow['label'] ?? ''),
+                'startsAt' => (int) ($seasonRow['starts_at'] ?? 0),
+                'endsAt' => (int) ($seasonRow['ends_at'] ?? 0),
+            ];
+            if ($seasonId > 0) {
+                $pst = $pdo->prepare(
+                    'SELECT p.character_name, p.class, p.level, p.online, psp.xp, psp.updated_at
+                     FROM player_season_progress psp
+                     JOIN players p ON p.id = psp.player_id
+                     WHERE psp.season_id = ?
+                     ORDER BY psp.xp DESC, p.level DESC, p.next_seconds ASC, p.character_name ASC
+                     LIMIT 10'
+                );
+                $pst->execute([$seasonId]);
+                $prow = $pst->fetchAll(PDO::FETCH_ASSOC);
+                foreach ($prow as $s) {
+                    $xp = max(0, (int) ($s['xp'] ?? 0));
+                    $seasonPreview[] = [
+                        'name' => (string) ($s['character_name'] ?? ''),
+                        'class' => (string) ($s['class'] ?? ''),
+                        'level' => (int) ($s['level'] ?? 0),
+                        'online' => ((int) ($s['online'] ?? 0)) === 1,
+                        'xp' => $xp,
+                        'tier' => (int) floor($xp / $tierXp),
+                        'updatedAt' => (int) ($s['updated_at'] ?? 0),
+                    ];
+                }
+            }
+        }
+    } catch (Throwable) {
+        $seasonPreview = [];
     }
     // UTC ISO-8601: snapshot time for the web UI (timers reflect DB at this moment).
     echo json_encode(
@@ -91,8 +146,10 @@ try {
             'aiEnabled' => irpg_ai_enabled($pdo),
             'realmPulse' => $pulse,
             'season' => $pulse['seasonLabel'] ?? null,
+            'seasonMeta' => $seasonMeta,
             'worldBoss' => $pulse['worldBoss'] ?? null,
             'guildsPreview' => $guildPreview,
+            'seasonPreview' => $seasonPreview,
         ],
         JSON_THROW_ON_ERROR,
     );

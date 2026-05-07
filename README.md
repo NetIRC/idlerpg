@@ -36,7 +36,7 @@
 | Layer | Responsibility |
 |--------|----------------|
 | **IRC bot** (`src/`) | Normal client connection (not server / P10). Registration, login, idle ticks, channel penalties, optional quests, lucky hour, Hand of God, alignment, charms, season pass, world boss, guild/relic/prestige systems. |
-| **Web UI** (`public/`) | `index.php` leaderboard, detail pane, rules, bot online/offline banner. [`public/.htaccess`](public/.htaccess): HTTPS (non-local), security headers. |
+| **Web UI** (`public/`) | `index.php` leaderboard, hero detail pane (created date + today timer trend), realm chronicle, guild standings (with creation dates), season standings, rules, bot online/offline banner. [`public/.htaccess`](public/.htaccess): HTTPS (non-local), security headers. |
 | **HTTP API** | Read-only JSON: [`/api/health.php`](public/api/health.php), [`/api/leaderboard.php`](public/api/leaderboard.php), [`/api/player.php`](public/api/player.php) (`?name=…`), [`/api/chronicle.php`](public/api/chronicle.php) (`limit`, `kind`, `search`, `since`, `until`). |
 | **Data** | Single SQLite file (e.g. `data/idlerpg.db`). The bot and `site.config.php` must use the **same** path. |
 
@@ -103,7 +103,8 @@ Point the virtual host **document root** at **`public/`**. Enable **mod_rewrite*
 | Check | Expected result |
 |--------|-----------------|
 | `GET /api/health.php` | JSON with `"ok": true` |
-| `GET /api/leaderboard.php` | JSON including a `players` array |
+| `GET /api/leaderboard.php` | JSON including `players`, realm pulse, guild preview (+ `createdAt`), season preview rows, and current season window metadata (`seasonMeta`) |
+| `GET /api/player.php?name=...` | JSON hero detail including `createdAt`, season info, medals, and `recentFinds` (today rows for that hero) |
 | `GET /api/chronicle.php` | JSON with an `events` array (realm log; default limit matches IRC `!chronicle`) |
 
 ---
@@ -198,7 +199,7 @@ All commands are case-insensitive on the `!word` token (e.g. `!HELP`). Optional 
 | **!realm** | — | One-line **realm pulse**: heroes online, quest, lucky hour, peak level. Alias: **!pulse**. |
 | **!chronicle** | — | Recent **realm events** on one IRC line (newest **15** events, same default count as the web feed; ~480 chars max). |
 | **!omen** | — | Personal omen (~**8h** cooldown); must be **logged in** and in channel; **can change your timer** (boon/curse/rare). |
-| **!duel** | `⟨irc_nick⟩` | Arena **PvP** vs another **logged-in** hero **in channel**; **±11** levels; initiator cooldown ~**5h**; same pair ~**20h**; timer shifts + flair; medals possible. |
+| **!duel** | `⟨irc_nick⟩` | Arena **PvP** vs another **logged-in** hero **in channel**; **±11** levels; initiator cooldown ~**5h**; challenger→target pairing cooldown ~**20h**; timer shifts + flair; medals possible. |
 | **!gauntlet** | — | **PvE** shadow trial; **~16h** cooldown after a run; timer swing + medals at milestones. |
 | **!lore** | `[topic]` | Optional AI flavor line (Groq) with cooldown and local fallback. Replies show `AI lore:` on successful API output, otherwise `AI unavailable...` + local lore fallback. When AI is enabled, ambient channel banter may also become hero-aware. |
 | **!medals** | `[character name]` | Medal rack + duel/gauntlet win counts (self if omitted; otherwise by **character** look‑up). Alias: **!badges**. |

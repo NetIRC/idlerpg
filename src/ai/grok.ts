@@ -88,7 +88,7 @@ export async function askGrokLore(cfg: AppConfig, topic: string): Promise<GrokRe
  * Mentions online heroes and stays playful but clean.
  */
 export async function askGrokBanter(cfg: AppConfig, heroNames: string[]): Promise<GrokResult> {
-  const names = heroNames.slice(0, 4).join(', ');
+  const names = heroNames.slice(0, 6).join(', ');
   const topic = names ? `online heroes: ${names}` : 'the currently online heroes';
   return requestGrokLine(
     cfg,

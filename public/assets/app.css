@@ -982,6 +982,10 @@ body.full-page-sync--locked {
   animation: none;
 }
 
+.season-presence-dot {
+  margin-left: 0;
+}
+
 .timer-offline-tag {
   display: inline-block;
   padding: 0.08rem 0.32rem;
@@ -1303,26 +1307,24 @@ body.full-page-sync--locked {
   border-top: 1px solid rgba(255, 255, 255, 0.05);
 }
 
-.footer-credit {
+.footer-title {
   margin: 0;
-  font-size: 0.82rem;
-  letter-spacing: 0.06em;
+  font-size: 0.78rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(196, 184, 212, 0.82);
+}
+
+.footer-meta {
+  margin: 0.45rem 0 0;
+  font-size: 0.76rem;
+  letter-spacing: 0.05em;
   color: rgba(220, 210, 232, 0.88);
 }
 
-.footer-credit strong {
+.footer-meta strong {
   color: var(--arc);
   font-weight: 600;
-}
-
-.footer-credit a {
-  color: var(--gold, #c9a227);
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-
-.footer-credit a:hover {
-  color: var(--ember);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1509,13 +1511,22 @@ body.full-page-sync--locked {
     padding: 1.5rem 0 max(1.75rem, env(safe-area-inset-bottom, 0px));
   }
 
-  .footer-credit {
-    font-size: 0.72rem;
+  .footer-title,
+  .footer-meta {
     line-height: 1.55;
     word-break: break-word;
     margin-left: auto;
     margin-right: auto;
     max-width: min(26rem, calc(100% - 1.3rem));
+  }
+
+  .footer-title {
+    font-size: 0.66rem;
+    letter-spacing: 0.12em;
+  }
+
+  .footer-meta {
+    font-size: 0.72rem;
   }
 }
 
@@ -2671,6 +2682,75 @@ body.full-page-sync--locked {
 .finds-item--gauntlet_win .finds-kind,
 .finds-item--gauntlet_lose .finds-kind {
   color: #b794f6;
+}
+
+.trend-strip {
+  margin-top: 0.85rem;
+  padding: 0.7rem 0.75rem 0.78rem;
+  border-radius: 0.8rem;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  background: rgba(0, 0, 0, 0.28);
+}
+
+.trend-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  margin-bottom: 0.5rem;
+}
+
+.trend-title {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: rgba(255, 248, 240, 0.92);
+}
+
+.trend-net {
+  font-size: 0.68rem;
+  letter-spacing: 0.06em;
+}
+
+.trend-net--gain {
+  color: #6df5cf;
+}
+
+.trend-net--loss {
+  color: #ff9aa3;
+}
+
+.trend-net--flat {
+  color: rgba(196, 184, 212, 0.85);
+}
+
+.trend-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.22rem;
+  min-height: 64px;
+  height: 64px;
+  padding: 0.25rem 0.15rem;
+  border-radius: 0.55rem;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(6, 4, 12, 0.35);
+}
+
+.trend-bar {
+  flex: 1;
+  min-width: 3px;
+  border-radius: 3px 3px 2px 2px;
+  opacity: 0.95;
+}
+
+.trend-bar--gain {
+  background: linear-gradient(180deg, rgba(85, 250, 210, 0.95) 0%, rgba(0, 185, 150, 0.82) 100%);
+  box-shadow: 0 0 8px rgba(0, 229, 199, 0.25);
+}
+
+.trend-bar--loss {
+  background: linear-gradient(180deg, rgba(255, 150, 150, 0.95) 0%, rgba(255, 90, 110, 0.82) 100%);
+  box-shadow: 0 0 8px rgba(255, 92, 106, 0.2);
 }
 
 .chronicle-filters {

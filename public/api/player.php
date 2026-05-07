@@ -24,13 +24,13 @@ if (strlen($name) > 32) {
 
 $case = !empty($IRPG['case_sensitive_names']);
 $sql = $case
-    ? 'SELECT id, character_name, class, level, next_seconds, idled, online, alignment, irc_nick,
+    ? 'SELECT id, character_name, class, level, next_seconds, idled, online, alignment, irc_nick, created_at,
               pen_mesg, pen_nick, pen_part, pen_quit, pen_kick, pen_quest, pen_logout, trinket,
               COALESCE(duel_wins, 0) AS duel_wins, COALESCE(gauntlet_wins, 0) AS gauntlet_wins,
               COALESCE(idle_streak_sec, 0) AS idle_streak_sec, COALESCE(streak_reward_count, 0) AS streak_reward_count,
               COALESCE(guild_id, 0) AS guild_id, COALESCE(prestige_rank, 0) AS prestige_rank, COALESCE(prestige_points, 0) AS prestige_points
        FROM players WHERE character_name = ? LIMIT 1'
-    : 'SELECT id, character_name, class, level, next_seconds, idled, online, alignment, irc_nick,
+    : 'SELECT id, character_name, class, level, next_seconds, idled, online, alignment, irc_nick, created_at,
               pen_mesg, pen_nick, pen_part, pen_quit, pen_kick, pen_quest, pen_logout, trinket,
               COALESCE(duel_wins, 0) AS duel_wins, COALESCE(gauntlet_wins, 0) AS gauntlet_wins,
               COALESCE(idle_streak_sec, 0) AS idle_streak_sec, COALESCE(streak_reward_count, 0) AS streak_reward_count,
@@ -70,15 +70,17 @@ try {
     try {
         $likeColon = $charName . ':%';
         $likeSpace = $charName . ' %';
-        $ledgerLim = irpg_chronicle_default_limit();
+        $dayStartTs = strtotime('today');
+        $ledgerLim = 600;
         $fstmt = $pdo->prepare(
             'SELECT ts, kind, detail FROM realm_events
-             WHERE detail COLLATE NOCASE = ?
+             WHERE (detail COLLATE NOCASE = ?
                 OR detail COLLATE NOCASE LIKE ?
-                OR detail COLLATE NOCASE LIKE ?
+                OR detail COLLATE NOCASE LIKE ?)
+               AND ts >= ?
              ORDER BY id DESC LIMIT ?',
         );
-        $fstmt->execute([$charName, $likeColon, $likeSpace, $ledgerLim]);
+        $fstmt->execute([$charName, $likeColon, $likeSpace, (int) $dayStartTs, $ledgerLim]);
         $rows = $fstmt->fetchAll(PDO::FETCH_ASSOC);
         if (is_array($rows)) {
             foreach ($rows as $row) {
@@ -155,6 +157,7 @@ try {
         'name' => $r['character_name'],
         'level' => (int) $r['level'],
         'class' => $r['class'],
+        'createdAt' => (int) ($r['created_at'] ?? 0),
         'nextSeconds' => $next,
         'nextHuman' => irpg_duration_it($next),
         'online' => $online,

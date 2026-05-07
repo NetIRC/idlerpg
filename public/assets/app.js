@@ -130,6 +130,8 @@
   const chronicleSinceEl = document.getElementById('chronicle-since');
   const chronicleUntilEl = document.getElementById('chronicle-until');
   const chronicleApplyEl = document.getElementById('chronicle-apply');
+  const seasonPreviewToggleEl = document.getElementById('season-preview-toggle');
+  const seasonPreviewCountEl = document.getElementById('season-preview-count');
   let chronicleBeforeId = null;
   /** Must match irpg_chronicle_max_limit() / chronicle-omen.ts CHRONICLE_API_MAX_LIMIT */
   const CHRONICLE_API_MAX = 40;
@@ -143,6 +145,8 @@
   let lastRealmPulse = null;
 
   let atlasUiBound = false;
+  let seasonPreviewExpanded = false;
+  let seasonPreviewRows = [];
 
   function hash32(str) {
     let h = 2166136261 >>> 0;
@@ -744,8 +748,10 @@
       aiEnabled: j.aiEnabled === true,
       realmPulse: j.realmPulse && typeof j.realmPulse === 'object' ? j.realmPulse : null,
       season: typeof j.season === 'string' ? j.season : null,
+      seasonMeta: j.seasonMeta && typeof j.seasonMeta === 'object' ? j.seasonMeta : null,
       worldBoss: typeof j.worldBoss === 'string' ? j.worldBoss : null,
       guildsPreview: Array.isArray(j.guildsPreview) ? j.guildsPreview : [],
+      seasonPreview: Array.isArray(j.seasonPreview) ? j.seasonPreview : [],
     };
   }
 
@@ -804,6 +810,29 @@
     el.textContent = `${label} live`;
   }
 
+  function setSeasonPreviewMeta(seasonMeta, fallbackLabel) {
+    const el = document.getElementById('season-preview-meta');
+    if (!el) return;
+    const base = 'Top heroes by current season XP and tier progress.';
+    const label =
+      seasonMeta && typeof seasonMeta.label === 'string' && seasonMeta.label.trim()
+        ? seasonMeta.label.trim()
+        : typeof fallbackLabel === 'string' && fallbackLabel.trim()
+          ? fallbackLabel.trim()
+          : '';
+    const startsAt =
+      seasonMeta && Number.isFinite(Number(seasonMeta.startsAt)) ? Number(seasonMeta.startsAt) : 0;
+    const endsAt =
+      seasonMeta && Number.isFinite(Number(seasonMeta.endsAt)) ? Number(seasonMeta.endsAt) : 0;
+    if (!label || startsAt <= 0 || endsAt <= 0) {
+      el.textContent = base;
+      return;
+    }
+    const started = new Date(startsAt * 1000).toLocaleDateString();
+    const ends = new Date(endsAt * 1000).toLocaleDateString();
+    el.textContent = `${base} ${label}: started ${started} · ends ${ends}.`;
+  }
+
   function setWorldBossBanner(worldBossText) {
     const el = document.getElementById('world-boss-banner');
     if (!el) return;
@@ -834,9 +863,62 @@
                 })
                 .join('')}</div>`
             : '<div class="guild-members guild-members--empty">No linked members yet.</div>';
-        return `<li class="guild-preview-item"><div class="guild-preview-head">[${escapeHtml(String(g.tag || 'TAG'))}] ${escapeHtml(String(g.name || 'Guild'))} · ${Number(g.members || 0)} members</div>${membersHtml}</li>`;
+        const createdTs = Number(g && g.createdAt);
+        const createdLabel =
+          Number.isFinite(createdTs) && createdTs > 0
+            ? new Date(createdTs * 1000).toLocaleDateString()
+            : null;
+        const createdHtml = createdLabel
+          ? `<div class="mono muted-strong">Created: ${escapeHtml(createdLabel)}</div>`
+          : '';
+        return `<li class="guild-preview-item"><div class="guild-preview-head">[${escapeHtml(String(g.tag || 'TAG'))}] ${escapeHtml(String(g.name || 'Guild'))} · ${Number(g.members || 0)} members</div>${createdHtml}${membersHtml}</li>`;
       })
       .join('');
+  }
+
+  function setSeasonPreview(rows) {
+    const root = document.getElementById('season-preview');
+    if (!root) return;
+    const list = Array.isArray(rows) ? rows : [];
+    seasonPreviewRows = list.slice();
+    if (!seasonPreviewRows.length) {
+      root.innerHTML = '<li class="muted">No season progress yet.</li>';
+      if (seasonPreviewToggleEl) {
+        seasonPreviewToggleEl.classList.add('hidden');
+        seasonPreviewToggleEl.classList.remove('is-open');
+        seasonPreviewToggleEl.setAttribute('aria-expanded', 'false');
+      }
+      if (seasonPreviewCountEl) seasonPreviewCountEl.textContent = '0';
+      return;
+    }
+    if (seasonPreviewCountEl) seasonPreviewCountEl.textContent = String(seasonPreviewRows.length);
+    const visible = seasonPreviewExpanded ? seasonPreviewRows : seasonPreviewRows.slice(0, 3);
+    root.innerHTML = visible
+      .map((r, i) => {
+        const dotClass = r && r.online ? 'dot dot--online' : 'dot dot--offline';
+        const rank = i + 1;
+        const name = escapeHtml(String((r && r.name) || 'Unknown'));
+        const tier = Number((r && r.tier) || 0);
+        const xp = Number((r && r.xp) || 0);
+        const heroLevel = Number((r && r.level) || 0);
+        const heroClass = escapeHtml(String((r && r.class) || ''));
+        return `<li class="guild-preview-item"><div class="guild-preview-head">#${rank} <span class="player-presence"><span>${name}</span><span class="${dotClass} season-presence-dot" title="${r && r.online ? 'Online' : 'Offline'}"></span></span> · Tier ${tier} · XP ${xp}</div><div class="mono muted-strong">Hero: L${heroLevel}${heroClass ? ` ${heroClass}` : ''}</div></li>`;
+      })
+      .join('');
+    if (!seasonPreviewToggleEl) return;
+    if (seasonPreviewRows.length <= 3) {
+      seasonPreviewToggleEl.classList.add('hidden');
+      seasonPreviewToggleEl.classList.remove('is-open');
+      seasonPreviewToggleEl.setAttribute('aria-expanded', 'false');
+      return;
+    }
+    seasonPreviewToggleEl.classList.remove('hidden');
+    seasonPreviewToggleEl.classList.toggle('is-open', seasonPreviewExpanded);
+    seasonPreviewToggleEl.setAttribute('aria-expanded', seasonPreviewExpanded ? 'true' : 'false');
+    const scopeEl = seasonPreviewToggleEl.querySelector('.finds-strip-scope');
+    if (scopeEl) {
+      scopeEl.textContent = seasonPreviewExpanded ? '(showing all)' : '(top 3 / expand all)';
+    }
   }
 
   async function fetchPlayer(name) {
@@ -937,13 +1019,82 @@
     return `<div class="medal-chips">${chips}</div>`;
   }
 
+  function parseSignedDurationEffectSec(detail) {
+    const src = normalizeLegacyDurationText(String(detail || ''));
+    const re = /([+-])\s*(?:(\d+)d)?\s*(?:(\d+)h)?\s*(?:(\d+)m)?\s*(?:(\d+)s)?/gi;
+    let m;
+    let effect = 0;
+    while ((m = re.exec(src)) !== null) {
+      const d = Number(m[2] || 0);
+      const h = Number(m[3] || 0);
+      const mm = Number(m[4] || 0);
+      const s = Number(m[5] || 0);
+      const sec = d * 86400 + h * 3600 + mm * 60 + s;
+      if (sec <= 0) continue;
+      // "-" on timer means a gain (positive trend), "+" means loss.
+      effect += m[1] === '-' ? sec : -sec;
+    }
+    return effect;
+  }
+
+  function extractTrendPoints(recentFinds) {
+    if (!Array.isArray(recentFinds) || !recentFinds.length) return [];
+    const dayStartMs = new Date().setHours(0, 0, 0, 0);
+    const dayStartSec = Math.floor(dayStartMs / 1000);
+    const out = [];
+    for (const e of recentFinds) {
+      const ts = Number((e && e.ts) || 0);
+      if (!Number.isFinite(ts) || ts < dayStartSec) continue;
+      const effectSec = parseSignedDurationEffectSec(e && e.detail);
+      if (effectSec === 0) continue;
+      out.push({
+        effectSec,
+        kind: chronicleKindLabel((e && e.kind) || ''),
+        ts,
+      });
+    }
+    return out.reverse();
+  }
+
+  function formatHeroTrend(d) {
+    const points = extractTrendPoints(d && d.recentFinds);
+    if (!points.length) {
+      return '<p class="muted" style="margin:0.6rem 0 0;font-size:0.8rem">Timer trend for today unavailable yet — no signed gain/loss events today.</p>';
+    }
+    const net = points.reduce((acc, p) => acc + p.effectSec, 0);
+    const maxAbs = Math.max(...points.map((p) => Math.abs(p.effectSec)), 1);
+    const bars = points
+      .map((p) => {
+        const gain = p.effectSec > 0;
+        const h = Math.max(10, Math.round((Math.abs(p.effectSec) / maxAbs) * 100));
+        const sign = gain ? '-' : '+';
+        const tip = `${sign}${formatDurationSec(Math.abs(p.effectSec))} · ${p.kind}${p.ts > 0 ? ` · ${formatAgoSec(p.ts)} ago` : ''}`;
+        return `<span class="trend-bar ${gain ? 'trend-bar--gain' : 'trend-bar--loss'}" style="height:${h}%" title="${escapeHtml(tip)}"></span>`;
+      })
+      .join('');
+    // `net` is positive when the hero gained progress (timer reduced).
+    // Convert to timer-delta semantics for user-facing signs.
+    const timerDelta = -net;
+    const netAbs = formatDurationSec(Math.abs(timerDelta));
+    const netSign = timerDelta > 0 ? '+' : timerDelta < 0 ? '-' : '±';
+    const netCls = timerDelta < 0 ? 'trend-net--gain' : timerDelta > 0 ? 'trend-net--loss' : 'trend-net--flat';
+    return `<div class="trend-strip">
+      <div class="trend-head">
+        <span class="trend-title">Timer trend for today</span>
+        <span class="trend-net ${netCls} mono">Net timer ${netSign}${netAbs}</span>
+      </div>
+      <div class="trend-bars" role="img" aria-label="Today timer trend bars. Green is timer down, red is timer up.">${bars}</div>
+    </div>`;
+  }
+
   function formatRecentFinds(d) {
     const raw = d.recentFinds;
     if (!Array.isArray(raw) || raw.length === 0) {
       return '';
     }
-    const n = raw.length;
-    const items = raw
+    const view = raw.slice(0, 15);
+    const n = view.length;
+    const items = view
       .map((e) => {
         const kindLabel = chronicleKindLabel(e.kind || '');
         const safeKind = realmEventKindClass(e.kind);
@@ -955,7 +1106,7 @@
     return `<div class="finds-strip">
       <button type="button" class="finds-strip-toggle" aria-expanded="false" aria-controls="finds-ledger-panel">
         <span class="finds-chevron" aria-hidden="true"></span>
-        <span class="finds-strip-label">Recent ledger <span class="finds-strip-scope">(this hero)</span></span>
+        <span class="finds-strip-label">Recent ledger <span class="finds-strip-scope">(this hero, last 15)</span></span>
         <span class="finds-count mono">${n}</span>
       </button>
       <div class="finds-list-wrap" id="finds-ledger-panel" hidden>
@@ -1002,11 +1153,16 @@
       const guildLabel = d.guild && d.guild.tag ? `[${d.guild.tag}] ${d.guild.name || ''}`.trim() : 'None';
       const relicLabel = d.activeRelic ? String(d.activeRelic) : 'None';
       const seasonLabel = d.season && d.season.label ? `${d.season.label} · XP ${d.season.xp || 0}` : 'N/A';
+      const createdAtLabel =
+        Number.isFinite(Number(d.createdAt)) && Number(d.createdAt) > 0
+          ? new Date(Number(d.createdAt) * 1000).toLocaleDateString()
+          : 'N/A';
       detailWrite(`
         <div class="detail-name">${escapeHtml(d.name)}</div>
         <p class="detail-sub">L<span class="mono" style="color:var(--arc)">${d.level}</span> · ${escapeHtml(d.class)}</p>
         <div class="dl-grid">
           <div class="dl-item"><dt>Level timer</dt><dd class="arc">${escapeHtml(d.nextHuman)}</dd></div>
+          <div class="dl-item"><dt>Created</dt><dd>${escapeHtml(createdAtLabel)}</dd></div>
           <div class="dl-item"><dt>Total idle</dt><dd>${escapeHtml(String(d.idledHours))} h</dd></div>
           <div class="dl-item"><dt>Status</dt><dd>${formatStatus(d)}</dd></div>
           <div class="dl-item"><dt>Alignment</dt><dd>${escapeHtml(formatAlignment(d.alignment))}</dd></div>
@@ -1022,6 +1178,7 @@
         </div>
         <div class="stats-label">Medals</div>
         ${formatMedalsList(d)}
+        ${formatHeroTrend(d)}
         ${formatRecentFinds(d)}
         <div class="stats-label">Penalties (seconds)</div>
         <div class="stats-tags">${stats}</div>`);
@@ -1041,15 +1198,17 @@
   async function refresh() {
     setLedgerSyncBusy(true);
     try {
-      const { players, generatedAt, botOnline, botLastSeenMs, aiEnabled, realmPulse, season, worldBoss, guildsPreview } = await fetchLb();
+      const { players, generatedAt, botOnline, botLastSeenMs, aiEnabled, realmPulse, season, seasonMeta, worldBoss, guildsPreview, seasonPreview } = await fetchLb();
       rows = players;
       lastRealmPulse = realmPulse;
       setLastUpdated(generatedAt);
       setBotStatus(botOnline, botLastSeenMs, aiEnabled);
       setRealmPulse(realmPulse);
       setSeasonBanner(season);
+      setSeasonPreviewMeta(seasonMeta, season);
       setWorldBossBanner(worldBoss);
       setGuildPreview(guildsPreview);
+      setSeasonPreview(seasonPreview);
       setErr(null);
       applyFilter();
       renderRealmAtlas(rows, realmPulse, selName);
@@ -1134,6 +1293,13 @@
         btn.classList.remove('is-open');
         btn.setAttribute('aria-expanded', 'false');
       }
+    });
+  }
+
+  if (seasonPreviewToggleEl) {
+    seasonPreviewToggleEl.addEventListener('click', () => {
+      seasonPreviewExpanded = !seasonPreviewExpanded;
+      setSeasonPreview(seasonPreviewRows);
     });
   }
 

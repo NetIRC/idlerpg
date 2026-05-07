@@ -1131,6 +1131,12 @@ export class GameEngine {
     if (dtRaw <= 0) return [];
     const dt = Math.min(dtRaw, GameEngine.MAX_TICK_DELTA_SEC);
 
+    const announcements: GameAnnouncement[] = [];
+
+    realmTick(this.db, this.cfg, channelNicks, now, announcements);
+
+    // Re-read online players after realm systems (quest/trial/boss) so their
+    // timer adjustments are not overwritten by stale pre-realm snapshot values.
     const online = this.db.prepare(`SELECT * FROM players WHERE online = 1`).all() as PlayerRow[];
     const guildOnlineCounts = new Map<number, number>();
     for (const p of online) {
@@ -1140,10 +1146,6 @@ export class GameEngine {
     }
     const seasonId =
       this.cfg.v3ModeEnabled && this.cfg.v3SeasonEnabled ? this.currentSeasonWindow(now).id : 0;
-
-    const announcements: GameAnnouncement[] = [];
-
-    realmTick(this.db, this.cfg, channelNicks, now, announcements);
 
     const hogMult = hogChanceMultiplier(this.db, now);
 

@@ -54,6 +54,35 @@ function isPrivateToMe(target: string | undefined): boolean {
 const pmFloodTimestamps = new Map<string, number[]>();
 const loreLastByNick = new Map<string, number>();
 let aiBanterLastAt = 0;
+const aiBanterMentionLastByNick = new Map<string, number>();
+
+function shuffleInPlace<T>(arr: T[]): void {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j]!, arr[i]!];
+  }
+}
+
+/**
+ * Fairly rotate nick mentions for AI banter:
+ * prefer channel nicks that were mentioned least recently.
+ */
+function pickAiBanterHeroes(channelNicks: Set<string>, botNick: string, max = 6): string[] {
+  const candidates = [...channelNicks].filter((n) => !bot.caseCompare(n, botNick));
+  if (!candidates.length) return [];
+  shuffleInPlace(candidates);
+  candidates.sort((a, b) => {
+    const ta = aiBanterMentionLastByNick.get(a.toLowerCase()) ?? 0;
+    const tb = aiBanterMentionLastByNick.get(b.toLowerCase()) ?? 0;
+    return ta - tb;
+  });
+  const picked = candidates.slice(0, Math.max(1, max));
+  const now = Date.now();
+  for (const n of picked) {
+    aiBanterMentionLastByNick.set(n.toLowerCase(), now);
+  }
+  return picked;
+}
 
 function allowPmFlood(fromNick: string): boolean {
   const max = config.pmFloodMaxMessages;
@@ -811,7 +840,7 @@ if (config.ircChanBanterMs > 0) {
       Math.random() < 0.35;
     if (aiReady) {
       aiBanterLastAt = now;
-      const heroes = [...namesInChannel].slice(0, 6);
+      const heroes = pickAiBanterHeroes(namesInChannel, me, 6);
       void askGrokBanter(config, heroes).then((out) => {
         if (out.ok) {
           bot.say(channel, styleAmbientBanter(out.text));
