@@ -554,6 +554,8 @@
   const CHRONICLE_KIND = {
     quest_start: 'Quest',
     quest_end: 'Quest end',
+    quest_win: 'Quest+',
+    quest_lose: 'Quest−',
     lucky_hour: 'Lucky hr',
     realm_record: 'Record',
     hog_win: 'HoG+',
@@ -570,6 +572,8 @@
     omen_boon: 'Omen+',
     omen_curse: 'Omen−',
     duel: 'Duel',
+    duel_win: 'Duel+',
+    duel_lose: 'Duel−',
     medal: 'Medal',
     gauntlet_win: 'Gauntlet',
     gauntlet_lose: 'Gauntlet',
@@ -579,6 +583,7 @@
     world_boss_start: 'World boss',
     world_boss_slay: 'World boss',
     world_boss_fail: 'World boss',
+    world_boss_reward: 'Boss+',
     guild_create: 'Guild',
     guild_join: 'Guild',
     guild_leave: 'Guild',
@@ -871,13 +876,15 @@
       tr.dataset.name = p.name;
       const dotClass = p.online ? 'dot dot--online' : 'dot dot--offline';
       const dotTitle = p.online ? 'Online' : 'Offline';
-      const offlineTag = p.online ? '' : '<span class="timer-offline-tag">Offline</span>';
+      const timerCell = p.online
+        ? `<span class="timer-line">${escapeHtml(p.nextHuman)}</span>`
+        : '<span class="timer-offline-tag">Offline</span>';
       tr.innerHTML = `
         <td class="mono" style="opacity:0.55">${i + 1}</td>
         <td><span class="player-presence"><strong style="color:#fff">${escapeHtml(p.name)}</strong><span class="${dotClass}" title="${dotTitle}"></span></span></td>
         <td class="lv">${p.level}</td>
         <td class="hide-sm" style="opacity:0.85">${escapeHtml(p.class)}</td>
-        <td class="timer"><span class="timer-line">${escapeHtml(p.nextHuman)} ${offlineTag}</span></td>`;
+        <td class="timer">${timerCell}</td>`;
       tr.addEventListener('click', () => openPlayer(p.name));
       tbody.appendChild(tr);
     });

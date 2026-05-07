@@ -245,6 +245,7 @@ function finishQuest(db: Database, cfg: AppConfig, channelNicks: Set<string>, an
     if (!p) continue;
     const nn = Math.max(1, p.next_seconds - bonusWin);
     db.prepare('UPDATE players SET next_seconds = ? WHERE id = ?').run(nn, p.id);
+    insertRealmEvent(db, 'quest_win', `${p.character_name} -${durationIt(bonusWin)}`);
     for (const line of grantQuestCrest(db, p.id, p.character_name)) {
       an.push({ target: 'chan', text: line, tone: 'gain' });
     }
@@ -263,6 +264,7 @@ function finishQuest(db: Database, cfg: AppConfig, channelNicks: Set<string>, an
       effectivePenalty,
       p.id,
     );
+    insertRealmEvent(db, 'quest_lose', `${p.character_name} +${durationIt(effectivePenalty)}`);
   }
 
   an.push({
@@ -274,8 +276,6 @@ function finishQuest(db: Database, cfg: AppConfig, channelNicks: Set<string>, an
       s1,
       durationIt(bonusWin),
       durationIt(penLose),
-      winners.length,
-      losers.length,
     ),
     preStyled: true,
   });
@@ -448,6 +448,7 @@ function maybeWorldBoss(
     for (const w of winners) {
       const next = Math.max(1, w.next_seconds - reward);
       db.prepare(`UPDATE players SET next_seconds = ? WHERE id = ?`).run(next, w.id);
+      insertRealmEvent(db, 'world_boss_reward', `${w.character_name} -${durationIt(reward)} (${active.boss_name})`);
     }
     insertRealmEvent(db, 'world_boss_slay', `${active.boss_name} slain · reward -${durationIt(reward)} each`);
     an.push({

@@ -128,6 +128,16 @@ export function runDuel(
     'duel',
     `${winner.character_name} defeated ${loser.character_name}${crit ? ' (critical)' : ''}`,
   );
+  insertRealmEvent(
+    db,
+    'duel_win',
+    `${winner.character_name} -${durationIt(winDelta)} vs ${loser.character_name}`,
+  );
+  insertRealmEvent(
+    db,
+    'duel_lose',
+    `${loser.character_name} +${durationIt(loseDelta)} vs ${winner.character_name}`,
+  );
 
   const line1 = pickEpic(winner, loser, crit);
   const line2 = formatDuelTimers(

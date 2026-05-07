@@ -394,8 +394,13 @@ $jsonLdScript = json_encode($jsonLd, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNI
               <option value="">All kinds</option>
               <option value="quest_start">Quest start</option>
               <option value="quest_end">Quest end</option>
+              <option value="quest_win">Quest win</option>
+              <option value="quest_lose">Quest lose</option>
+              <option value="duel_win">Duel win</option>
+              <option value="duel_lose">Duel lose</option>
               <option value="world_boss_start">World boss</option>
               <option value="world_boss_slay">World boss slain</option>
+              <option value="world_boss_reward">World boss reward</option>
               <option value="prestige">Prestige</option>
               <option value="bounty_claim">Bounty</option>
             </select>
