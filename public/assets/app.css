@@ -700,12 +700,35 @@ body {
 
 /* Leaderboard auto-refresh: pulse when countdown number changes */
 .refresh-countdown {
-  display: inline-block;
-  min-width: 1.5ch;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2ch;
+  height: 1em;
   text-align: center;
+  line-height: 1;
+  vertical-align: middle;
   font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+  -webkit-font-smoothing: antialiased;
   transform-origin: center;
   transition: color 0.2s ease, text-shadow 0.2s ease;
+}
+
+.refresh-countdown-live {
+  animation: refresh-countdown-breathe 1.35s ease-in-out infinite;
+}
+
+@keyframes refresh-countdown-breathe {
+  0%,
+  100% {
+    color: rgba(196, 184, 212, 0.82);
+    text-shadow: none;
+  }
+  50% {
+    color: rgba(216, 235, 255, 0.98);
+    text-shadow: 0 0 6px rgba(147, 197, 253, 0.24);
+  }
 }
 
 .refresh-countdown-pulse {
@@ -2800,4 +2823,65 @@ body.full-page-sync--locked {
   letter-spacing: 0.06em;
   color: rgba(255, 255, 255, 0.7);
   margin: 0.4rem 0 0.15rem;
+}
+
+.refresh-fab {
+  position: fixed;
+  right: max(0.8rem, env(safe-area-inset-right, 0px));
+  bottom: max(0.8rem, env(safe-area-inset-bottom, 0px));
+  z-index: 10010;
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  border: 1px solid rgba(0, 229, 199, 0.28);
+  background: rgba(8, 10, 18, 0.68);
+  color: rgba(219, 255, 248, 0.96);
+  border-radius: 999px;
+  padding: 0.34rem 0.58rem;
+  font-size: 0.6rem;
+  line-height: 1;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
+}
+
+.refresh-fab-prefix {
+  margin-right: 0.24rem;
+}
+
+.refresh-fab .refresh-countdown {
+  display: inline-flex;
+  align-items: baseline;
+  justify-content: center;
+  min-width: 2ch;
+  height: 1em;
+  line-height: inherit;
+  vertical-align: baseline;
+  transform: none;
+}
+
+.refresh-fab:hover {
+  background: rgba(0, 229, 199, 0.1);
+}
+
+.refresh-fab.is-refreshing {
+  border-color: rgba(0, 229, 199, 0.48);
+  box-shadow:
+    0 0 0 1px rgba(0, 229, 199, 0.18) inset,
+    0 10px 26px rgba(0, 0, 0, 0.4),
+    0 0 14px rgba(0, 229, 199, 0.32);
+  animation: refresh-fab-glow 0.95s ease-in-out infinite;
+}
+
+@keyframes refresh-fab-glow {
+  0%,
+  100% {
+    transform: translateY(0);
+    background: rgba(8, 10, 18, 0.68);
+  }
+  50% {
+    transform: translateY(-1px);
+    background: rgba(10, 18, 24, 0.78);
+  }
 }

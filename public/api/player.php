@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-/** Player detail endpoint with stats, medals, and recent realm chronicle events. */
+/** Player detail endpoint with stats, medals, recent events, and season history. */
 
 require_once dirname(__DIR__) . '/includes/bootstrap.php';
 
@@ -57,6 +57,7 @@ try {
     $relics = [];
     $activeRelic = null;
     $season = null;
+    $seasonHistory = [];
     try {
         $mstmt = $pdo->prepare('SELECT medal_key FROM player_medals WHERE player_id = ? ORDER BY ts ASC');
         $mstmt->execute([$pid]);
@@ -68,26 +69,26 @@ try {
         $medals = [];
     }
     try {
-        $likeColon = $charName . ':%';
-        $likeSpace = $charName . ' %';
         $dayStartTs = strtotime('today');
-        $ledgerLim = 600;
+        $ledgerLim = 1200;
         $fstmt = $pdo->prepare(
             'SELECT ts, kind, detail FROM realm_events
-             WHERE (detail COLLATE NOCASE = ?
-                OR detail COLLATE NOCASE LIKE ?
-                OR detail COLLATE NOCASE LIKE ?)
-               AND ts >= ?
+             WHERE ts >= ?
              ORDER BY id DESC LIMIT ?',
         );
-        $fstmt->execute([$charName, $likeColon, $likeSpace, (int) $dayStartTs, $ledgerLim]);
+        $fstmt->execute([(int) $dayStartTs, $ledgerLim]);
         $rows = $fstmt->fetchAll(PDO::FETCH_ASSOC);
         if (is_array($rows)) {
+            $nameRegex = '/(^|[^[:alnum:]_])' . preg_quote($charName, '/') . '([^[:alnum:]_]|$)/' . ($case ? 'u' : 'iu');
             foreach ($rows as $row) {
+                $detail = (string) ($row['detail'] ?? '');
+                if ($detail === '' || preg_match($nameRegex, $detail) !== 1) {
+                    continue;
+                }
                 $recentFinds[] = [
                     'ts' => (int) $row['ts'],
                     'kind' => (string) $row['kind'],
-                    'detail' => (string) $row['detail'],
+                    'detail' => $detail,
                 ];
             }
         }
@@ -152,6 +153,31 @@ try {
     } catch (Throwable $ignore) {
         $season = null;
     }
+    try {
+        $shst = $pdo->prepare(
+            'SELECT s.id, s.label, s.ends_at, COALESCE(psp.xp, 0) AS xp, COALESCE(psp.level, 0) AS level
+             FROM player_season_progress psp
+             INNER JOIN seasons s ON s.id = psp.season_id
+             WHERE psp.player_id = ? AND s.ends_at < ?
+             ORDER BY s.ends_at DESC, s.id DESC
+             LIMIT 8'
+        );
+        $shst->execute([$pid, time()]);
+        $rows = $shst->fetchAll(PDO::FETCH_ASSOC);
+        if (is_array($rows)) {
+            foreach ($rows as $sr) {
+                $seasonHistory[] = [
+                    'id' => (int) ($sr['id'] ?? 0),
+                    'label' => (string) ($sr['label'] ?? ''),
+                    'endsAt' => (int) ($sr['ends_at'] ?? 0),
+                    'xp' => (int) ($sr['xp'] ?? 0),
+                    'level' => (int) ($sr['level'] ?? 0),
+                ];
+            }
+        }
+    } catch (Throwable $ignore) {
+        $seasonHistory = [];
+    }
     echo json_encode([
         'id' => $pid,
         'name' => $r['character_name'],
@@ -173,6 +199,7 @@ try {
         'relics' => $relics,
         'activeRelic' => $activeRelic,
         'season' => $season,
+        'seasonHistory' => $seasonHistory,
         'medals' => array_map(static function ($key) {
             return [
                 'key' => (string) $key,

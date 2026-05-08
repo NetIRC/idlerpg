@@ -188,8 +188,6 @@ $jsonLdScript = json_encode($jsonLd, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNI
             <h2 class="h2"><span class="h2-mark" aria-hidden="true"></span> Leaderboard</h2>
             <p id="lb-meta" class="lb-meta mono" aria-live="polite">
               <span id="last-updated" class="lb-meta-updated">—</span>
-              <span class="lb-meta-divider">&middot;</span>
-              <span class="lb-meta-refresh">Next sync in <span id="refresh-countdown" class="refresh-countdown">30</span>s</span>
             </p>
           </div>
           <input type="search" id="q" class="search" placeholder="Filter by name or class..." autocomplete="off" />
@@ -475,6 +473,9 @@ $jsonLdScript = json_encode($jsonLd, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNI
       </p>
     </footer>
   </div>
+  <button id="refresh-fab" class="refresh-fab mono" type="button" aria-label="Refresh leaderboard now">
+    <span class="refresh-fab-prefix">Next sync in</span><span id="refresh-fab-count" class="refresh-countdown">60</span><span>s</span>
+  </button>
   <script src="assets/app.js" defer></script>
 </body>
 </html>

@@ -1,7 +1,7 @@
 /** Frontend runtime for leaderboard dashboard, chronicle, and realm atlas interactions. */
 
 (() => {
-  const REFRESH_SEC = 30;
+  const REFRESH_SEC = 60;
   const tbody = document.getElementById('tbody');
   const detail = document.getElementById('detail');
   const detailContent = document.getElementById('detail-content');
@@ -12,6 +12,8 @@
   const errEl = document.getElementById('err');
   const lastUpdatedEl = document.getElementById('last-updated');
   const refreshCountdownEl = document.getElementById('refresh-countdown');
+  const refreshFabEl = document.getElementById('refresh-fab');
+  const refreshFabCountEl = document.getElementById('refresh-fab-count');
 
   let rows = [];
   let selName = null;
@@ -23,11 +25,12 @@
   let detailFetchGen = 0;
 
   function updateCountdownDisplay() {
-    if (!refreshCountdownEl) return;
-    refreshCountdownEl.textContent = String(Math.max(0, countdown));
-    refreshCountdownEl.classList.remove('refresh-countdown-pulse');
-    void refreshCountdownEl.offsetWidth;
-    refreshCountdownEl.classList.add('refresh-countdown-pulse');
+    if (refreshCountdownEl) {
+      refreshCountdownEl.textContent = String(Math.max(0, countdown));
+    }
+    if (refreshFabCountEl) {
+      refreshFabCountEl.textContent = String(Math.max(0, countdown));
+    }
   }
 
   function setLastUpdated(iso) {
@@ -88,6 +91,10 @@
       if (busy) lbPanel.setAttribute('aria-busy', 'true');
       else lbPanel.removeAttribute('aria-busy');
     }
+    if (refreshFabEl) {
+      refreshFabEl.classList.toggle('is-refreshing', busy);
+      refreshFabEl.setAttribute('aria-busy', busy ? 'true' : 'false');
+    }
   }
 
   function detailWrite(html) {
@@ -147,6 +154,9 @@
   let atlasUiBound = false;
   let seasonPreviewExpanded = false;
   let seasonPreviewRows = [];
+  let chronicleExpanded = false;
+  let heroLedgerExpanded = false;
+  let seasonHistoryExpanded = false;
 
   function hash32(str) {
     let h = 2166136261 >>> 0;
@@ -673,6 +683,7 @@
         btn.classList.remove('is-open');
         btn.setAttribute('aria-expanded', 'false');
       }
+      chronicleExpanded = false;
       return;
     }
     chroniclePlaceholder.classList.add('hidden');
@@ -691,13 +702,11 @@
         return `${dayHead}<li class="chronicle-item chronicle-item--${safeKind}"><div class="chronicle-meta">${escapeHtml(kind)} <span class="chronicle-ago">· ${ago} ago</span></div><div class="chronicle-detail">${det}</div></li>`;
       })
       .join('');
-    if (chronicleListWrap) {
-      chronicleListWrap.setAttribute('hidden', '');
-    }
+    if (chronicleListWrap) chronicleListWrap.toggleAttribute('hidden', !chronicleExpanded);
     const btn = chronicleCollapsible?.querySelector('.chronicle-strip-toggle');
     if (btn) {
-      btn.classList.remove('is-open');
-      btn.setAttribute('aria-expanded', 'false');
+      btn.classList.toggle('is-open', chronicleExpanded);
+      btn.setAttribute('aria-expanded', chronicleExpanded ? 'true' : 'false');
     }
   }
 
@@ -797,6 +806,10 @@
           bannerDetail.textContent = line;
         }
       }
+    }
+    if (refreshFabEl) {
+      refreshFabEl.classList.toggle('hidden', !botOnline);
+      refreshFabEl.setAttribute('aria-hidden', botOnline ? 'false' : 'true');
     }
   }
 
@@ -1056,10 +1069,59 @@
     return out.reverse();
   }
 
+  function summarizeTodayKinds(recentFinds, maxItems = 4) {
+    if (!Array.isArray(recentFinds) || !recentFinds.length) return '';
+    const dayStartMs = new Date().setHours(0, 0, 0, 0);
+    const dayStartSec = Math.floor(dayStartMs / 1000);
+    const counts = new Map();
+    for (const e of recentFinds) {
+      const ts = Number((e && e.ts) || 0);
+      if (!Number.isFinite(ts) || ts < dayStartSec) continue;
+      const label = chronicleKindLabel((e && e.kind) || 'event');
+      counts.set(label, (counts.get(label) || 0) + 1);
+    }
+    if (!counts.size) return '';
+    return Array.from(counts.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, maxItems)
+      .map(([label, count]) => `${label} x${count}`)
+      .join(' · ');
+  }
+
   function formatHeroTrend(d) {
     const points = extractTrendPoints(d && d.recentFinds);
+    const allToday = Array.isArray(d && d.recentFinds)
+      ? d.recentFinds.filter((e) => {
+          const ts = Number((e && e.ts) || 0);
+          if (!Number.isFinite(ts)) return false;
+          const dayStartSec = Math.floor(new Date().setHours(0, 0, 0, 0) / 1000);
+          return ts >= dayStartSec;
+        }).length
+      : 0;
+    const streakSec = Math.max(0, Number((d && d.idleStreakSec) || 0));
+    const streakHuman = formatDurationSec(streakSec);
+    const eventMix = summarizeTodayKinds(d && d.recentFinds);
+    const streakRewards = Math.max(0, Number((d && d.streakRewardCount) || 0));
+    const duelWins = Math.max(0, Number((d && d.duelWins) || 0));
+    const gauntletWins = Math.max(0, Number((d && d.gauntletWins) || 0));
+    const prestigeRank = Math.max(0, Number((d && d.prestigeRank) || 0));
+    const seasonTier = Math.max(0, Number((d && d.season && d.season.level) || 0));
+    const seasonXp = Math.max(0, Number((d && d.season && d.season.xp) || 0));
+    const trendMeta = `Idle streak: ${streakHuman} · Signed events: ${points.length} · Total events today: ${allToday}`;
+    const trendKpis = [
+      `Streak rewards: ${streakRewards}`,
+      `Arena wins: ${duelWins}`,
+      `Gauntlet wins: ${gauntletWins}`,
+      `Prestige rank: ${prestigeRank}`,
+      `Season tier: ${seasonTier}`,
+      `Season XP: ${seasonXp}`,
+    ];
     if (!points.length) {
-      return '<p class="muted" style="margin:0.6rem 0 0;font-size:0.8rem">Timer trend for today unavailable yet — no signed gain/loss events today.</p>';
+      return `<div>
+        <p class="muted" style="margin:0.6rem 0 0;font-size:0.8rem">Timer trend for today unavailable yet — no signed gain/loss events today.</p>
+        <p class="mono muted-strong" style="margin:0.45rem 0 0;font-size:0.74rem">${escapeHtml(trendMeta)}${eventMix ? ` · event mix: ${escapeHtml(eventMix)}` : ''}</p>
+        <div class="stats-tags recent-ledger-highlights" style="margin-top:0.45rem;">${trendKpis.map((chip) => `<span>${escapeHtml(chip)}</span>`).join('')}</div>
+      </div>`;
     }
     const net = points.reduce((acc, p) => acc + p.effectSec, 0);
     const maxAbs = Math.max(...points.map((p) => Math.abs(p.effectSec)), 1);
@@ -1084,13 +1146,79 @@
         <span class="trend-net ${netCls} mono">Net timer ${netSign}${netAbs}</span>
       </div>
       <div class="trend-bars" role="img" aria-label="Today timer trend bars. Green is timer down, red is timer up.">${bars}</div>
+      <p class="mono muted-strong" style="margin:0.45rem 0 0;font-size:0.74rem">${escapeHtml(trendMeta)}${eventMix ? ` · event mix: ${escapeHtml(eventMix)}` : ''}</p>
+      <div class="stats-tags recent-ledger-highlights" style="margin-top:0.45rem;">${trendKpis.map((chip) => `<span>${escapeHtml(chip)}</span>`).join('')}</div>
+    </div>`;
+  }
+
+  function formatRecentLedgerHighlights(d) {
+    const streakSec = Math.max(0, Number((d && d.idleStreakSec) || 0));
+    const streakRewards = Math.max(0, Number((d && d.streakRewardCount) || 0));
+    const duelWins = Math.max(0, Number((d && d.duelWins) || 0));
+    const gauntletWins = Math.max(0, Number((d && d.gauntletWins) || 0));
+    const prestigeRank = Math.max(0, Number((d && d.prestigeRank) || 0));
+    const prestigePoints = Math.max(0, Number((d && d.prestigePoints) || 0));
+    const seasonXp = Math.max(0, Number((d && d.season && d.season.xp) || 0));
+    const seasonTier = Math.max(0, Number((d && d.season && d.season.level) || 0));
+    const chips = [
+      `Idle streak: ${formatDurationSec(streakSec)}`,
+      `Streak rewards: ${streakRewards}`,
+      `Arena wins: ${duelWins}`,
+      `Gauntlet wins: ${gauntletWins}`,
+      `Prestige: rank ${prestigeRank} / ${prestigePoints} pt`,
+      `Season: tier ${seasonTier} / XP ${seasonXp}`,
+    ];
+    return `<div class="stats-tags recent-ledger-highlights">${chips.map((chip) => `<span>${escapeHtml(chip)}</span>`).join('')}</div>`;
+  }
+
+  function formatSeasonHistory(d) {
+    const rows = Array.isArray(d && d.seasonHistory) ? d.seasonHistory.slice(0, 6) : [];
+    if (!rows.length) {
+      return '<p class="muted" style="margin:0.4rem 0 0;font-size:0.8rem">No past seasons recorded for this hero yet.</p>';
+    }
+    const items = rows
+      .map((s) => {
+        const endTs = Number((s && s.endsAt) || 0);
+        const endLabel = endTs > 0 ? new Date(endTs * 1000).toLocaleDateString() : 'N/A';
+        const label = String((s && s.label) || `Season #${Number((s && s.id) || 0)}`);
+        const level = Number((s && s.level) || 0);
+        const xp = Number((s && s.xp) || 0);
+        return `<li><strong>${escapeHtml(label)}</strong> · Tier ${level} · XP ${xp} · ended ${escapeHtml(endLabel)}</li>`;
+      })
+      ;
+    if (items.length <= 3) {
+      return `<ul class="rules-list">${items.join('')}</ul>`;
+    }
+    const topItems = items.slice(0, 3).join('');
+    const extraItems = items.slice(3).join('');
+    return `<div class="finds-strip">
+      <button type="button" class="finds-strip-toggle${seasonHistoryExpanded ? ' is-open' : ''}" data-season-toggle="1" aria-expanded="${seasonHistoryExpanded ? 'true' : 'false'}" aria-controls="season-history-panel">
+        <span class="finds-chevron" aria-hidden="true"></span>
+        <span class="finds-strip-label">Season history <span class="finds-strip-scope">${seasonHistoryExpanded ? '(expanded)' : '(showing 3 / expand)'}</span></span>
+        <span class="finds-count mono">${items.length}</span>
+      </button>
+      <ul class="rules-list">${topItems}</ul>
+      <div id="season-history-panel"${seasonHistoryExpanded ? '' : ' hidden'}>
+        <ul class="rules-list">${extraItems}</ul>
+      </div>
     </div>`;
   }
 
   function formatRecentFinds(d) {
     const raw = d.recentFinds;
+    const highlights = formatRecentLedgerHighlights(d);
     if (!Array.isArray(raw) || raw.length === 0) {
-      return '';
+      return `<div class="finds-strip">
+      <button type="button" class="finds-strip-toggle${heroLedgerExpanded ? ' is-open' : ''}" aria-expanded="${heroLedgerExpanded ? 'true' : 'false'}" aria-controls="finds-ledger-panel">
+        <span class="finds-chevron" aria-hidden="true"></span>
+        <span class="finds-strip-label">Recent ledger <span class="finds-strip-scope">(this hero, last 0)</span></span>
+        <span class="finds-count mono">0</span>
+      </button>
+      <div class="finds-list-wrap" id="finds-ledger-panel"${heroLedgerExpanded ? '' : ' hidden'}>
+        ${highlights}
+        <p class="muted" style="margin:0.45rem 0 0;font-size:0.8rem">No hero-scoped ledger lines yet for today.</p>
+      </div>
+    </div>`;
     }
     const view = raw.slice(0, 15);
     const n = view.length;
@@ -1104,12 +1232,13 @@
       })
       .join('');
     return `<div class="finds-strip">
-      <button type="button" class="finds-strip-toggle" aria-expanded="false" aria-controls="finds-ledger-panel">
+      <button type="button" class="finds-strip-toggle${heroLedgerExpanded ? ' is-open' : ''}" aria-expanded="${heroLedgerExpanded ? 'true' : 'false'}" aria-controls="finds-ledger-panel">
         <span class="finds-chevron" aria-hidden="true"></span>
         <span class="finds-strip-label">Recent ledger <span class="finds-strip-scope">(this hero, last 15)</span></span>
         <span class="finds-count mono">${n}</span>
       </button>
-      <div class="finds-list-wrap" id="finds-ledger-panel" hidden>
+      <div class="finds-list-wrap" id="finds-ledger-panel"${heroLedgerExpanded ? '' : ' hidden'}>
+        ${highlights}
         <ul class="finds-list">${items}</ul>
       </div>
     </div>`;
@@ -1180,6 +1309,8 @@
         ${formatMedalsList(d)}
         ${formatHeroTrend(d)}
         ${formatRecentFinds(d)}
+        <div class="stats-label">Season history</div>
+        ${formatSeasonHistory(d)}
         <div class="stats-label">Penalties (seconds)</div>
         <div class="stats-tags">${stats}</div>`);
       if (gen !== detailFetchGen) return;
@@ -1242,6 +1373,18 @@
     }
   }
 
+  async function forceRefreshNow() {
+    if (refreshInFlight) return;
+    refreshInFlight = true;
+    try {
+      await refresh();
+      countdown = REFRESH_SEC;
+      updateCountdownDisplay();
+    } finally {
+      refreshInFlight = false;
+    }
+  }
+
   qEl.addEventListener('input', applyFilter);
   if (chronicleApplyEl) {
     chronicleApplyEl.addEventListener('click', async () => {
@@ -1260,6 +1403,27 @@
 
   if (detail) {
     detail.addEventListener('click', (ev) => {
+      const seasonBtn = ev.target.closest('[data-season-toggle="1"]');
+      if (seasonBtn && detail.contains(seasonBtn)) {
+        const panel = document.getElementById('season-history-panel');
+        if (!panel || !detail.contains(panel)) return;
+        const willOpen = panel.hasAttribute('hidden');
+        const scope = seasonBtn.querySelector('.finds-strip-scope');
+        if (willOpen) {
+          panel.removeAttribute('hidden');
+          seasonBtn.classList.add('is-open');
+          seasonBtn.setAttribute('aria-expanded', 'true');
+          if (scope) scope.textContent = '(expanded)';
+          seasonHistoryExpanded = true;
+        } else {
+          panel.setAttribute('hidden', '');
+          seasonBtn.classList.remove('is-open');
+          seasonBtn.setAttribute('aria-expanded', 'false');
+          if (scope) scope.textContent = '(showing 3 / expand)';
+          seasonHistoryExpanded = false;
+        }
+        return;
+      }
       const btn = ev.target.closest('.finds-strip-toggle');
       if (!btn || !detail.contains(btn)) return;
       const wrap = document.getElementById('finds-ledger-panel');
@@ -1269,10 +1433,12 @@
         wrap.removeAttribute('hidden');
         btn.classList.add('is-open');
         btn.setAttribute('aria-expanded', 'true');
+        heroLedgerExpanded = true;
       } else {
         wrap.setAttribute('hidden', '');
         btn.classList.remove('is-open');
         btn.setAttribute('aria-expanded', 'false');
+        heroLedgerExpanded = false;
       }
     });
   }
@@ -1288,10 +1454,12 @@
         wrap.removeAttribute('hidden');
         btn.classList.add('is-open');
         btn.setAttribute('aria-expanded', 'true');
+        chronicleExpanded = true;
       } else {
         wrap.setAttribute('hidden', '');
         btn.classList.remove('is-open');
         btn.setAttribute('aria-expanded', 'false');
+        chronicleExpanded = false;
       }
     });
   }
@@ -1303,21 +1471,22 @@
     });
   }
 
+  if (refreshCountdownEl) refreshCountdownEl.classList.add('refresh-countdown-live');
+  if (refreshFabCountEl) refreshFabCountEl.classList.add('refresh-countdown-live');
+
+  if (refreshFabEl) {
+    refreshFabEl.addEventListener('click', () => {
+      forceRefreshNow();
+    });
+  }
+
   setInterval(async () => {
     if (countdown > 0) {
       countdown -= 1;
       updateCountdownDisplay();
     }
     if (countdown > 0) return;
-    if (refreshInFlight) return;
-    refreshInFlight = true;
-    try {
-      await refresh();
-      countdown = REFRESH_SEC;
-    } finally {
-      refreshInFlight = false;
-      updateCountdownDisplay();
-    }
+    await forceRefreshNow();
   }, 1000);
 
   (async () => {
