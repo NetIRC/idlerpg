@@ -239,6 +239,8 @@ function finishQuest(db: Database, cfg: AppConfig, channelNicks: Set<string>, an
 
   const winName = TEAM_NAMES[winner];
   const loseName = TEAM_NAMES[1 - winner];
+  const winnerScore = winner === 0 ? s0 : s1;
+  const loserScore = winner === 0 ? s1 : s0;
 
   for (const name of winners) {
     const p = findByCharacterName(db, name, cfg.caseSensitiveNames);
@@ -272,8 +274,8 @@ function finishQuest(db: Database, cfg: AppConfig, channelNicks: Set<string>, an
     text: formatQuestEndLine(
       winName,
       loseName,
-      s0,
-      s1,
+      winnerScore,
+      loserScore,
       durationIt(bonusWin),
       durationIt(penLose),
     ),

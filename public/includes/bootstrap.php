@@ -536,6 +536,7 @@ function irpg_json_headers(): void
 {
     header('Content-Type: application/json; charset=utf-8');
     header('Cache-Control: no-store');
+    header('X-Robots-Tag: noindex, nofollow, noarchive');
 }
 
 /**

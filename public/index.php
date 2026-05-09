@@ -57,10 +57,28 @@ $webSiteLd = [
 if ($canonicalUrl !== '') {
     $webSiteLd['url'] = $canonicalUrl;
 }
+$orgLd = [
+    '@type' => 'Organization',
+    'name' => 'NetIRC IdleRPG',
+];
+if ($publicBase !== '') {
+    $orgLd['url'] = $publicBase . '/';
+}
+$webPageLd = [
+    '@type' => 'WebPage',
+    'name' => $seoTitle,
+    'description' => $seoDescription,
+    'inLanguage' => 'en',
+];
+if ($canonicalUrl !== '') {
+    $webPageLd['url'] = $canonicalUrl;
+}
 $jsonLd = [
     '@context' => 'https://schema.org',
     '@graph' => [
+        $orgLd,
         $webSiteLd,
+        $webPageLd,
         [
             '@type' => 'VideoGame',
             'name' => 'IdleRPG',
@@ -80,20 +98,30 @@ $jsonLdScript = json_encode($jsonLd, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNI
   <meta name="description" content="<?= htmlspecialchars($seoDescription, ENT_QUOTES, 'UTF-8') ?>" />
   <meta name="robots" content="index, follow, max-image-preview:large" />
   <meta name="theme-color" content="#05040a" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="IdleRPG" />
   <meta name="author" content="NetIRC IdleRPG" />
   <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="favicon.svg" />
+  <link rel="manifest" href="/manifest.webmanifest" />
   <?php if ($canonicalUrl !== ''): ?>
   <link rel="canonical" href="<?= htmlspecialchars($canonicalUrl, ENT_QUOTES, 'UTF-8') ?>" />
   <?php endif; ?>
   <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="IdleRPG Live Realm" />
   <meta property="og:title" content="<?= htmlspecialchars($seoTitle, ENT_QUOTES, 'UTF-8') ?>" />
   <meta property="og:description" content="<?= htmlspecialchars($seoDescription, ENT_QUOTES, 'UTF-8') ?>" />
   <meta property="og:locale" content="en_US" />
   <?php if ($canonicalUrl !== ''): ?>
   <meta property="og:url" content="<?= htmlspecialchars($canonicalUrl, ENT_QUOTES, 'UTF-8') ?>" />
+  <link rel="alternate" hreflang="en" href="<?= htmlspecialchars($canonicalUrl, ENT_QUOTES, 'UTF-8') ?>" />
+  <link rel="alternate" hreflang="x-default" href="<?= htmlspecialchars($canonicalUrl, ENT_QUOTES, 'UTF-8') ?>" />
   <?php endif; ?>
   <?php if ($ogImageUrl !== ''): ?>
   <meta property="og:image" content="<?= htmlspecialchars($ogImageUrl, ENT_QUOTES, 'UTF-8') ?>" />
+  <meta property="og:image:alt" content="IdleRPG realm atlas map and live shard status" />
   <?php endif; ?>
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="<?= htmlspecialchars($seoTitle, ENT_QUOTES, 'UTF-8') ?>" />
@@ -494,13 +522,73 @@ $jsonLdScript = json_encode($jsonLd, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNI
     <footer class="footer inner">
       <p class="footer-title mono">&copy; <?= date('Y') ?> IdleRPG &middot; NetIRC IRC NetWork</p>
       <p class="footer-meta mono">
+        Guides:
+        <a class="guide-link" data-guide-title="How to Play IdleRPG" href="/how-to-play.php">How to Play</a> &middot;
+        <a class="guide-link" data-guide-title="IdleRPG Commands" href="/commands.php">Commands</a> &middot;
+        <a class="guide-link" data-guide-title="IdleRPG FAQ" href="/faq.php">FAQ</a>
+      </p>
+      <p class="footer-meta mono">
         Operated by <strong>TheDavid</strong> &middot; IRC <strong>irc.netirc.eu:6667</strong> &middot; <strong>#IdleRPG</strong>
       </p>
     </footer>
+
+    <div id="guide-modal" class="guide-modal hidden" role="dialog" aria-modal="true" aria-labelledby="guide-modal-title">
+      <div class="guide-modal__backdrop" data-guide-close="backdrop"></div>
+      <div class="guide-modal__panel" role="document">
+        <div class="guide-modal__head">
+          <h3 id="guide-modal-title" class="h2">Guide</h3>
+          <button id="guide-modal-close" class="guide-modal__close" type="button" aria-label="Close guide">×</button>
+        </div>
+        <iframe id="guide-modal-frame" class="guide-modal__frame" loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe>
+      </div>
+    </div>
   </div>
   <button id="refresh-fab" class="refresh-fab mono" type="button" aria-label="Refresh leaderboard now">
     <span class="refresh-fab-prefix">Next sync in</span><span id="refresh-fab-count" class="refresh-countdown">60</span><span>s</span>
   </button>
+  <script>
+    (function () {
+      const modal = document.getElementById('guide-modal');
+      const frame = document.getElementById('guide-modal-frame');
+      const title = document.getElementById('guide-modal-title');
+      const closeBtn = document.getElementById('guide-modal-close');
+      if (!modal || !frame || !title || !closeBtn) return;
+
+      const openGuide = (href, text) => {
+        title.textContent = text || 'Guide';
+        frame.setAttribute('src', href);
+        modal.classList.remove('hidden');
+        document.body.style.overflow = 'hidden';
+      };
+
+      const closeGuide = () => {
+        modal.classList.add('hidden');
+        frame.removeAttribute('src');
+        document.body.style.overflow = '';
+      };
+
+      document.querySelectorAll('a.guide-link').forEach((link) => {
+        link.addEventListener('click', (ev) => {
+          ev.preventDefault();
+          const href = link.getAttribute('href') || '/';
+          const text = link.getAttribute('data-guide-title') || link.textContent || 'Guide';
+          openGuide(href, text.trim());
+        });
+      });
+
+      modal.addEventListener('click', (ev) => {
+        const target = ev.target;
+        if (!(target instanceof Element)) return;
+        if (target.getAttribute('data-guide-close') === 'backdrop') closeGuide();
+      });
+
+      closeBtn.addEventListener('click', closeGuide);
+      document.addEventListener('keydown', (ev) => {
+        if (ev.key === 'Escape' && !modal.classList.contains('hidden')) closeGuide();
+      });
+    })();
+  </script>
+  <script src="assets/pwa.js" defer></script>
   <script src="assets/app.js" defer></script>
 </body>
 </html>

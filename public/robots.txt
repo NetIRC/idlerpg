@@ -2,5 +2,8 @@
 User-agent: *
 Allow: /
 
-# JSON APIs (usable by humans for debugging; no harm indexing)
-Allow: /api/
+# Keep raw API payloads out of search indexes.
+Disallow: /api/
+
+# Dynamic sitemap endpoint (absolute URL recommended by crawlers).
+Sitemap: https://idlerpg.netirc.eu/sitemap.php

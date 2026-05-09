@@ -98,6 +98,31 @@ Edit `site.config.php`:
 
 Point the virtual host **document root** at **`public/`**. Enable **mod_rewrite** and **mod_headers** so [`public/.htaccess`](public/.htaccess) applies.
 
+### 3.1 SEO and PWA (web)
+
+The public dashboard ships with production SEO + PWA basics:
+
+- **Canonical + social tags + JSON-LD** on [`public/index.php`](public/index.php)
+- **Editorial landing pages**:
+  - [`public/how-to-play.php`](public/how-to-play.php)
+  - [`public/commands.php`](public/commands.php)
+  - [`public/faq.php`](public/faq.php)
+- **Sitemap**: [`public/sitemap.php`](public/sitemap.php)
+- **Robots policy**: [`public/robots.txt`](public/robots.txt) (blocks `/api/`)
+- **API noindex** headers from [`public/includes/bootstrap.php`](public/includes/bootstrap.php) (`X-Robots-Tag`)
+- **PWA shell**:
+  - manifest: [`public/manifest.webmanifest`](public/manifest.webmanifest)
+  - service worker: [`public/sw.js`](public/sw.js)
+  - offline fallback: [`public/offline.html`](public/offline.html)
+  - registration helper: [`public/assets/pwa.js`](public/assets/pwa.js)
+
+Post-deploy checklist:
+
+1. Set `IRPG_PUBLIC_URL` to the final HTTPS domain.
+2. Open `/sitemap.php` and confirm valid XML output.
+3. Submit sitemap in Google Search Console and Bing Webmaster Tools.
+4. Request indexing for `/`, `/how-to-play.php`, `/commands.php`, `/faq.php`.
+
 ### 4. Verify
 
 | Check | Expected result |
@@ -162,7 +187,7 @@ Season numbering is anchored by `IRPG_V3_SEASON_EPOCH_SEC` (Unix seconds) plus `
 | **REGISTER** | PM the bot: one-word **password**; **class** can be multiple words. **Character name** must be unique in the database. |
 | **LOGIN / LOGOUT** | **LOGIN** / **LOGOUT** via PM. **LOGOUT** applies a **logout penalty** (timer increase). |
 | **PART** (leave channel) while logged in | **Suspended session:** `online` clears and **PART penalty** applies; **`session_open` stays 1**. **Rejoin the channel** → session resumes (**no second LOGIN**). Idle time did not advance while you were gone. |
-| **QUIT** (leave IRC) while logged in | **Session ends** (`session_open = 0`); **QUIT penalty**; you must **LOGIN** again next time. |
+| **QUIT** (leave IRC) while logged in | Default: **session ends** (`session_open = 0`) with **QUIT penalty**; you must **LOGIN** again next time. Optional netsplit grace: set `IRPG_NETSPLIT_GRACE_SEC > 0` to keep likely split quits suspended (no penalty) for auto-resume during that window. |
 | **KICK** | Logged-out + **kick** penalty (strong). |
 | **NICK change** while logged in | Penalty + DB `irc_nick` updated to the new nick. |
 | **Not in channel** | If you are logged in but your nick is not in the game channel, **idle time does not advance** for that character. |

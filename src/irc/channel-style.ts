@@ -25,13 +25,13 @@ export function ircRed(text: string): string {
 export function formatQuestEndLine(
   winTeam: string,
   loseTeam: string,
-  s0: number,
-  s1: number,
+  winnerScore: number,
+  loserScore: number,
   bonusLabel: string,
   penaltyLabel: string,
 ): string {
   return (
-    `⚔ Quest result: ${winTeam} wins (${s0}–${s1}) over ${loseTeam}. ` +
+    `⚔ Quest result: ${winTeam} wins (${winnerScore}–${loserScore}) over ${loseTeam}. ` +
     `${ircGreen(`Each winner: level timer reduced by -${bonusLabel}.`)} ` +
     `${ircRed(`Each loser: level timer increased by +${penaltyLabel} (quest levy).`)}`
   );

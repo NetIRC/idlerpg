@@ -24,6 +24,51 @@
   /** Incremented on each openPlayer call so stale responses do not overwrite the panel. */
   let detailFetchGen = 0;
 
+  function setupScrollReveal() {
+    const items = Array.from(document.querySelectorAll('.section-rise'));
+    if (!items.length) return;
+    const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (prefersReduced || !('IntersectionObserver' in window)) {
+      items.forEach((el) => el.classList.add('is-visible'));
+      return;
+    }
+    document.documentElement.classList.add('js-reveal');
+    const revealNow = (el) => {
+      if (!el.classList.contains('is-visible')) el.classList.add('is-visible');
+    };
+    const inView = (el) => {
+      const r = el.getBoundingClientRect();
+      return r.top < window.innerHeight * 0.92;
+    };
+    let aboveFoldIndex = 0;
+    items.forEach((el, idx) => {
+      const delay = `${Math.min((idx % 4) * 45, 135)}ms`;
+      el.style.setProperty('--reveal-delay', delay);
+      if (inView(el)) {
+        const extra = aboveFoldIndex * 32;
+        aboveFoldIndex += 1;
+        setTimeout(() => revealNow(el), extra);
+      }
+    });
+    const observer = new IntersectionObserver(
+      (entries, obs) => {
+        entries.forEach((entry) => {
+          if (!entry.isIntersecting) return;
+          const target = entry.target;
+          revealNow(target);
+          obs.unobserve(target);
+        });
+      },
+      { threshold: 0.12, rootMargin: '0px 0px -10% 0px' },
+    );
+    items.forEach((el) => {
+      if (el.classList.contains('is-visible')) return;
+      observer.observe(el);
+    });
+  }
+
+  setupScrollReveal();
+
   function updateCountdownDisplay() {
     if (refreshCountdownEl) {
       refreshCountdownEl.textContent = String(Math.max(0, countdown));
@@ -827,9 +872,11 @@
     if (!el) return;
     if (!label) {
       el.textContent = 'Season status: unavailable';
+      forceRealmPulseRepaint();
       return;
     }
     el.textContent = `${label} · campaign active`;
+    forceRealmPulseRepaint();
   }
 
   function setSeasonPreviewMeta(seasonMeta, fallbackLabel) {
@@ -860,9 +907,38 @@
     if (!el) return;
     if (!worldBossText) {
       el.textContent = 'World Boss scouting the frontier';
+      forceRealmPulseRepaint();
       return;
     }
     el.textContent = `World Boss engaged: ${worldBossText}`;
+    forceRealmPulseRepaint();
+  }
+
+  /** iOS Safari: force a tiny repaint to avoid first-load glyph clipping in pulse bars. */
+  function forceRealmPulseRepaint() {
+    const nodes = document.querySelectorAll('.realm-pulse');
+    if (!nodes.length) return;
+    const pulse = () => {
+      requestAnimationFrame(() => {
+        nodes.forEach((node) => {
+          node.classList.add('realm-pulse--repaint');
+        });
+        requestAnimationFrame(() => {
+          nodes.forEach((node) => {
+            node.classList.remove('realm-pulse--repaint');
+          });
+        });
+      });
+    };
+    pulse();
+    setTimeout(pulse, 120);
+    setTimeout(pulse, 420);
+  }
+
+  if (document.fonts && typeof document.fonts.ready === 'object') {
+    document.fonts.ready.then(() => {
+      forceRealmPulseRepaint();
+    }).catch(() => undefined);
   }
 
   function setGuildPreview(guilds) {

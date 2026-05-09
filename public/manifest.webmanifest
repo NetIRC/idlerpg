@@ -1,0 +1,24 @@
+{
+  "name": "IdleRPG Live Realm",
+  "short_name": "IdleRPG",
+  "description": "Live IRC IdleRPG dashboard with leaderboard, realm pulse, quests, season, and world boss status.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#05040a",
+  "theme_color": "#05040a",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}

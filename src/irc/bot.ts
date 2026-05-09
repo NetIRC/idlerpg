@@ -36,6 +36,17 @@ let forceReconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let lastTopicSent = '';
 let lastTopicRefreshAttemptMs = 0;
 let lastTopicSignal = '';
+const OUTBOUND_MIN_GAP_MS = 320;
+const OUTBOUND_MAX_QUEUE = 800;
+const NETSPLIT_BURST_WINDOW_MS = 12_000;
+const NETSPLIT_BURST_MIN_EVENTS = 3;
+const NETSPLIT_SERVER_SIGNAL_WINDOW_MS = 45_000;
+type OutboundMessage = { kind: 'chan'; text: string } | { kind: 'notice'; nick: string; text: string };
+const outboundQueue: OutboundMessage[] = [];
+let outboundDrainTimer: ReturnType<typeof setTimeout> | null = null;
+let outboundDroppedCount = 0;
+let lastServerSplitSignalAt = 0;
+const splitLikeQuitTimestamps: number[] = [];
 
 function normNick(n: string): string {
   return stripStatusPrefix(n);
@@ -120,8 +131,8 @@ async function replyLore(fromNick: string, prompt: string, viaPm: boolean): Prom
   const left = loreCooldownLeftSec(fromNick);
   if (left > 0) {
     const msg = ircRed(`Lore cooldown active. Try again in ${left}s.`);
-    if (viaPm) bot.notice(fromNick, msg);
-    else bot.say(channel, `${chanReplyPrefix(fromNick)} ${msg}`);
+    if (viaPm) sendNotice(fromNick, msg);
+    else sendChannel(`${chanReplyPrefix(fromNick)} ${msg}`);
     return;
   }
   markLoreCooldown(fromNick);
@@ -129,13 +140,13 @@ async function replyLore(fromNick: string, prompt: string, viaPm: boolean): Prom
   const out = await askGrokLore(config, asked);
   if (out.ok) {
     const line = styleChannelLine(`AI lore: ${out.text}`);
-    if (viaPm) bot.notice(fromNick, line);
-    else bot.say(channel, `${chanReplyPrefix(fromNick)} ${line}`);
+    if (viaPm) sendNotice(fromNick, line);
+    else sendChannel(`${chanReplyPrefix(fromNick)} ${line}`);
     return;
   }
   const fallback = styleChannelLine(`AI unavailable right now. ${out.err}`);
-  if (viaPm) bot.notice(fromNick, fallback);
-  else bot.say(channel, `${chanReplyPrefix(fromNick)} ${fallback}`);
+  if (viaPm) sendNotice(fromNick, fallback);
+  else sendChannel(`${chanReplyPrefix(fromNick)} ${fallback}`);
 }
 
 /** Server numerics that usually explain a failed JOIN (logged to stderr / bot.log). */
@@ -146,6 +157,29 @@ const JOIN_FAIL_NUMERICS = new Set([
 /** Try another nick when registration rejects the current one. */
 const NICK_RETRY_NUMERICS = new Set(['432', '433', '436', '437']);
 
+/** Typical netsplit QUIT reasons include two server names (e.g. "a.example b.example"). */
+function isLikelyNetsplitReason(reason: string): boolean {
+  const t = reason.trim().toLowerCase();
+  if (!t) return false;
+  if (t.includes('netsplit') || t.includes('net split')) return true;
+  return /[a-z0-9-]+\.[a-z0-9.-]+\s+[a-z0-9-]+\.[a-z0-9.-]+/.test(t);
+}
+
+/** Require corroboration so a user-crafted QUIT reason cannot trivially bypass penalties. */
+function shouldTreatQuitAsNetsplit(reason: string): boolean {
+  if (!isLikelyNetsplitReason(reason)) return false;
+  const now = Date.now();
+  if (lastServerSplitSignalAt > 0 && now - lastServerSplitSignalAt <= NETSPLIT_SERVER_SIGNAL_WINDOW_MS) {
+    return true;
+  }
+  splitLikeQuitTimestamps.push(now);
+  const cutoff = now - NETSPLIT_BURST_WINDOW_MS;
+  while (splitLikeQuitTimestamps.length > 0 && splitLikeQuitTimestamps[0]! < cutoff) {
+    splitLikeQuitTimestamps.shift();
+  }
+  return splitLikeQuitTimestamps.length >= NETSPLIT_BURST_MIN_EVENTS;
+}
+
 bot.on('connecting', () => {
   nextNickIdx = 1;
   registrationNickFallbackActive = true;
@@ -154,6 +188,9 @@ bot.on('connecting', () => {
 bot.on('raw', (event: { line?: string; from_server?: boolean }) => {
   const line = event.line ?? '';
   if (!event.from_server) return;
+  if (line.includes(' SQUIT ') || line.toUpperCase().includes('NETSPLIT')) {
+    lastServerSplitSignalAt = Date.now();
+  }
   const m = /^:[^ ]+ ([45][0-9][0-9]) /.exec(line);
   const num = m?.[1];
   if (!num) return;
@@ -239,6 +276,7 @@ bot.on('socket error', (err: unknown) => {
 bot.on('close', (hadError?: boolean) => {
   engine.clearBotHeartbeat();
   console.warn(`[irc] connection end${hadError ? ' (had error)' : ''}`);
+  namesInChannel.clear();
   lastTopicSent = '';
   /* irc-framework skips auto-reconnect if the socket drops before ~5s after registration (e.g. immediate KILL). Schedule our own reconnect when the client is fully closed. */
   if (forceReconnectTimer) clearTimeout(forceReconnectTimer);
@@ -274,7 +312,7 @@ bot.on('join', (event) => {
     const now = Date.now();
     if (now - (joinOnboardNoticeLast.get(key) ?? 0) >= JOIN_ONBOARD_NOTICE_COOLDOWN_MS) {
       joinOnboardNoticeLast.set(key, now);
-      bot.notice(who, onboarding);
+      sendNotice(who, onboarding);
     }
   }
 });
@@ -291,7 +329,9 @@ bot.on('part', (event) => {
 bot.on('quit', (event) => {
   const who = normNick(event.nick);
   namesInChannel.delete(who);
-  for (const a of engine.onPartQuit(who, 'quit')) {
+  const reason = String((event.message ?? event.reason ?? '') as string);
+  const asNetsplit = config.netsplitGraceSec > 0 && shouldTreatQuitAsNetsplit(reason);
+  for (const a of engine.onPartQuit(who, asNetsplit ? 'netsplit' : 'quit')) {
     deliver(a);
   }
 });
@@ -352,25 +392,24 @@ function tryPublicChannelCommand(fromNick: string, text: string): boolean {
 
   switch (sub) {
     case 'help':
-      bot.say(channel, `${replyPfx} ${engine.helpChannel(1, fromNick)}`);
+      sendChannel(`${replyPfx} ${engine.helpChannel(1, fromNick)}`);
       return true;
     case 'cmds':
     case 'commands':
-      bot.say(channel, `${replyPfx} ${engine.helpChannel(2, fromNick)}`);
+      sendChannel(`${replyPfx} ${engine.helpChannel(2, fromNick)}`);
       return true;
     case 'rules':
-      bot.say(
-        channel,
+      sendChannel(
         `${replyPfx} ${styleChannelLine(
           `Idle to gain levels; normal channel chat adds to your level timer. Recognized public !commands do not add level-timer penalty. PM this bot REGISTER or LOGIN while your nick is in this channel. Quests, bounties, seasons, and world boss events start automatically when conditions are met.`,
         )}`,
       );
       return true;
     case 'top':
-      bot.say(channel, `${replyPfx} ${engine.topN(3)}`);
+      sendChannel(`${replyPfx} ${engine.topN(3)}`);
       return true;
     case 'ping':
-      bot.say(channel, `${replyPfx} ${styleChannelLine(`pong — ${IDLE_RPG_VERSION}`)}`);
+      sendChannel(`${replyPfx} ${styleChannelLine(`pong — ${IDLE_RPG_VERSION}`)}`);
       return true;
     case 'lore':
       void replyLore(fromNick, rest, false);
@@ -378,46 +417,45 @@ function tryPublicChannelCommand(fromNick: string, text: string): boolean {
     case 'time': {
       const nameArg = rest.split(/\s+/).filter(Boolean)[0];
       const s = engine.timeLeft(fromNick, nameArg);
-      bot.say(channel, `${replyPfx} ${formatEngineUserLine('err' in s ? s.err : s.text, 'err' in s)}`);
+      sendChannel(`${replyPfx} ${formatEngineUserLine('err' in s ? s.err : s.text, 'err' in s)}`);
       return true;
     }
     case 'whoami': {
       const s = engine.whoami(fromNick);
-      bot.say(channel, `${replyPfx} ${formatEngineUserLine('err' in s ? s.err : s.text, 'err' in s)}`);
+      sendChannel(`${replyPfx} ${formatEngineUserLine('err' in s ? s.err : s.text, 'err' in s)}`);
       return true;
     }
     case 'records':
-      bot.say(channel, `${replyPfx} ${engine.recordsLine()}`);
+      sendChannel(`${replyPfx} ${engine.recordsLine()}`);
       return true;
     case 'chronicle':
-      bot.say(channel, `${replyPfx} ${engine.chronicleLine()}`);
+      sendChannel(`${replyPfx} ${engine.chronicleLine()}`);
       return true;
     case 'realm':
     case 'pulse':
-      bot.say(channel, `${replyPfx} ${engine.realmPulseLine()}`);
+      sendChannel(`${replyPfx} ${engine.realmPulseLine()}`);
       return true;
     case 'omen': {
       const o = engine.omenLine(fromNick, namesInChannel, (a, b) => bot.caseCompare(a, b));
-      bot.say(channel, `${replyPfx} ${formatOmenChannel(o)}`);
+      sendChannel(`${replyPfx} ${formatOmenChannel(o)}`);
       return true;
     }
     case 'duel': {
       const foe = rest.split(/\s+/).filter(Boolean)[0];
       if (!foe) {
-        bot.say(
-          channel,
+        sendChannel(
           `${replyPfx} Usage: ${ircGreen('!duel')} <irc_nick> — both players must be logged in, present in channel, and within ${ircGreen('±11')} levels.`,
         );
         return true;
       }
       const r = engine.duelLine(fromNick, normNick(foe), namesInChannel);
-      if ('err' in r) bot.say(channel, `${replyPfx} ${ircRed(r.err)}`);
+      if ('err' in r) sendChannel(`${replyPfx} ${ircRed(r.err)}`);
       else for (const ann of r.announcements) deliver(ann);
       return true;
     }
     case 'gauntlet': {
       const r = engine.gauntletLine(fromNick, namesInChannel);
-      if ('err' in r) bot.say(channel, `${replyPfx} ${ircRed(r.err)}`);
+      if ('err' in r) sendChannel(`${replyPfx} ${ircRed(r.err)}`);
       else for (const ann of r.announcements) deliver(ann);
       return true;
     }
@@ -425,47 +463,47 @@ function tryPublicChannelCommand(fromNick: string, text: string): boolean {
     case 'badges': {
       const who = rest.split(/\s+/).filter(Boolean)[0];
       const s = engine.medalsLine(fromNick, who);
-      bot.say(channel, `${replyPfx} ${formatEngineUserLine('err' in s ? s.err : s.text, 'err' in s)}`);
+      sendChannel(`${replyPfx} ${formatEngineUserLine('err' in s ? s.err : s.text, 'err' in s)}`);
       return true;
     }
     case 'quest':
-      bot.say(channel, `${replyPfx} ${engine.questLine()}`);
+      sendChannel(`${replyPfx} ${engine.questLine()}`);
       return true;
     case 'bounty': {
       const s = engine.bountyLine(fromNick);
-      bot.say(channel, `${replyPfx} ${formatEngineUserLine('err' in s ? s.err : s.text, 'err' in s)}`);
+      sendChannel(`${replyPfx} ${formatEngineUserLine('err' in s ? s.err : s.text, 'err' in s)}`);
       return true;
     }
     case 'season': {
       const s = engine.seasonLine(fromNick);
-      bot.say(channel, `${replyPfx} ${formatEngineUserLine('err' in s ? s.err : s.text, 'err' in s)}`);
+      sendChannel(`${replyPfx} ${formatEngineUserLine('err' in s ? s.err : s.text, 'err' in s)}`);
       return true;
     }
     case 'boss': {
       const s = engine.bossLine();
-      bot.say(channel, `${replyPfx} ${formatEngineUserLine('err' in s ? s.err : s.text, 'err' in s)}`);
+      sendChannel(`${replyPfx} ${formatEngineUserLine('err' in s ? s.err : s.text, 'err' in s)}`);
       return true;
     }
     case 'guild': {
       const s = engine.guildLine(fromNick, rest.split(/\s+/).filter(Boolean));
-      bot.say(channel, `${replyPfx} ${formatEngineUserLine('err' in s ? s.err : s.text, 'err' in s)}`);
+      sendChannel(`${replyPfx} ${formatEngineUserLine('err' in s ? s.err : s.text, 'err' in s)}`);
       return true;
     }
     case 'relic': {
       const s = engine.relicLine(fromNick, rest.split(/\s+/).filter(Boolean));
-      bot.say(channel, `${replyPfx} ${formatEngineUserLine('err' in s ? s.err : s.text, 'err' in s)}`);
+      sendChannel(`${replyPfx} ${formatEngineUserLine('err' in s ? s.err : s.text, 'err' in s)}`);
       return true;
     }
     case 'prestige': {
       const parts = rest.split(/\s+/).filter(Boolean);
       const s = engine.prestigeLine(fromNick, (parts[0] ?? '').toLowerCase() === 'now');
-      bot.say(channel, `${replyPfx} ${formatEngineUserLine('err' in s ? s.err : s.text, 'err' in s)}`);
+      sendChannel(`${replyPfx} ${formatEngineUserLine('err' in s ? s.err : s.text, 'err' in s)}`);
       return true;
     }
     case 'stats': {
       const nameArg = rest.split(/\s+/).filter(Boolean)[0];
       const s = engine.stats(fromNick, nameArg);
-      bot.say(channel, `${replyPfx} ${formatEngineUserLine('err' in s ? s.err : s.text, 'err' in s)}`);
+      sendChannel(`${replyPfx} ${formatEngineUserLine('err' in s ? s.err : s.text, 'err' in s)}`);
       return true;
     }
     default:
@@ -495,13 +533,13 @@ bot.on('message', (event) => {
 
   const raw = event.message.replace(/^\u0001|\u0001$/g, '').trim();
   if (raw.toLowerCase() === 'version') {
-    bot.notice(from, `\u0001VERSION ${IDLE_RPG_VERSION}\u0001`);
+    sendNotice(from, `\u0001VERSION ${IDLE_RPG_VERSION}\u0001`);
     return;
   }
 
   if (!allowPmFlood(from)) {
     const wSec = Math.max(1, Math.round(config.pmFloodWindowMs / 1000));
-    bot.notice(from, ircRed(`Slow down: too many private messages in the last ~${wSec}s. Try again shortly.`));
+    sendNotice(from, ircRed(`Slow down: too many private messages in the last ~${wSec}s. Try again shortly.`));
     return;
   }
 
@@ -514,25 +552,25 @@ bot.on('message', (event) => {
   const uh = `${event.nick}!${event.ident}@${event.hostname}`;
 
   if (cmd === 'cmds' || cmd === 'commands') {
-    bot.notice(from, engine.helpPm(2));
+    sendNotice(from, engine.helpPm(2));
     return;
   }
 
   if (cmd === 'help') {
-    bot.notice(from, engine.helpPm(1));
+    sendNotice(from, engine.helpPm(1));
     return;
   }
 
   if (cmd === 'admin') {
     const { notices, announcements, requestShutdown } = engine.adminCommand(from, parts, namesInChannel);
-    for (const n of notices) bot.notice(from, formatAdminPmNotice(n));
+    for (const n of notices) sendNotice(from, formatAdminPmNotice(n));
     for (const a of announcements) deliver(a);
     if (requestShutdown) scheduleIrcShutdown();
     return;
   }
 
   if (cmd === 'ping') {
-    bot.notice(from, `pong — ${IDLE_RPG_VERSION}`);
+    sendNotice(from, `pong — ${IDLE_RPG_VERSION}`);
     return;
   }
 
@@ -543,11 +581,11 @@ bot.on('message', (event) => {
 
   if (cmd === 'register') {
     if (rest.length < 3) {
-      bot.notice(
+      sendNotice(
         from,
         'REGISTER — private message to me, while your nick is in the game channel. Format: REGISTER CharacterName Password ClassWords',
       );
-      bot.notice(
+      sendNotice(
         from,
         'Example: REGISTER Alice hunter123 Forest Ranger  (password must be a single word — no spaces)',
       );
@@ -557,30 +595,30 @@ bot.on('message', (event) => {
     const rPass = rest[1]!;
     const pclass = rest.slice(2).join(' ').trim();
     const r = engine.register(from, uh, rName, rPass, pclass, inChan);
-    if (!r.ok) bot.notice(from, ircRed(r.err));
+    if (!r.ok) sendNotice(from, ircRed(r.err));
     else for (const a of r.announcements) deliver(a);
     return;
   }
 
   if (cmd === 'login') {
     if (rest.length < 2) {
-      bot.notice(
+      sendNotice(
         from,
         'LOGIN — private message to me, while your nick is in the game channel. Format: LOGIN CharacterName Password',
       );
-      bot.notice(from, 'Example: LOGIN Alice hunter123');
+      sendNotice(from, 'Example: LOGIN Alice hunter123');
       return;
     }
     const [lName, lPass] = rest;
     const r = engine.login(from, uh, lName!, lPass!, inChan);
-    if (!r.ok) bot.notice(from, ircRed(r.err));
+    if (!r.ok) sendNotice(from, ircRed(r.err));
     else for (const a of r.announcements) deliver(a);
     return;
   }
 
   if (cmd === 'logout') {
     const r = engine.logout(from);
-    if (!r.ok) bot.notice(from, ircRed(r.err));
+    if (!r.ok) sendNotice(from, ircRed(r.err));
     else for (const a of r.announcements) deliver(a);
     return;
   }
@@ -588,59 +626,59 @@ bot.on('message', (event) => {
   if (cmd === 'stats') {
     const who = rest[0];
     const s = engine.stats(from, who);
-    bot.notice(from, formatEngineUserLine('err' in s ? s.err : s.text, 'err' in s));
+    sendNotice(from, formatEngineUserLine('err' in s ? s.err : s.text, 'err' in s));
     return;
   }
 
   if (cmd === 'top') {
-    bot.notice(from, engine.top());
+    sendNotice(from, engine.top());
     return;
   }
 
   if (cmd === 'whoami') {
     const s = engine.whoami(from);
-    bot.notice(from, formatEngineUserLine('err' in s ? s.err : s.text, 'err' in s));
+    sendNotice(from, formatEngineUserLine('err' in s ? s.err : s.text, 'err' in s));
     return;
   }
 
   if (cmd === 'time') {
     const who = rest[0];
     const s = engine.timeLeft(from, who);
-    bot.notice(from, formatEngineUserLine('err' in s ? s.err : s.text, 'err' in s));
+    sendNotice(from, formatEngineUserLine('err' in s ? s.err : s.text, 'err' in s));
     return;
   }
 
   if (cmd === 'records') {
-    bot.notice(from, engine.recordsLine());
+    sendNotice(from, engine.recordsLine());
     return;
   }
 
   if (cmd === 'chronicle') {
-    bot.notice(from, engine.chronicleLine());
+    sendNotice(from, engine.chronicleLine());
     return;
   }
 
   if (cmd === 'realm' || cmd === 'pulse') {
-    bot.notice(from, engine.realmPulseLine());
+    sendNotice(from, engine.realmPulseLine());
     return;
   }
 
   if (cmd === 'omen') {
     if (!inChan) {
-      bot.notice(
+      sendNotice(
         from,
         ircRed(`OMEN requires your nick in ${channel}. Join the game channel, stay visible, then try again.`),
       );
       return;
     }
     const o = engine.omenLine(from, namesInChannel, (a, b) => bot.caseCompare(a, b));
-    bot.notice(from, formatOmenChannel(o));
+    sendNotice(from, formatOmenChannel(o));
     return;
   }
 
   if (cmd === 'duel') {
     if (!inChan) {
-      bot.notice(
+      sendNotice(
         from,
         ircRed(`DUEL requires your nick in ${channel}. Join the game channel, stay visible, then try again.`),
       );
@@ -648,25 +686,25 @@ bot.on('message', (event) => {
     }
     const foe = rest[0];
     if (!foe) {
-      bot.notice(from, 'Usage: DUEL <irc_nick> — same rules as !duel in channel (logged in, present, ±11 levels).');
+      sendNotice(from, 'Usage: DUEL <irc_nick> — same rules as !duel in channel (logged in, present, ±11 levels).');
       return;
     }
     const r = engine.duelLine(from, normNick(foe), namesInChannel);
-    if ('err' in r) bot.notice(from, ircRed(r.err));
+    if ('err' in r) sendNotice(from, ircRed(r.err));
     else for (const ann of r.announcements) deliver({ ...ann, target: 'notice', nick: from });
     return;
   }
 
   if (cmd === 'gauntlet') {
     if (!inChan) {
-      bot.notice(
+      sendNotice(
         from,
         ircRed(`GAUNTLET requires your nick in ${channel}. Join the game channel, stay visible, then try again.`),
       );
       return;
     }
     const r = engine.gauntletLine(from, namesInChannel);
-    if ('err' in r) bot.notice(from, ircRed(r.err));
+    if ('err' in r) sendNotice(from, ircRed(r.err));
     else for (const ann of r.announcements) deliver({ ...ann, target: 'notice', nick: from });
     return;
   }
@@ -674,52 +712,52 @@ bot.on('message', (event) => {
   if (cmd === 'medals' || cmd === 'badges') {
     const who = rest[0];
     const s = engine.medalsLine(from, who);
-    bot.notice(from, formatEngineUserLine('err' in s ? s.err : s.text, 'err' in s));
+    sendNotice(from, formatEngineUserLine('err' in s ? s.err : s.text, 'err' in s));
     return;
   }
 
   if (cmd === 'quest') {
-    bot.notice(from, engine.questLine());
+    sendNotice(from, engine.questLine());
     return;
   }
 
   if (cmd === 'bounty') {
     const s = engine.bountyLine(from);
-    bot.notice(from, formatEngineUserLine('err' in s ? s.err : s.text, 'err' in s));
+    sendNotice(from, formatEngineUserLine('err' in s ? s.err : s.text, 'err' in s));
     return;
   }
 
   if (cmd === 'season') {
     const s = engine.seasonLine(from);
-    bot.notice(from, formatEngineUserLine('err' in s ? s.err : s.text, 'err' in s));
+    sendNotice(from, formatEngineUserLine('err' in s ? s.err : s.text, 'err' in s));
     return;
   }
 
   if (cmd === 'boss') {
     const s = engine.bossLine();
-    bot.notice(from, formatEngineUserLine('err' in s ? s.err : s.text, 'err' in s));
+    sendNotice(from, formatEngineUserLine('err' in s ? s.err : s.text, 'err' in s));
     return;
   }
 
   if (cmd === 'guild') {
     const s = engine.guildLine(from, rest);
-    bot.notice(from, formatEngineUserLine('err' in s ? s.err : s.text, 'err' in s));
+    sendNotice(from, formatEngineUserLine('err' in s ? s.err : s.text, 'err' in s));
     return;
   }
 
   if (cmd === 'relic') {
     const s = engine.relicLine(from, rest);
-    bot.notice(from, formatEngineUserLine('err' in s ? s.err : s.text, 'err' in s));
+    sendNotice(from, formatEngineUserLine('err' in s ? s.err : s.text, 'err' in s));
     return;
   }
 
   if (cmd === 'prestige') {
     const s = engine.prestigeLine(from, (rest[0] ?? '').toLowerCase() === 'now');
-    bot.notice(from, formatEngineUserLine('err' in s ? s.err : s.text, 'err' in s));
+    sendNotice(from, formatEngineUserLine('err' in s ? s.err : s.text, 'err' in s));
     return;
   }
 
-  bot.notice(from, ircRed(MSG.unknownPmCommand));
+  sendNotice(from, ircRed(MSG.unknownPmCommand));
 });
 
 function formatAnnouncement(a: GameAnnouncement): string {
@@ -776,10 +814,8 @@ function scheduleIrcShutdown(): void {
   const quitReason = 'IdleRPG admin shutdown';
   try {
     if (bot.connected) {
-      bot.say(
-        channel,
-        '⌛ IdleRPG is going offline (admin shutdown). Level timers pause until the bot is running again.',
-      );
+      // Use direct send here so the line is not delayed behind queue backlog.
+      bot.say(channel, '⌛ IdleRPG is going offline (admin shutdown). Level timers pause until the bot is running again.');
     }
   } catch {
     /* ignore */
@@ -798,15 +834,56 @@ function scheduleIrcShutdown(): void {
   }, 600);
 }
 
+/** Pace outbound IRC lines to reduce server-side flood drops during bursty ticks. */
+function enqueueOutbound(msg: OutboundMessage): void {
+  if (outboundQueue.length >= OUTBOUND_MAX_QUEUE) {
+    outboundQueue.shift();
+    outboundDroppedCount += 1;
+    if (outboundDroppedCount % 25 === 0) {
+      console.warn(`[irc] outbound queue backpressure: dropped ${outboundDroppedCount} queued line(s)`);
+    }
+  }
+  outboundQueue.push(msg);
+  if (outboundDrainTimer) return;
+  const drain = () => {
+    if (!outboundQueue.length) {
+      outboundDrainTimer = null;
+      return;
+    }
+    const next = outboundQueue.shift()!;
+    if (bot.connected) {
+      if (next.kind === 'chan') {
+        bot.say(channel, next.text);
+      } else {
+        bot.notice(next.nick, next.text);
+      }
+    }
+    outboundDrainTimer = setTimeout(drain, OUTBOUND_MIN_GAP_MS);
+  };
+  outboundDrainTimer = setTimeout(drain, 0);
+}
+
+/** Unified outbound channel path, queued through the flood-safe sender. */
+function sendChannel(text: string): void {
+  enqueueOutbound({ kind: 'chan', text });
+}
+
+/** Unified outbound notice path, queued through the flood-safe sender. */
+function sendNotice(nick: string, text: string): void {
+  enqueueOutbound({ kind: 'notice', nick, text });
+}
+
 function deliver(a: GameAnnouncement) {
+  const text = formatAnnouncement(a);
   if (a.target === 'chan') {
-    bot.say(channel, formatAnnouncement(a));
+    sendChannel(text);
   } else if (a.nick) {
-    bot.notice(a.nick, formatAnnouncement(a));
+    sendNotice(a.nick, text);
   }
 }
 
 setInterval(() => {
+  if (!bot.connected) return;
   for (const a of engine.tick(namesInChannel)) {
     deliver(a);
   }
@@ -829,7 +906,7 @@ if (config.ircChanBanterMs > 0) {
 
     const hint = engine.channelHint(namesInChannel, (a, b) => bot.caseCompare(a, b), me);
     if (hint && Math.random() < 0.5) {
-      bot.say(channel, `${chanReplyPrefix(hint.nick)} ${hint.body}`);
+      sendChannel(`${chanReplyPrefix(hint.nick)} ${hint.body}`);
       return;
     }
     const now = Date.now();
@@ -843,14 +920,14 @@ if (config.ircChanBanterMs > 0) {
       const heroes = pickAiBanterHeroes(namesInChannel, me, 6);
       void askGrokBanter(config, heroes).then((out) => {
         if (out.ok) {
-          bot.say(channel, styleAmbientBanter(out.text));
+          sendChannel(styleAmbientBanter(out.text));
           return;
         }
-        bot.say(channel, styleAmbientBanter(randomChannelBanter()));
+        sendChannel(styleAmbientBanter(randomChannelBanter()));
       });
       return;
     }
-    bot.say(channel, styleAmbientBanter(randomChannelBanter()));
+    sendChannel(styleAmbientBanter(randomChannelBanter()));
   }, config.ircChanBanterMs);
 }
 

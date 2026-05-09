@@ -164,6 +164,8 @@ const schema = z.object({
   pmFloodMaxMessages: z.coerce.number().int().min(0).max(500).default(18),
   /** Sliding window (ms) for PM flood counting. */
   pmFloodWindowMs: z.coerce.number().int().min(1_000).max(300_000).default(10_000),
+  /** Grace window after likely netsplit QUIT: keep session_open for auto-resume; 0 = disabled. */
+  netsplitGraceSec: z.coerce.number().int().min(0).max(21_600).default(0),
   /**
    * Comma- or space-separated IRC nicks (no #channel) allowed to use ADMIN by PM even without a logged-in character.
    * Status prefixes (~&@%+) are ignored when matching.
@@ -275,6 +277,7 @@ function load() {
     webChronicleFiltersEnabled: bool(process.env.IRPG_WEB_CHRONICLE_FILTERS_ENABLED, true),
     pmFloodMaxMessages: decr(process.env.IRPG_PM_FLOOD_MAX),
     pmFloodWindowMs: decr(process.env.IRPG_PM_FLOOD_WINDOW_MS),
+    netsplitGraceSec: decr(process.env.IRPG_NETSPLIT_GRACE_SEC),
     adminIrcNicks: decr(process.env.IRPG_ADMIN_IRC_NICKS) ?? '',
     aiEnabled: bool(process.env.IRPG_AI_ENABLED, false),
     aiGrokApiKey:

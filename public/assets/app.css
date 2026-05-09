@@ -133,6 +133,29 @@ body {
   box-shadow: 0 6px 28px rgba(0, 0, 0, 0.18);
 }
 
+/* JS toggles this class for one frame to work around Safari first-paint clipping. */
+.realm-pulse--repaint {
+  opacity: 0.9999;
+}
+
+/* iOS Safari: avoid transient glyph clipping on inline status text. */
+@supports (-webkit-touch-callout: none) {
+  .realm-pulse {
+    /* Prefer local iOS monospace here to avoid first-load webfont raster glitches. */
+    font-family: "SFMono-Regular", Menlo, Monaco, Consolas, ui-monospace, monospace;
+    letter-spacing: 0.01em;
+    -webkit-text-size-adjust: 100%;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: geometricPrecision;
+  }
+
+  .realm-pulse #season-banner,
+  .realm-pulse #world-boss-banner {
+    display: inline;
+    white-space: normal;
+  }
+}
+
 .status-led {
   width: 8px;
   height: 8px;
@@ -652,6 +675,27 @@ body {
     opacity: 1;
     transform: translateY(0);
   }
+}
+
+/* Progressive enhancement: JS-driven reveal on scroll for section blocks. */
+.js-reveal .section-rise {
+  animation: none;
+  --reveal-delay: 0ms;
+  opacity: 0;
+  transform: translate3d(0, 14px, 0) scale(0.995);
+  filter: saturate(0.985);
+  transition:
+    opacity 0.5s cubic-bezier(0.22, 0.61, 0.36, 1) var(--reveal-delay),
+    transform 0.5s cubic-bezier(0.22, 0.61, 0.36, 1) var(--reveal-delay),
+    filter 0.46s cubic-bezier(0.22, 0.61, 0.36, 1) var(--reveal-delay);
+  will-change: opacity, transform, filter;
+  contain: paint;
+}
+
+.js-reveal .section-rise.is-visible {
+  opacity: 1;
+  transform: translate3d(0, 0, 0) scale(1);
+  filter: saturate(1);
 }
 
 .section-head {
@@ -1350,6 +1394,75 @@ body.full-page-sync--locked {
   font-weight: 600;
 }
 
+.guide-link {
+  text-decoration: underline;
+  text-underline-offset: 0.16em;
+}
+
+.guide-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 30000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.guide-modal__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(3, 2, 10, 0.72);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.guide-modal__panel {
+  position: relative;
+  width: min(96vw, 980px);
+  height: min(88vh, 820px);
+  border: 1px solid rgba(0, 229, 199, 0.25);
+  border-radius: 12px;
+  background: rgba(9, 8, 18, 0.96);
+  box-shadow: 0 12px 44px rgba(0, 0, 0, 0.45);
+  padding: 0.9rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.guide-modal__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.guide-modal__close {
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--dust);
+  font-size: 1.15rem;
+  line-height: 1;
+  padding: 0.3rem 0.55rem;
+  cursor: pointer;
+}
+
+.guide-modal__close:hover {
+  border-color: rgba(0, 229, 199, 0.35);
+  box-shadow: 0 0 12px rgba(0, 229, 199, 0.22);
+}
+
+.guide-modal__frame {
+  flex: 1 1 auto;
+  width: 100%;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: #111;
+}
+
+
 @media (prefers-reduced-motion: reduce) {
   .shell,
   .title-rpg,
@@ -1358,6 +1471,13 @@ body.full-page-sync--locked {
   .dot,
   .section-rise {
     animation: none !important;
+  }
+
+  .js-reveal .section-rise,
+  .js-reveal .section-rise.is-visible {
+    opacity: 1 !important;
+    transform: none !important;
+    transition: none !important;
   }
 
   .title-rpg {
@@ -1608,7 +1728,12 @@ body.full-page-sync--locked {
   position: relative;
   padding: 0;
   overflow: hidden;
+  overflow: clip;
   border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow:
+    inset 0 0 0 1px rgba(0, 229, 199, 0.18),
+    inset 0 0 34px rgba(0, 229, 199, 0.08),
+    inset 0 0 66px rgba(150, 96, 245, 0.06);
   animation: atlas-panel-border-glow 12s ease-in-out infinite alternate;
 }
 
@@ -1621,17 +1746,17 @@ body.full-page-sync--locked {
 @keyframes atlas-panel-border-glow {
   0% {
     box-shadow:
-      0 0 0 1px rgba(0, 229, 199, 0.18),
-      0 0 40px rgba(0, 229, 199, 0.14),
-      0 0 72px rgba(100, 60, 180, 0.12),
-      inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+      inset 0 0 0 1px rgba(0, 229, 199, 0.18),
+      inset 0 0 34px rgba(0, 229, 199, 0.08),
+      inset 0 0 66px rgba(100, 60, 180, 0.08),
+      inset 0 0 0 1px rgba(255, 255, 255, 0.05);
   }
   100% {
     box-shadow:
-      0 0 0 1px rgba(0, 255, 220, 0.45),
-      0 0 64px rgba(0, 229, 199, 0.28),
-      0 0 120px rgba(160, 100, 255, 0.2),
-      inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+      inset 0 0 0 1px rgba(0, 255, 220, 0.32),
+      inset 0 0 42px rgba(0, 229, 199, 0.12),
+      inset 0 0 82px rgba(160, 100, 255, 0.12),
+      inset 0 0 0 1px rgba(255, 255, 255, 0.09);
   }
 }
 

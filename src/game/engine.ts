@@ -56,6 +56,7 @@ export class GameEngine {
   private static readonly LEVEL_ACTION_WINDOW_SEC = 5 * 60;
   private static readonly LEVEL_ACTION_REMINDER_AFTER_SEC = Math.floor(GameEngine.LEVEL_ACTION_WINDOW_SEC / 2);
   private static readonly STREAK_NOTICE_MIN_GAP_SEC = 20 * 60;
+  private static readonly NETSPLIT_GRACE_KEY_PREFIX = 'netsplit_grace_until_';
 
   constructor(private cfg: AppConfig) {
     this.reservedBotNicks = reservedBotNicksLower(cfg);
@@ -268,6 +269,7 @@ export class GameEngine {
    * LOGOUT / QUIT / KICK / explicit closes clear `session_open`, so those are not revived.
    */
   reconcileOpenSessionsInChannel(channelNicks: Set<string>, nickEquals: (a: string, b: string) => boolean): number {
+    const now = Math.floor(Date.now() / 1000);
     const rows = this.db
       .prepare(
         `SELECT id, irc_nick FROM players WHERE session_open = 1 AND online = 0 AND irc_nick != ''`,
@@ -276,9 +278,17 @@ export class GameEngine {
     const upd = this.db.prepare('UPDATE players SET online = 1, irc_nick = ? WHERE id = ?');
     let restored = 0;
     for (const r of rows) {
+      const graceKey = this.netsplitGraceKey(r.id);
+      const graceUntil = Math.max(0, metaGetInt(this.db, graceKey) ?? 0);
+      if (graceUntil > 0 && now > graceUntil) {
+        this.db.prepare('UPDATE players SET session_open = 0 WHERE id = ?').run(r.id);
+        metaSetInt(this.db, graceKey, 0);
+        continue;
+      }
       for (const inChan of channelNicks) {
         if (nickEquals(r.irc_nick, inChan)) {
           upd.run(inChan, r.id);
+          if (graceUntil > 0) metaSetInt(this.db, graceKey, 0);
           restored += 1;
           break;
         }
@@ -291,13 +301,22 @@ export class GameEngine {
    * When a player rejoins the game channel after PART: restore `online` if their session was only suspended.
    */
   resumeSuspendedSessionOnJoin(ircNick: string): boolean {
+    const now = Math.floor(Date.now() / 1000);
     const row = this.db
       .prepare(
         `SELECT id FROM players WHERE session_open = 1 AND online = 0 AND irc_nick != '' AND irc_nick COLLATE NOCASE = ?`,
       )
       .get(ircNick) as { id: number } | undefined;
     if (!row) return false;
+    const graceKey = this.netsplitGraceKey(row.id);
+    const graceUntil = Math.max(0, metaGetInt(this.db, graceKey) ?? 0);
+    if (graceUntil > 0 && now > graceUntil) {
+      this.db.prepare(`UPDATE players SET session_open = 0 WHERE id = ?`).run(row.id);
+      metaSetInt(this.db, graceKey, 0);
+      return false;
+    }
     this.db.prepare(`UPDATE players SET online = 1, irc_nick = ? WHERE id = ?`).run(ircNick, row.id);
+    if (graceUntil > 0) metaSetInt(this.db, graceKey, 0);
     return true;
   }
 
@@ -946,13 +965,24 @@ export class GameEngine {
     return [{ target: 'notice', nick: newNick, text: `Nick change penalty: +${durationIt(pen)} on your level timer.`, tone: 'loss' }];
   }
 
-  onPartQuit(ircNick: string, kind: 'part' | 'quit'): GameAnnouncement[] {
+  onPartQuit(ircNick: string, kind: 'part' | 'quit' | 'netsplit'): GameAnnouncement[] {
     const p = findOnlineByNickCi(this.db, ircNick);
     if (!p) return [];
+    const graceKey = this.netsplitGraceKey(p.id);
+    if (kind === 'netsplit') {
+      const now = Math.floor(Date.now() / 1000);
+      this.db
+        .prepare(`UPDATE players SET online = 0, session_open = 1 WHERE id = ?`)
+        .run(p.id);
+      this.resetIdleStreak(p.id);
+      metaSetInt(this.db, graceKey, now + Math.max(1, this.cfg.netsplitGraceSec));
+      return [];
+    }
     const mult = kind === 'part' ? 200 : 20;
     const pen = this.applyPenaltyAmount(p, mult);
     const col = kind === 'part' ? 'pen_part' : 'pen_quit';
     if (kind === 'part') {
+      metaSetInt(this.db, graceKey, 0);
       this.db
         .prepare(
           `UPDATE players SET online = 0, session_open = 1, ${col} = ${col} + ?, next_seconds = next_seconds + ? WHERE id = ?`,
@@ -969,6 +999,7 @@ export class GameEngine {
         },
       ];
     } else {
+      metaSetInt(this.db, graceKey, 0);
       this.db
         .prepare(
           `UPDATE players SET online = 0, session_open = 0, ${col} = ${col} + ?, next_seconds = next_seconds + ? WHERE id = ?`,
@@ -1020,6 +1051,25 @@ export class GameEngine {
     this.db.prepare('UPDATE players SET idle_streak_sec = 0 WHERE id = ?').run(playerId);
     metaSetInt(this.db, `streak_notice_pending_${playerId}`, 0);
     metaSetInt(this.db, `streak_notice_next_at_${playerId}`, 0);
+  }
+
+  private netsplitGraceKey(playerId: number): string {
+    return `${GameEngine.NETSPLIT_GRACE_KEY_PREFIX}${playerId}`;
+  }
+
+  /** Close suspended sessions once their netsplit grace window expires. */
+  private expireNetsplitGrace(now: number): void {
+    if (this.cfg.netsplitGraceSec <= 0) return;
+    const suspended = this.db
+      .prepare(`SELECT id FROM players WHERE session_open = 1 AND online = 0 AND irc_nick != ''`)
+      .all() as { id: number }[];
+    for (const row of suspended) {
+      const key = this.netsplitGraceKey(row.id);
+      const until = Math.max(0, metaGetInt(this.db, key) ?? 0);
+      if (until <= 0 || now < until) continue;
+      this.db.prepare('UPDATE players SET session_open = 0 WHERE id = ? AND online = 0').run(row.id);
+      metaSetInt(this.db, key, 0);
+    }
   }
 
   private bountyDayIndex(nowSec: number): number {
@@ -1122,6 +1172,7 @@ export class GameEngine {
 
   tick(channelNicks: Set<string>): GameAnnouncement[] {
     const now = Math.floor(Date.now() / 1000);
+    this.expireNetsplitGrace(now);
     if (this.lastTick === 0) {
       this.lastTick = now;
       return [];
