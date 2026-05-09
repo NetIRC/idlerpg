@@ -69,12 +69,11 @@ export function runGauntlet(
 
     announcements.push({
       target: 'chan',
-      text: `◇ Gauntlet — ${name} (${cls}, L${p.level}) clears the trial.${epic ? ' Exceptional performance.' : ''} Level timer shortened (-${durationIt(gain)} effective gain).`,
-      tone: 'gain',
-    });
-    announcements.push({
-      target: 'chan',
-      text: `◇ ${name}: -${durationIt(gain)} effective gain · next level in ${durationIt(ns)} · Gauntlet victories: ${gnext}.`,
+      text:
+        `◇ Gauntlet — ${name} (${cls}, L${p.level}) clears the trial.` +
+        `${epic ? ' Exceptional performance.' : ''} ` +
+        `Level timer shortened (-${durationIt(gain)} effective gain) · ` +
+        `next level in ${durationIt(ns)} · Gauntlet victories: ${gnext}.`,
       tone: 'gain',
     });
     insertRealmEvent(db, 'gauntlet_win', `${name}${epic ? ' (epic)' : ''}`);
@@ -93,12 +92,10 @@ export function runGauntlet(
     db.prepare('UPDATE players SET next_seconds = ?, idle_streak_sec = 0 WHERE id = ?').run(ns, p.id);
     announcements.push({
       target: 'chan',
-      text: `◇ Gauntlet — ${name} (${cls}) fails the trial. Level timer extended (+${durationIt(loss)} effective loss).`,
-      tone: 'loss',
-    });
-    announcements.push({
-      target: 'chan',
-      text: `◇ ${name}: +${durationIt(loss)} effective loss · next level in ${durationIt(ns)}. Cooldown active; try again later.`,
+      text:
+        `◇ Gauntlet — ${name} (${cls}) fails the trial. ` +
+        `Level timer extended (+${durationIt(loss)} effective loss) · ` +
+        `next level in ${durationIt(ns)}. Cooldown active; try again later.`,
       tone: 'loss',
     });
     insertRealmEvent(db, 'gauntlet_lose', name);

@@ -689,17 +689,25 @@ export function realmPulseData(db: Database, cfg: AppConfig): RealmPulseJson {
     .get() as { boss_name: string; hp_left: number; hp_max: number } | undefined;
 
   const segments: string[] = [];
-  segments.push(`${onlineHeroes} hero${onlineHeroes !== 1 ? 'es' : ''} with open session`);
+  segments.push(`${onlineHeroes} hero${onlineHeroes !== 1 ? 'es' : ''} active in the realm`);
   if (cfg.questEnabled) {
-    segments.push(questActive && questShort ? `Quest live · ${questShort}` : `Quest idle — awaiting next start roll`);
+    segments.push(
+      questActive && questShort
+        ? `Quest campaign active · ${questShort}`
+        : `Quest board standby · awaiting the next campaign window`,
+    );
   }
   if (cfg.luckyHourEnabled) {
     segments.push(
-      luckySecondsLeft > 0 ? `Lucky hour · ${durationIt(luckySecondsLeft)} left` : `Lucky hour inactive`,
+      luckySecondsLeft > 0 ? `Lucky hour surge · ${durationIt(luckySecondsLeft)} remaining` : `Lucky hour dormant`,
     );
   }
   if (cfg.v3ModeEnabled && cfg.v3DailyTrialEnabled) {
-    segments.push(trialCooldownLeft > 0 ? `Daily trial in ${durationIt(trialCooldownLeft)}` : 'Daily trial ready');
+    segments.push(
+      trialCooldownLeft > 0
+        ? `Daily trial unlock in ${durationIt(trialCooldownLeft)}`
+        : 'Daily trial ready for dispatch',
+    );
   }
   if (cfg.v3ModeEnabled && cfg.v3StreakEnabled) {
     segments.push('Idle streak rewards active');
@@ -707,19 +715,21 @@ export function realmPulseData(db: Database, cfg: AppConfig): RealmPulseJson {
   if (cfg.v3ModeEnabled && cfg.v3WorldBossEnabled) {
     if (worldBoss) {
       const pct = worldBoss.hp_max > 0 ? Math.max(0, Math.floor((worldBoss.hp_left / worldBoss.hp_max) * 100)) : 0;
-      segments.push(`World Boss ${worldBoss.boss_name} ${pct}% HP`);
+      segments.push(`World Boss engaged · ${worldBoss.boss_name} at ${pct}% integrity`);
     } else {
       const wbNext = Math.max(0, (metaGetInt(db, MK_WORLD_BOSS_NEXT) ?? 0) - now);
-      segments.push(wbNext > 0 ? `World Boss in ${durationIt(wbNext)}` : 'World Boss scouting');
+      segments.push(
+        wbNext > 0 ? `World Boss emergence in ${durationIt(wbNext)}` : 'World Boss scouting the frontier',
+      );
     }
   }
   if (seasonLabel) {
     segments.push(seasonLabel);
   }
   if (recordName && recordLevel) {
-    segments.push(`Realm peak · ${recordName} L${recordLevel}`);
+    segments.push(`Realm apex holder · ${recordName} L${recordLevel}`);
   } else {
-    segments.push(`Realm peak · none yet`);
+    segments.push(`Realm apex holder · unclaimed`);
   }
 
   const display = `◆ ${segments.join(' · ')}`;

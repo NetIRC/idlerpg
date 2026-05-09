@@ -84,6 +84,7 @@ try {
     }
     $seasonPreview = [];
     $seasonMeta = null;
+    $seasonStandings = [];
     try {
         $seasonNow = time();
         $tierXpRaw = getenv('IRPG_V3_SEASON_TIER_XP');
@@ -133,8 +134,54 @@ try {
                 }
             }
         }
+        $sstAll = $pdo->query(
+            'SELECT id, label, starts_at, ends_at
+             FROM seasons
+             ORDER BY id DESC'
+        );
+        $allSeasons = $sstAll ? $sstAll->fetchAll(PDO::FETCH_ASSOC) : [];
+        if (is_array($allSeasons)) {
+            $topStmt = $pdo->prepare(
+                'SELECT p.character_name, p.class, p.level, p.online, psp.xp, psp.updated_at
+                 FROM player_season_progress psp
+                 JOIN players p ON p.id = psp.player_id
+                 WHERE psp.season_id = ?
+                 ORDER BY psp.xp DESC, p.level DESC, p.next_seconds ASC, p.character_name ASC
+                 LIMIT 3'
+            );
+            foreach ($allSeasons as $sr) {
+                $sid = (int) ($sr['id'] ?? 0);
+                if ($sid <= 0) {
+                    continue;
+                }
+                $topStmt->execute([$sid]);
+                $tops = $topStmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+                $leaders = [];
+                foreach ($tops as $t) {
+                    $xp = max(0, (int) ($t['xp'] ?? 0));
+                    $leaders[] = [
+                        'name' => (string) ($t['character_name'] ?? ''),
+                        'class' => (string) ($t['class'] ?? ''),
+                        'level' => (int) ($t['level'] ?? 0),
+                        'online' => ((int) ($t['online'] ?? 0)) === 1,
+                        'xp' => $xp,
+                        'tier' => (int) floor($xp / $tierXp),
+                        'updatedAt' => (int) ($t['updated_at'] ?? 0),
+                    ];
+                }
+                $seasonStandings[] = [
+                    'id' => $sid,
+                    'label' => (string) ($sr['label'] ?? ''),
+                    'startsAt' => (int) ($sr['starts_at'] ?? 0),
+                    'endsAt' => (int) ($sr['ends_at'] ?? 0),
+                    'isActive' => (int) ($sr['ends_at'] ?? 0) >= $seasonNow,
+                    'leaders' => $leaders,
+                ];
+            }
+        }
     } catch (Throwable) {
         $seasonPreview = [];
+        $seasonStandings = [];
     }
     // UTC ISO-8601: snapshot time for the web UI (timers reflect DB at this moment).
     echo json_encode(
@@ -150,6 +197,7 @@ try {
             'worldBoss' => $pulse['worldBoss'] ?? null,
             'guildsPreview' => $guildPreview,
             'seasonPreview' => $seasonPreview,
+            'seasonStandings' => $seasonStandings,
         ],
         JSON_THROW_ON_ERROR,
     );

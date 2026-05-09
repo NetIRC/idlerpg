@@ -172,6 +172,28 @@ Season numbering is anchored by `IRPG_V3_SEASON_EPOCH_SEC` (Unix seconds) plus `
 
 The site sidebar **Rules** panel is a short summary; this section matches the bot behaviour in code.
 
+### Gameplay mechanics reference (code-accurate)
+
+This section is the fast operator reference for balancing and live tuning. Values below reflect defaults in `src/game/*` + `src/config.ts`.
+
+| System | Core logic | Default tuning |
+|--------|------------|----------------|
+| **Hand of God** | Randomly selects one online hero in channel and applies a timer swing. | Trigger chance per tick: `IRPG_HOG_CHANCE` (`0.0008`). During Lucky Hour: `x3` chance. Outcome split: `80%` gain / `20%` loss. Delta size: random `5%..75%` of current `next_seconds`. |
+| **Omen** (`!omen`) | Personal cooldown action with flavor/boon/curse/rare branches. | Cooldown: `8h`. Buckets: `55%` neutral flavor, `23%` boon (`next_seconds * 0.998`), `15%` curse (`next_seconds * 1.004`), `7%` rare chronicle inscription. Relic `omen_eye` adds luck via `IRPG_V3_RELIC_OMEN_LUCK_BONUS_PCT`. |
+| **Duel** (`!duel`) | PvP roll with level-gap constraints, pair cooldown, optional crit branch. | Initiator cooldown: `5h`. Pair cooldown: `20h`. Max gap: `+-11` levels. Crit chance: `10%`. Base multipliers: winner `0.992`, loser `1.006`; crit: winner `0.985`, loser `1.014`. |
+| **Gauntlet** (`!gauntlet`) | PvE challenge against shadow power with epic branch and long cooldown. | Cooldown: `16h`. Epic chance: `1/8` (`12.5%`). Win path: `0.99` (epic `0.982`). Loss path: `1.005` (epic `1.012`). Epic fallback win rescue chance: `35%`. |
+
+**V3 baseline defaults (when enabled):**
+
+| Subsystem | Defaults |
+|-----------|----------|
+| **Daily trial** | reward `180s`, penalty `90s` |
+| **Idle streak** | step `1800s` (`30m`), reward `15s` per step |
+| **Bounty board** | target `5400s` (`90m`), reward `180s` |
+| **Season pass** | baseline gain `6 XP/min` while idling online in channel |
+
+**Implementation note:** if README text and runtime differ, runtime is authoritative. Verify in `src/game/chronicle-omen.ts`, `src/game/duel.ts`, `src/game/gauntlet.ts`, `src/game/engine.ts`, and `src/game/realm.ts`.
+
 ---
 
 ### Channel commands (`!…`, no idle penalty if matched)

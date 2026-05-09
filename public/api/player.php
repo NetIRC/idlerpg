@@ -58,6 +58,21 @@ try {
     $activeRelic = null;
     $season = null;
     $seasonHistory = [];
+    $systems = [
+        'features' => [
+            'v3Mode' => irpg_env_bool('IRPG_V3_MODE_ENABLED', true),
+            'dailyTrialEnabled' => irpg_env_bool('IRPG_V3_DAILY_TRIAL_ENABLED', true),
+            'streakEnabled' => irpg_env_bool('IRPG_V3_STREAK_ENABLED', false),
+            'bountyEnabled' => irpg_env_bool('IRPG_V3_BOUNTY_ENABLED', true),
+            'seasonEnabled' => irpg_env_bool('IRPG_V3_SEASON_ENABLED', true),
+            'worldBossEnabled' => irpg_env_bool('IRPG_V3_WORLD_BOSS_ENABLED', true),
+            'guildEnabled' => irpg_env_bool('IRPG_V3_GUILD_ENABLED', true),
+            'relicEnabled' => irpg_env_bool('IRPG_V3_RELIC_ENABLED', true),
+            'prestigeEnabled' => irpg_env_bool('IRPG_V3_PRESTIGE_ENABLED', true),
+        ],
+        'cooldowns' => [],
+        'bounty' => null,
+    ];
     try {
         $mstmt = $pdo->prepare('SELECT medal_key FROM player_medals WHERE player_id = ? ORDER BY ts ASC');
         $mstmt->execute([$pid]);
@@ -178,6 +193,41 @@ try {
     } catch (Throwable $ignore) {
         $seasonHistory = [];
     }
+    $now = time();
+    $omenCd = 8 * 3600;
+    $duelCd = 5 * 3600;
+    $gauntletCd = 16 * 3600;
+    $omenLast = irpg_meta_int($pdo, 'omen_cd_' . $pid) ?? 0;
+    $duelLast = irpg_meta_int($pdo, 'duel_cd_' . $pid) ?? 0;
+    $gauntletLast = irpg_meta_int($pdo, 'gauntlet_cd_' . $pid) ?? 0;
+    $systems['cooldowns'] = [
+        'omenLeftSec' => max(0, $omenCd - max(0, $now - $omenLast)),
+        'duelLeftSec' => max(0, $duelCd - max(0, $now - $duelLast)),
+        'gauntletLeftSec' => max(0, $gauntletCd - max(0, $now - $gauntletLast)),
+    ];
+    if ($systems['features']['bountyEnabled']) {
+        $targetSec = max(1, (int) getenv('IRPG_V3_BOUNTY_TARGET_SEC') ?: 5400);
+        $rewardSec = max(1, (int) getenv('IRPG_V3_BOUNTY_REWARD_SEC') ?: 180);
+        $quietSec = max(0, (int) getenv('IRPG_V3_BOUNTY_QUIET_SEC') ?: 0);
+        $dayNow = (int) floor($now / 86400);
+        $daySaved = irpg_meta_int($pdo, 'bounty_day_' . $pid);
+        $progressSaved = max(0, irpg_meta_int($pdo, 'bounty_idle_sec_' . $pid) ?? 0);
+        $claimedSaved = max(0, irpg_meta_int($pdo, 'bounty_claimed_' . $pid) ?? 0);
+        $lastActivity = max(0, irpg_meta_int($pdo, 'last_chan_activity_' . $pid) ?? 0);
+        $progress = $daySaved === null || $daySaved !== $dayNow ? 0 : min($targetSec, $progressSaved);
+        $claimedToday = $daySaved === null || $daySaved !== $dayNow ? false : $claimedSaved > 0;
+        $quietLeftSec = $quietSec > 0 ? max(0, ($lastActivity + $quietSec) - $now) : 0;
+        $ready = !$claimedToday && $progress >= $targetSec && $quietLeftSec <= 0;
+        $state = $claimedToday ? 'claimed_today' : ($ready ? 'ready' : 'in_progress');
+        $systems['bounty'] = [
+            'targetSec' => $targetSec,
+            'rewardSec' => $rewardSec,
+            'progressSec' => $progress,
+            'claimedToday' => $claimedToday,
+            'quietLeftSec' => $quietLeftSec,
+            'state' => $state,
+        ];
+    }
     echo json_encode([
         'id' => $pid,
         'name' => $r['character_name'],
@@ -200,6 +250,7 @@ try {
         'activeRelic' => $activeRelic,
         'season' => $season,
         'seasonHistory' => $seasonHistory,
+        'systems' => $systems,
         'medals' => array_map(static function ($key) {
             return [
                 'key' => (string) $key,

@@ -442,24 +442,49 @@ $jsonLdScript = json_encode($jsonLd, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNI
         <div class="section-head section-head-row treasures-head">
           <div>
             <h2 class="h2"><span class="h2-mark h2-mark-omen" aria-hidden="true"></span> Season standings</h2>
-            <p id="season-preview-meta" class="lb-meta mono treasures-sub">Top heroes by current season XP and tier progress.</p>
+            <p id="season-preview-meta" class="lb-meta mono treasures-sub">Current season shows top 3 by default (expandable). History opens separately with its own expand.</p>
           </div>
         </div>
         <div class="panel treasures-panel">
           <div class="finds-strip">
             <button
               type="button"
-              id="season-preview-toggle"
+              id="season-current-expand"
               class="finds-strip-toggle hidden"
               aria-expanded="false"
-              aria-controls="season-preview-wrap"
+              aria-controls="season-current-preview"
             >
               <span class="finds-chevron" aria-hidden="true"></span>
-              <span class="finds-strip-label">Season ladder <span class="finds-strip-scope">(top 3 / expand all)</span></span>
-              <span class="finds-count mono" id="season-preview-count">0</span>
+              <span class="finds-strip-label">Expand current <span class="finds-strip-scope">(top 3 / all)</span></span>
             </button>
-            <div id="season-preview-wrap" class="finds-list-wrap">
-              <ul id="season-preview" class="rules-list"><li class="muted">Loading season ladder…</li></ul>
+            <button
+              type="button"
+              id="season-history-toggle"
+              class="finds-strip-toggle hidden"
+              aria-expanded="false"
+              aria-controls="season-history-wrap"
+            >
+              <span class="finds-chevron" aria-hidden="true"></span>
+              <span class="finds-strip-label">History <span class="finds-strip-scope">(open/close)</span></span>
+              <span class="finds-count mono" id="season-history-count">0</span>
+            </button>
+            <button
+              type="button"
+              id="season-history-expand"
+              class="finds-strip-toggle hidden"
+              aria-expanded="false"
+              aria-controls="season-history-preview"
+            >
+              <span class="finds-chevron" aria-hidden="true"></span>
+              <span class="finds-strip-label">Expand history <span class="finds-strip-scope">(latest 3 / all)</span></span>
+            </button>
+            <div id="season-current-wrap" class="finds-list-wrap">
+              <p class="mono muted-strong">Current season</p>
+              <ul id="season-current-preview" class="rules-list"><li class="muted">Loading current season…</li></ul>
+            </div>
+            <div id="season-history-wrap" class="finds-list-wrap" hidden>
+              <p class="mono muted-strong">Season history</p>
+              <ul id="season-history-preview" class="rules-list"><li class="muted">History closed.</li></ul>
             </div>
           </div>
         </div>

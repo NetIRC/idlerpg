@@ -403,17 +403,21 @@ function irpg_realm_pulse(PDO $pdo): array
     $worldBoss = null;
 
     $segments = [];
-    $segments[] = $onlineHeroes . ' hero' . ($onlineHeroes !== 1 ? 'es' : '') . ' with open session';
-    $segments[] = $qActive && $questShort !== null ? ('Quest live · ' . $questShort) : 'Quest idle — awaiting next start roll';
+    $segments[] = $onlineHeroes . ' hero' . ($onlineHeroes !== 1 ? 'es' : '') . ' active in the realm';
+    $segments[] = $qActive && $questShort !== null
+        ? ('Quest campaign active · ' . $questShort)
+        : 'Quest board standby · awaiting the next campaign window';
     if ($luckyEnabled) {
         if ($luckyLeft > 0) {
-            $segments[] = 'Lucky hour · ' . irpg_duration_it((float) $luckyLeft) . ' left';
+            $segments[] = 'Lucky hour surge · ' . irpg_duration_it((float) $luckyLeft) . ' remaining';
         } else {
-            $segments[] = 'Lucky hour inactive';
+            $segments[] = 'Lucky hour dormant';
         }
     }
     if ($v3Mode && $trialEnabled && $trialNext > 0) {
-        $segments[] = $trialLeft > 0 ? ('Daily trial in ' . irpg_duration_it((float) $trialLeft)) : 'Daily trial ready';
+        $segments[] = $trialLeft > 0
+            ? ('Daily trial unlock in ' . irpg_duration_it((float) $trialLeft))
+            : 'Daily trial ready for dispatch';
     }
     if ($v3Mode && $worldBossEnabled) try {
         $wb = $pdo->query("SELECT boss_name, hp_left, hp_max FROM world_boss_runs WHERE state = 'active' ORDER BY id DESC LIMIT 1");
@@ -424,13 +428,15 @@ function irpg_realm_pulse(PDO $pdo): array
             $hm = (int) ($wbRow['hp_max'] ?? 0);
             if ($bn !== '' && $hm > 0) {
                 $pct = (int) floor(max(0, min(100, ($hl / $hm) * 100)));
-                $segments[] = 'World Boss ' . $bn . ' ' . $pct . '% HP';
+                $segments[] = 'World Boss engaged · ' . $bn . ' at ' . $pct . '% integrity';
                 $worldBoss = $bn . ' ' . $hl . '/' . $hm;
             }
         } else {
             $wbNext = max(0, (irpg_meta_int($pdo, 'v3_world_boss_next') ?? 0) - $now);
             if ($wbNext > 0) {
-                $segments[] = 'World Boss in ' . irpg_duration_it((float) $wbNext);
+                $segments[] = 'World Boss emergence in ' . irpg_duration_it((float) $wbNext);
+            } else {
+                $segments[] = 'World Boss scouting the frontier';
             }
         }
     } catch (Throwable) {
@@ -443,9 +449,9 @@ function irpg_realm_pulse(PDO $pdo): array
         $segments[] = 'Idle streak rewards active';
     }
     if ($recName !== null && $recLv !== null && $recLv > 0) {
-        $segments[] = 'Realm peak · ' . $recName . ' L' . $recLv;
+        $segments[] = 'Realm apex holder · ' . $recName . ' L' . $recLv;
     } else {
-        $segments[] = 'Realm peak · none yet';
+        $segments[] = 'Realm apex holder · unclaimed';
     }
     $display = '◆ ' . implode(' · ', $segments);
 
