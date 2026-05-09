@@ -1459,7 +1459,16 @@ body.full-page-sync--locked {
   width: 100%;
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 8px;
-  background: #111;
+  background: #070611;
+  color-scheme: dark;
+}
+
+.guide-modal__loading {
+  inset: 3.45rem 0.9rem 0.9rem 0.9rem;
+  z-index: 7;
+  border-radius: 8px;
+  background: #070611;
+  backdrop-filter: none;
 }
 
 

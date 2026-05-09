@@ -540,6 +540,12 @@ $jsonLdScript = json_encode($jsonLd, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNI
           <button id="guide-modal-close" class="guide-modal__close" type="button" aria-label="Close guide">×</button>
         </div>
         <iframe id="guide-modal-frame" class="guide-modal__frame" loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe>
+        <div id="guide-modal-loading" class="detail-loading-overlay guide-modal__loading hidden" aria-hidden="true">
+          <div class="detail-loading-inner">
+            <div class="detail-spinner" role="status" aria-label="Loading guide"></div>
+            <p class="detail-loading-text mono">Loading guide…</p>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -552,10 +558,17 @@ $jsonLdScript = json_encode($jsonLd, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNI
       const frame = document.getElementById('guide-modal-frame');
       const title = document.getElementById('guide-modal-title');
       const closeBtn = document.getElementById('guide-modal-close');
-      if (!modal || !frame || !title || !closeBtn) return;
+      const loading = document.getElementById('guide-modal-loading');
+      if (!modal || !frame || !title || !closeBtn || !loading) return;
+
+      const setGuideLoading = (busy) => {
+        loading.classList.toggle('hidden', !busy);
+        loading.setAttribute('aria-hidden', busy ? 'false' : 'true');
+      };
 
       const openGuide = (href, text) => {
         title.textContent = text || 'Guide';
+        setGuideLoading(true);
         frame.setAttribute('src', href);
         modal.classList.remove('hidden');
         document.body.style.overflow = 'hidden';
@@ -563,9 +576,17 @@ $jsonLdScript = json_encode($jsonLd, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNI
 
       const closeGuide = () => {
         modal.classList.add('hidden');
+        setGuideLoading(false);
         frame.removeAttribute('src');
         document.body.style.overflow = '';
       };
+
+      frame.addEventListener('load', () => {
+        // Delay hide slightly to avoid Safari/iOS first-paint white flash in iframe.
+        requestAnimationFrame(() => {
+          setTimeout(() => setGuideLoading(false), 60);
+        });
+      });
 
       document.querySelectorAll('a.guide-link').forEach((link) => {
         link.addEventListener('click', (ev) => {
