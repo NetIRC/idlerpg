@@ -621,12 +621,12 @@
   const CHRONICLE_KIND = {
     quest_start: 'Quest',
     quest_end: 'Quest end',
-    quest_win: 'Quest+',
-    quest_lose: 'Quest−',
-    lucky_hour: 'Lucky hr',
+    quest_win: 'Quest win',
+    quest_lose: 'Quest loss',
+    lucky_hour: 'Lucky hour',
     realm_record: 'Record',
-    hog_win: 'HoG+',
-    hog_lose: 'HoG−',
+    hog_win: 'HoG win',
+    hog_lose: 'HoG loss',
     register: 'Join',
     login: 'Login',
     logout: 'Logout',
@@ -636,21 +636,21 @@
     admin_shutdown: 'Shutdown',
     lucky_hour_admin: 'Lucky',
     omen_rare: 'Rare omen',
-    omen_boon: 'Omen+',
-    omen_curse: 'Omen−',
+    omen_boon: 'Omen boon',
+    omen_curse: 'Omen curse',
     duel: 'Duel',
-    duel_win: 'Duel+',
-    duel_lose: 'Duel−',
+    duel_win: 'Duel win',
+    duel_lose: 'Duel loss',
     medal: 'Medal',
-    gauntlet_win: 'Gauntlet',
-    gauntlet_lose: 'Gauntlet',
-    daily_trial_win: 'Daily trial',
-    daily_trial_lose: 'Daily trial',
+    gauntlet_win: 'Gauntlet win',
+    gauntlet_lose: 'Gauntlet loss',
+    daily_trial_win: 'Daily trial win',
+    daily_trial_lose: 'Daily trial loss',
     bounty_claim: 'Bounty',
-    world_boss_start: 'World boss',
-    world_boss_slay: 'World boss',
-    world_boss_fail: 'World boss',
-    world_boss_reward: 'Boss+',
+    world_boss_start: 'World boss start',
+    world_boss_slay: 'World boss slain',
+    world_boss_fail: 'World boss fail',
+    world_boss_reward: 'World boss reward',
     guild_create: 'Guild',
     guild_join: 'Guild',
     guild_leave: 'Guild',
@@ -1135,6 +1135,14 @@
       .replace(/"/g, '&quot;');
   }
 
+  function escapeRegex(s) {
+    return String(s || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  function normalizeName(s) {
+    return String(s || '').trim().toLowerCase();
+  }
+
   /** DB default / classic idlerpg-style single-letter alignments */
   function formatAlignment(raw) {
     const a = String(raw ?? '').trim().toLowerCase();
@@ -1192,7 +1200,98 @@
     return effect;
   }
 
-  function extractTrendPoints(recentFinds) {
+  function parseHeroSignedDurationEffectSec(detail, heroName) {
+    const hero = String(heroName || '').trim();
+    if (!hero) return parseSignedDurationEffectSec(detail);
+    const src = normalizeLegacyDurationText(String(detail || ''));
+    const re = new RegExp(
+      `(^|[^\\w])${escapeRegex(hero)}([^\\w]|$)\\s*([+-])\\s*(?:(\\d+)d)?\\s*(?:(\\d+)h)?\\s*(?:(\\d+)m)?\\s*(?:(\\d+)s)?`,
+      'gi',
+    );
+    let m;
+    let effect = 0;
+    while ((m = re.exec(src)) !== null) {
+      const d = Number(m[4] || 0);
+      const h = Number(m[5] || 0);
+      const mm = Number(m[6] || 0);
+      const s = Number(m[7] || 0);
+      const sec = d * 86400 + h * 3600 + mm * 60 + s;
+      if (sec <= 0) continue;
+      effect += m[3] === '-' ? sec : -sec;
+    }
+    return effect;
+  }
+
+  function parseDuelMeta(event, heroName) {
+    const hero = normalizeName(heroName);
+    if (!hero) return null;
+    const kind = String((event && event.kind) || '').toLowerCase();
+    const src = normalizeLegacyDurationText(String((event && event.detail) || '')).trim();
+    if (!src) return null;
+    const defeated = src.match(/^(.+?)\s+defeated\s+(.+)$/i);
+    if (defeated) {
+      const a = String(defeated[1] || '').trim();
+      const b = String(defeated[2] || '').trim();
+      const aNorm = normalizeName(a);
+      const bNorm = normalizeName(b);
+      if (aNorm === hero) return { opponent: b, result: 'win' };
+      if (bNorm === hero) return { opponent: a, result: 'loss' };
+      return null;
+    }
+    const timed = src.match(
+      /^(.+?)\s+[+-]\s*(?:(?:\d+)d\s*)?(?:(?:\d+)h\s*)?(?:(?:\d+)m\s*)?(?:(?:\d+)s\s*)?\s+vs\s+(.+)$/i,
+    );
+    if (!timed) return null;
+    const actor = String(timed[1] || '').trim();
+    const opponent = String(timed[2] || '').trim();
+    const actorNorm = normalizeName(actor);
+    const opponentNorm = normalizeName(opponent);
+    if (actorNorm === hero) {
+      if (kind === 'duel_win') return { opponent, result: 'win' };
+      if (kind === 'duel_lose') return { opponent, result: 'loss' };
+      return { opponent, result: null };
+    }
+    if (opponentNorm === hero) {
+      if (kind === 'duel_win') return { opponent: actor, result: 'loss' };
+      if (kind === 'duel_lose') return { opponent: actor, result: 'win' };
+      return { opponent: actor, result: null };
+    }
+    return null;
+  }
+
+  function summarizeDuelToday(recentFinds, heroName) {
+    if (!Array.isArray(recentFinds) || !recentFinds.length) return { wins: 0, losses: 0, rivals: [] };
+    const dayStartSec = Math.floor(new Date().setHours(0, 0, 0, 0) / 1000);
+    let wins = 0;
+    let losses = 0;
+    const rivals = new Set();
+    for (const e of recentFinds) {
+      const ts = Number((e && e.ts) || 0);
+      if (!Number.isFinite(ts) || ts < dayStartSec) continue;
+      const duel = parseDuelMeta(e, heroName);
+      if (!duel || !duel.opponent) continue;
+      if (duel.result === 'win') wins += 1;
+      if (duel.result === 'loss') losses += 1;
+      rivals.add(duel.opponent);
+    }
+    return { wins, losses, rivals: Array.from(rivals).slice(0, 3) };
+  }
+
+  function isPrimaryHeroDuelEntry(event, heroName) {
+    const hero = normalizeName(heroName);
+    if (!hero) return true;
+    const kind = String((event && event.kind) || '').toLowerCase();
+    if (kind !== 'duel_win' && kind !== 'duel_lose') return true;
+    const src = normalizeLegacyDurationText(String((event && event.detail) || '')).trim();
+    const timed = src.match(
+      /^(.+?)\s+[+-]\s*(?:(?:\d+)d\s*)?(?:(?:\d+)h\s*)?(?:(?:\d+)m\s*)?(?:(?:\d+)s\s*)?\s+vs\s+(.+)$/i,
+    );
+    if (!timed) return true;
+    const actor = String(timed[1] || '').trim();
+    return normalizeName(actor) === hero;
+  }
+
+  function extractTrendPoints(recentFinds, heroName) {
     if (!Array.isArray(recentFinds) || !recentFinds.length) return [];
     const dayStartMs = new Date().setHours(0, 0, 0, 0);
     const dayStartSec = Math.floor(dayStartMs / 1000);
@@ -1200,12 +1299,19 @@
     for (const e of recentFinds) {
       const ts = Number((e && e.ts) || 0);
       if (!Number.isFinite(ts) || ts < dayStartSec) continue;
-      const effectSec = parseSignedDurationEffectSec(e && e.detail);
+      const apiEffect = Number((e && e.heroEffectSec) || 0);
+      const effectSec =
+        Number.isFinite(apiEffect) && apiEffect !== 0
+          ? apiEffect
+          : parseHeroSignedDurationEffectSec(e && e.detail, heroName);
       if (effectSec === 0) continue;
+      const duel = parseDuelMeta(e, heroName);
       out.push({
         effectSec,
         kind: chronicleKindLabel((e && e.kind) || ''),
         ts,
+        duelOpponent: duel && duel.opponent ? duel.opponent : '',
+        duelResult: duel && duel.result ? duel.result : '',
       });
     }
     return out.reverse();
@@ -1231,7 +1337,7 @@
   }
 
   function formatHeroTrend(d) {
-    const points = extractTrendPoints(d && d.recentFinds);
+    const points = extractTrendPoints(d && d.recentFinds, d && d.name);
     const allToday = Array.isArray(d && d.recentFinds)
       ? d.recentFinds.filter((e) => {
           const ts = Number((e && e.ts) || 0);
@@ -1243,6 +1349,7 @@
     const streakSec = Math.max(0, Number((d && d.idleStreakSec) || 0));
     const streakHuman = formatDurationSec(streakSec);
     const eventMix = summarizeTodayKinds(d && d.recentFinds);
+    const duelToday = summarizeDuelToday(d && d.recentFinds, d && d.name);
     const streakRewards = Math.max(0, Number((d && d.streakRewardCount) || 0));
     const duelWins = Math.max(0, Number((d && d.duelWins) || 0));
     const gauntletWins = Math.max(0, Number((d && d.gauntletWins) || 0));
@@ -1258,6 +1365,12 @@
       `Season tier: ${seasonTier}`,
       `Season XP: ${seasonXp}`,
     ];
+    if (duelToday.wins + duelToday.losses > 0) {
+      trendKpis.push(`Duel today W/L: ${duelToday.wins}/${duelToday.losses}`);
+    }
+    if (duelToday.rivals.length > 0) {
+      trendKpis.push(`Rivals: ${duelToday.rivals.join(', ')}`);
+    }
     if (!points.length) {
       return `<div>
         <p class="muted" style="margin:0.6rem 0 0;font-size:0.8rem">Timer trend for today unavailable yet — no signed gain/loss events today.</p>
@@ -1272,7 +1385,10 @@
         const gain = p.effectSec > 0;
         const h = Math.max(10, Math.round((Math.abs(p.effectSec) / maxAbs) * 100));
         const sign = gain ? '-' : '+';
-        const tip = `${sign}${formatDurationSec(Math.abs(p.effectSec))} · ${p.kind}${p.ts > 0 ? ` · ${formatAgoSec(p.ts)} ago` : ''}`;
+        const duelTip = p.duelOpponent
+          ? ` · vs ${p.duelOpponent}${p.duelResult ? ` · ${p.duelResult.toUpperCase()}` : ''}`
+          : '';
+        const tip = `${sign}${formatDurationSec(Math.abs(p.effectSec))} · ${p.kind}${duelTip}${p.ts > 0 ? ` · ${formatAgoSec(p.ts)} ago` : ''}`;
         return `<span class="trend-bar ${gain ? 'trend-bar--gain' : 'trend-bar--loss'}" style="height:${h}%" title="${escapeHtml(tip)}"></span>`;
       })
       .join('');
@@ -1362,14 +1478,29 @@
       </div>
     </div>`;
     }
-    const view = raw.slice(0, 15);
+    const filteredRaw = raw.filter((e) => isPrimaryHeroDuelEntry(e, d && d.name));
+    if (!filteredRaw.length) {
+      return `<div class="finds-strip">
+      <button type="button" class="finds-strip-toggle${heroLedgerExpanded ? ' is-open' : ''}" aria-expanded="${heroLedgerExpanded ? 'true' : 'false'}" aria-controls="finds-ledger-panel">
+        <span class="finds-chevron" aria-hidden="true"></span>
+        <span class="finds-strip-label">Recent ledger <span class="finds-strip-scope">(this hero, last 0)</span></span>
+        <span class="finds-count mono">0</span>
+      </button>
+      <div class="finds-list-wrap" id="finds-ledger-panel"${heroLedgerExpanded ? '' : ' hidden'}>
+        ${highlights}
+        <p class="muted" style="margin:0.45rem 0 0;font-size:0.8rem">No hero-scoped ledger lines yet for today.</p>
+      </div>
+    </div>`;
+    }
+    const view = filteredRaw.slice(0, 15);
     const n = view.length;
     const items = view
       .map((e) => {
         const kindLabel = chronicleKindLabel(e.kind || '');
         const safeKind = realmEventKindClass(e.kind);
         const ago = formatAgoSec(e.ts);
-        const det = escapeHtml(normalizeLegacyDurationText((e.detail || '').trim() || '—'));
+        const detailText = normalizeLegacyDurationText((e.detail || '').trim() || '—');
+        const det = escapeHtml(detailText);
         return `<li class="finds-item finds-item--${safeKind}"><span class="finds-kind">${escapeHtml(kindLabel)}</span><span class="finds-detail">${det}</span><span class="finds-ago">${ago} ago</span></li>`;
       })
       .join('');

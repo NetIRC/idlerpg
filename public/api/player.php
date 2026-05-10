@@ -9,6 +9,34 @@ global $IRPG;
 
 irpg_json_headers();
 
+/**
+ * Extract timer delta for the selected hero from a realm event detail line.
+ * Returns signed "progress seconds": positive means timer reduced, negative means timer increased.
+ */
+function irpg_hero_effect_sec_from_detail(string $detail, string $heroName, bool $caseSensitive): int
+{
+    $src = trim($detail);
+    $hero = trim($heroName);
+    if ($src === '' || $hero === '') {
+        return 0;
+    }
+    $flags = $caseSensitive ? 'u' : 'iu';
+    $re = '/(^|[^[:alnum:]_])' . preg_quote($hero, '/') . '([^[:alnum:]_]|$)\s*([+-])\s*'
+        . '(?:(\d+)d)?\s*(?:(\d+)h)?\s*(?:(\d+)m)?\s*(?:(\d+)s)?/' . $flags;
+    if (preg_match($re, $src, $m) !== 1) {
+        return 0;
+    }
+    $days = isset($m[4]) ? (int) $m[4] : 0;
+    $hours = isset($m[5]) ? (int) $m[5] : 0;
+    $mins = isset($m[6]) ? (int) $m[6] : 0;
+    $secs = isset($m[7]) ? (int) $m[7] : 0;
+    $total = ($days * 86400) + ($hours * 3600) + ($mins * 60) + $secs;
+    if ($total <= 0) {
+        return 0;
+    }
+    return ($m[3] === '-') ? $total : -$total;
+}
+
 $name = isset($_GET['name']) ? (string) $_GET['name'] : '';
 $name = trim($name);
 if ($name === '') {
@@ -104,6 +132,7 @@ try {
                     'ts' => (int) $row['ts'],
                     'kind' => (string) $row['kind'],
                     'detail' => $detail,
+                    'heroEffectSec' => irpg_hero_effect_sec_from_detail($detail, $charName, $case),
                 ];
             }
         }

@@ -2847,6 +2847,9 @@ body.full-page-sync--locked {
   border-radius: 0.8rem;
   border: 1px solid rgba(255, 255, 255, 0.09);
   background: rgba(0, 0, 0, 0.28);
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
 }
 
 .trend-head {
@@ -2855,6 +2858,8 @@ body.full-page-sync--locked {
   justify-content: space-between;
   gap: 0.6rem;
   margin-bottom: 0.5rem;
+  min-width: 0;
+  flex-wrap: wrap;
 }
 
 .trend-title {
@@ -2867,6 +2872,9 @@ body.full-page-sync--locked {
 .trend-net {
   font-size: 0.68rem;
   letter-spacing: 0.06em;
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
 
 .trend-net--gain {
@@ -2891,13 +2899,24 @@ body.full-page-sync--locked {
   border-radius: 0.55rem;
   border: 1px solid rgba(255, 255, 255, 0.06);
   background: rgba(6, 4, 12, 0.35);
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
 }
 
 .trend-bar {
-  flex: 1;
-  min-width: 3px;
+  flex: 1 1 0;
+  min-width: 0;
   border-radius: 3px 3px 2px 2px;
   opacity: 0.95;
+}
+
+@media (max-width: 640px) {
+  .trend-bars {
+    gap: 0.14rem;
+    min-height: 58px;
+    height: 58px;
+  }
 }
 
 .trend-bar--gain {
