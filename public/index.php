@@ -168,7 +168,7 @@ $jsonLdScript = json_encode($jsonLd, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNI
     <div class="realm-pulse-bar inner" aria-label="Realm pulse">
       <p class="realm-pulse mono" id="realm-pulse">Syncing realm pulse…</p>
     </div>
-    <div class="realm-pulse-bar inner" aria-label="Season and world boss">
+    <div class="realm-pulse-bar inner" id="realm-status-secondary" aria-label="Season and world boss">
       <p class="realm-pulse mono"><span id="season-banner">Season status unavailable</span> · <span id="world-boss-banner">World Boss scouting</span></p>
     </div>
 

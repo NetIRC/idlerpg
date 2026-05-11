@@ -120,10 +120,21 @@ and return the path that contains `site.config.php`.
 
 ```bash
 chmod +x scripts/idlerpg.sh
+chmod +x scripts/idlerpg-watchdog.sh
 ./scripts/idlerpg.sh start
 ./scripts/idlerpg.sh stop
 ./scripts/idlerpg.sh restart
 ./scripts/idlerpg.sh start -f
+./scripts/idlerpg.sh watch
+./scripts/idlerpg.sh start --watch
+./scripts/idlerpg-watchdog.sh
+```
+
+### 5) Windows helper script (optional)
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+.\scripts\idlerpg-watchdog.ps1
 ```
 
 ---

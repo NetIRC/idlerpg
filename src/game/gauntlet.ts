@@ -76,7 +76,11 @@ export function runGauntlet(
         `next level in ${durationIt(ns)} · Gauntlet victories: ${gnext}.`,
       tone: 'gain',
     });
-    insertRealmEvent(db, 'gauntlet_win', `${name}${epic ? ' (epic)' : ''}`);
+    insertRealmEvent(
+      db,
+      'gauntlet_win',
+      `${name} -${durationIt(gain)}${epic ? ' (epic)' : ''}`,
+    );
     for (const t of grantMedal(db, p.id, 'gauntlet_shade', name)) {
       announcements.push({ target: 'chan', text: t, tone: 'gain' });
     }
@@ -98,7 +102,7 @@ export function runGauntlet(
         `next level in ${durationIt(ns)}. Cooldown active; try again later.`,
       tone: 'loss',
     });
-    insertRealmEvent(db, 'gauntlet_lose', name);
+    insertRealmEvent(db, 'gauntlet_lose', `${name} +${durationIt(loss)}`);
   }
 
   return { announcements };

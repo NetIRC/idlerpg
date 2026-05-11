@@ -535,6 +535,7 @@ function irpg_admin_update_totp_settings(
     string $secretInput,
     bool $regenerateSecret,
     string $currentPassword,
+    string $activationCode,
     array $settings
 ): array {
     if (!irpg_admin_is_authenticated()) {
@@ -544,6 +545,10 @@ function irpg_admin_update_totp_settings(
         return [false, 'Current password is invalid.'];
     }
 
+    $wasEnabled = !empty($settings['totp_enabled']);
+    if ($enabled && $regenerateSecret) {
+        return [false, 'Disable TOTP before regenerating the secret.'];
+    }
     $secret = strtoupper(trim($secretInput));
     if ($regenerateSecret) {
         $secret = irpg_admin_generate_totp_secret();
@@ -556,6 +561,17 @@ function irpg_admin_update_totp_settings(
     }
     if ($enabled && !irpg_admin_totp_secret_valid($secret)) {
         return [false, 'TOTP secret must be Base32 (A-Z2-7), length 16-128.'];
+    }
+    if ($enabled && !$wasEnabled) {
+        if (!irpg_admin_verify_totp((string) $activationCode, $secret)) {
+            return [false, 'TOTP verification code is invalid.'];
+        }
+    }
+    if (!$enabled && $wasEnabled) {
+        $currentSecret = (string) ($settings['totp_secret_base32'] ?? '');
+        if ($currentSecret === '' || !irpg_admin_verify_totp((string) $activationCode, $currentSecret)) {
+            return [false, 'TOTP verification code is invalid.'];
+        }
     }
 
     $issuerClean = trim($issuer);
@@ -594,6 +610,9 @@ function irpg_admin_update_totp_settings(
     $written = @file_put_contents($configPath, $c3, LOCK_EX);
     if ($written === false) {
         return [false, 'Failed writing TOTP settings to site.config.php.'];
+    }
+    if (function_exists('opcache_invalidate')) {
+        @opcache_invalidate($configPath, true);
     }
 
     if ($enabled) {
@@ -650,6 +669,11 @@ function irpg_admin_rotate_password(string $currentPassword, string $newPassword
     $len = strlen($newPassword);
     if ($len < 6 || $len > 128) {
         return [false, 'New password length must be between 6 and 128 characters.'];
+    }
+    $hasUpper = (bool) preg_match('/[A-Z]/', $newPassword);
+    $hasSpecial = (bool) preg_match('/[^a-zA-Z0-9]/', $newPassword);
+    if (!$hasUpper || !$hasSpecial) {
+        return [false, 'New password must include at least one uppercase letter and one special character.'];
     }
 
     $configPath = (string) ($GLOBALS['irpg_site_config_file'] ?? '');

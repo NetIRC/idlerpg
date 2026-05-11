@@ -110,4 +110,18 @@
       }
     });
   });
+
+  const totpEnabledToggle = document.getElementById('totp_enabled_toggle');
+  const totpRegenerateToggle = document.getElementById('totp_regenerate_toggle');
+  if (totpEnabledToggle && totpRegenerateToggle) {
+    const syncTotpControls = () => {
+      const enabled = Boolean(totpEnabledToggle.checked);
+      totpRegenerateToggle.disabled = enabled;
+      if (enabled) {
+        totpRegenerateToggle.checked = false;
+      }
+    };
+    syncTotpControls();
+    totpEnabledToggle.addEventListener('change', syncTotpControls);
+  }
 })();

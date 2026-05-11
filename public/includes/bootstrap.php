@@ -380,7 +380,6 @@ function irpg_realm_pulse(PDO $pdo): array
     $v3Mode = irpg_env_bool('IRPG_V3_MODE_ENABLED', false);
     $luckyEnabled = irpg_env_bool('IRPG_LUCKY_HOUR_ENABLED', true);
     $trialEnabled = irpg_env_bool('IRPG_V3_DAILY_TRIAL_ENABLED', false);
-    $streakEnabled = irpg_env_bool('IRPG_V3_STREAK_ENABLED', false);
     $seasonEnabled = irpg_env_bool('IRPG_V3_SEASON_ENABLED', true);
     $worldBossEnabled = irpg_env_bool('IRPG_V3_WORLD_BOSS_ENABLED', true);
     $stmt = $pdo->query('SELECT COUNT(*) FROM players WHERE online = 1');
@@ -399,10 +398,21 @@ function irpg_realm_pulse(PDO $pdo): array
     $luckyLeft = max(0, $luckyUntil - $now);
     $trialNext = irpg_meta_int($pdo, 'v3_daily_trial_next') ?? 0;
     $trialLeft = max(0, $trialNext - $now);
+    $wbNextAt = irpg_meta_int($pdo, 'v3_world_boss_next') ?? 0;
     $recLv = irpg_meta_int($pdo, 'realm_record_level');
     $recName = irpg_meta_text($pdo, 'realm_record_name');
     $seasonLabel = irpg_meta_text($pdo, 'v3_season_label');
     $worldBoss = null;
+    $seasonLabel = is_string($seasonLabel) ? trim($seasonLabel) : null;
+    if ($seasonLabel === '') {
+        $seasonLabel = null;
+    }
+
+    // Fallbacks: if PHP env flags are missing but DB clearly carries V3 state, keep web pulse aligned with bot output.
+    $v3Detected = $v3Mode || $trialNext > 0 || $wbNextAt > 0 || $seasonLabel !== null;
+    $trialVisible = ($v3Mode && $trialEnabled) || ($v3Detected && $trialNext > 0);
+    $worldBossVisible = ($v3Mode && $worldBossEnabled) || $v3Detected;
+    $seasonVisible = ($v3Mode && $seasonEnabled && $seasonLabel !== null) || ($seasonLabel !== null);
 
     $segments = [];
     $segments[] = $onlineHeroes . ' hero' . ($onlineHeroes !== 1 ? 'es' : '') . ' active in the realm';
@@ -416,12 +426,12 @@ function irpg_realm_pulse(PDO $pdo): array
             $segments[] = 'Lucky hour dormant';
         }
     }
-    if ($v3Mode && $trialEnabled && $trialNext > 0) {
+    if ($trialVisible && $trialNext > 0) {
         $segments[] = $trialLeft > 0
             ? ('Daily trial unlock in ' . irpg_duration_it((float) $trialLeft))
             : 'Daily trial ready for dispatch';
     }
-    if ($v3Mode && $worldBossEnabled) try {
+    if ($worldBossVisible) try {
         $wb = $pdo->query("SELECT boss_name, hp_left, hp_max FROM world_boss_runs WHERE state = 'active' ORDER BY id DESC LIMIT 1");
         $wbRow = $wb ? $wb->fetch(PDO::FETCH_ASSOC) : false;
         if ($wbRow !== false) {
@@ -434,7 +444,7 @@ function irpg_realm_pulse(PDO $pdo): array
                 $worldBoss = $bn . ' ' . $hl . '/' . $hm;
             }
         } else {
-            $wbNext = max(0, (irpg_meta_int($pdo, 'v3_world_boss_next') ?? 0) - $now);
+            $wbNext = max(0, $wbNextAt - $now);
             if ($wbNext > 0) {
                 $segments[] = 'World Boss emergence in ' . irpg_duration_it((float) $wbNext);
             } else {
@@ -444,11 +454,8 @@ function irpg_realm_pulse(PDO $pdo): array
     } catch (Throwable) {
         // Keep pulse resilient while older shards migrate.
     }
-    if ($v3Mode && $seasonEnabled && $seasonLabel !== null) {
+    if ($seasonVisible) {
         $segments[] = $seasonLabel;
-    }
-    if ($v3Mode && $streakEnabled) {
-        $segments[] = 'Idle streak rewards active';
     }
     if ($recName !== null && $recLv !== null && $recLv > 0) {
         $segments[] = 'Realm apex holder · ' . $recName . ' L' . $recLv;

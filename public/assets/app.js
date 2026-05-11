@@ -821,11 +821,20 @@
 
   function setRealmPulse(pulse) {
     const el = document.getElementById('realm-pulse');
+    const secondary = document.getElementById('realm-status-secondary');
     if (!el) return;
     if (pulse && typeof pulse.display === 'string' && pulse.display.trim()) {
       el.textContent = pulse.display;
+      if (secondary) {
+        secondary.classList.add('hidden');
+        secondary.setAttribute('aria-hidden', 'true');
+      }
     } else {
       el.textContent = 'Realm pulse: sync the leaderboard API for live stats.';
+      if (secondary) {
+        secondary.classList.remove('hidden');
+        secondary.setAttribute('aria-hidden', 'false');
+      }
     }
   }
 
