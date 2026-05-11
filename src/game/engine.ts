@@ -602,7 +602,7 @@ export class GameEngine {
       return (
         'PM: HELP, CMDS, PING, STATS [name], TIME [name], WHOAMI, TOP, RECORDS, QUEST, BOUNTY, SEASON, BOSS, GUILD, RELIC, PRESTIGE, REALM, CHRONICLE, OMEN, DUEL <irc_nick>, GAUNTLET, MEDALS [name], LORE [topic], LOGOUT. ' +
         'Channel (no timer cost): !help !cmds !rules !ping !time !whoami !stats !records !quest !bounty !season !boss !guild !relic !prestige !realm !chronicle !omen !duel !gauntlet !medals !top !lore. ' +
-        'Admin (if authorized): ADMIN HELP — FORCELOGOUT, DELETEUSER, RESETPASS, STARTQUEST, LUCKY, SAY, SHUTDOWN.'
+        'Admin (if authorized): ADMIN HELP — FORCELOGOUT, DELETEUSER, RESETPASS, STARTQUEST, LUCKY, SAY, SHUTDOWN, RESTART.'
       );
     }
     return (
@@ -798,16 +798,23 @@ export class GameEngine {
     ircNick: string,
     parts: string[],
     channelNicks: Set<string>,
-  ): { notices: string[]; announcements: GameAnnouncement[]; requestShutdown?: boolean } {
+    inChannel: boolean,
+  ): { notices: string[]; announcements: GameAnnouncement[]; requestShutdown?: boolean; requestRestart?: boolean } {
     const notices: string[] = [];
     const announcements: GameAnnouncement[] = [];
+    if (this.cfg.adminRequireInChannel && !inChannel) {
+      return {
+        notices: ['Admin: access denied. Join the game channel before using ADMIN in PM.'],
+        announcements: [],
+      };
+    }
     if (!this.canAdmin(ircNick)) {
       return { notices: ['Admin: access denied for this nick.'], announcements: [] };
     }
     const sub = (parts[1] ?? '').toLowerCase();
     if (!sub || sub === 'help') {
       notices.push(
-        'ADMIN: FORCELOGOUT ⟨name⟩ | DELETEUSER ⟨name⟩ | RESETPASS ⟨name⟩ ⟨pass⟩ | STARTQUEST | LUCKY | SAY ⟨text⟩ | SHUTDOWN [note]',
+        'ADMIN: FORCELOGOUT ⟨name⟩ | DELETEUSER ⟨name⟩ | RESETPASS ⟨name⟩ ⟨pass⟩ | STARTQUEST | LUCKY | SAY ⟨text⟩ | SHUTDOWN [note] | RESTART [note]',
       );
       return { notices, announcements };
     }
@@ -890,6 +897,15 @@ export class GameEngine {
         'Shutting down: the bot will QUIT IRC and exit this process. Start it again on the host (or use your process manager).',
       );
       return { notices, announcements, requestShutdown: true };
+    }
+    if (sub === 'restart') {
+      const note = parts.slice(2).join(' ').trim();
+      const summary = note ? `${stripStatusPrefix(ircNick)}: ${note}` : `${stripStatusPrefix(ircNick)}: restart`;
+      insertRealmEvent(this.db, 'admin_restart', summary.slice(0, 500));
+      notices.push(
+        'Restarting: the bot will QUIT IRC and exit this process now. Ensure a supervisor (systemd/pm2/script) is configured for auto-restart.',
+      );
+      return { notices, announcements, requestRestart: true };
     }
     notices.push('Unknown ADMIN subcommand. Send: ADMIN HELP');
     return { notices, announcements };

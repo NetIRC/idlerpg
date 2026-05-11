@@ -8,7 +8,7 @@ PIDFILE="$ROOT/data/bot.pid"
 cd "$ROOT"
 
 usage() {
-  echo "usage: $(basename "$0") {start|stop|restart} [--foreground|-f]" >&2
+  echo "usage: $(basename "$0") {start|stop|restart|watch} [--foreground|-f]" >&2
   exit 1
 }
 
@@ -25,13 +25,41 @@ ensure_deps() {
 
 do_start() {
   local foreground=false
+  local watch=false
   for arg in "$@"; do
     case "$arg" in
       --foreground|-f) foreground=true ;;
+      --watch|-w) watch=true ;;
     esac
   done
 
   ensure_deps
+
+  if [[ "$watch" == true ]]; then
+    mkdir -p "$ROOT/data"
+    if [[ -f "$PIDFILE" ]]; then
+      local oldpid
+      oldpid="$(<"$PIDFILE")"
+      if kill -0 "$oldpid" 2>/dev/null; then
+        echo "error: bot/watchdog already running (pid $oldpid). Stop: $(basename "$0") stop" >&2
+        exit 1
+      fi
+      rm -f "$PIDFILE"
+    fi
+    if [[ "$foreground" == true ]]; then
+      exec "$ROOT/scripts/idlerpg-watchdog.sh"
+    fi
+    nohup "$ROOT/scripts/idlerpg-watchdog.sh" >>"$ROOT/data/bot-watchdog.log" 2>&1 &
+    echo $! >"$PIDFILE"
+    sleep 1
+    if ! kill -0 "$(<"$PIDFILE")" 2>/dev/null; then
+      echo "error: watchdog exited right away — check $ROOT/data/bot-watchdog.log" >&2
+      rm -f "$PIDFILE"
+      exit 1
+    fi
+    echo "idlerpg watchdog started in background (pid $(<"$PIDFILE")), logs: $ROOT/data/bot-watchdog.log"
+    return
+  fi
 
   local bot_runner=()
   if [[ -f "$ROOT/node_modules/tsx/dist/cli.mjs" ]]; then
@@ -113,6 +141,9 @@ shift
 
 case "$cmd" in
   start) do_start "$@" ;;
+  watch)
+    exec "$ROOT/scripts/idlerpg-watchdog.sh"
+    ;;
   stop) stop_bot ;;
   restart)
     stop_bot || true

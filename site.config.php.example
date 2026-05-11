@@ -1,7 +1,7 @@
 <?php
 /**
  * TEMPLATE: copy to site.config.php (gitignored). Keys and types must stay in sync with
- * public/includes/bootstrap.php ($IRPG: db_path, case_sensitive_names, debug).
+ * public/includes/bootstrap.php ($IRPG: db_path, case_sensitive_names, debug, admin_panel).
  *
  * Typical locations:
  * - Next to public/: .../myproject/site.config.php (single tree).
@@ -29,4 +29,26 @@ return [
     // Optional web flag for status line ("AI: active/inactive"). If omitted, bootstrap falls back
     // to IRPG_AI_ENABLED from the environment; if neither is present, web shows inactive.
     'ai_enabled' => false,
+
+    // Optional hardened admin panel (public/admin/index.php).
+    'admin_panel' => [
+        // Keep false until fully configured.
+        'enabled' => false,
+        // Password hash generated with: php -r "echo password_hash('StrongPassHere', PASSWORD_DEFAULT), PHP_EOL;"
+        // Reset example (forgot password): php -r "echo password_hash('NewStrongPass', PASSWORD_DEFAULT), PHP_EOL;"
+        // If you forget the password later, generate a new hash and replace this value.
+        // Example hash format: '$2y$10$.....................................................'
+        'password_hash' => '',
+        // Optional TOTP second factor (Google Authenticator/Authy/1Password).
+        'totp_enabled' => false,
+        // Base32 secret, e.g. generated with: openssl rand -base64 20 (then convert to base32) or any TOTP app seed tool.
+        'totp_secret_base32' => '',
+        'totp_issuer' => 'IdleRPG Admin',
+        // IP allowlist (exact IP or CIDR). Keep narrow in production.
+        'ip_allowlist' => ['127.0.0.1', '::1'],
+        // Force HTTPS for admin requests (recommended in production).
+        'require_https' => true,
+        // Authenticated session TTL in seconds.
+        'session_ttl_sec' => 1800,
+    ],
 ];

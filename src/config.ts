@@ -187,6 +187,8 @@ const schema = z.object({
         )
         .filter(Boolean);
     }),
+  /** Require admin PM commands to come from a nick currently present in the game channel. */
+  adminRequireInChannel: z.boolean().default(true),
 
   /** Optional AI lore integration via Groq (assistive only, never gameplay-critical). */
   aiEnabled: z.boolean().default(false),
@@ -279,6 +281,7 @@ function load() {
     pmFloodWindowMs: decr(process.env.IRPG_PM_FLOOD_WINDOW_MS),
     netsplitGraceSec: decr(process.env.IRPG_NETSPLIT_GRACE_SEC),
     adminIrcNicks: decr(process.env.IRPG_ADMIN_IRC_NICKS) ?? '',
+    adminRequireInChannel: bool(process.env.IRPG_ADMIN_REQUIRE_IN_CHANNEL, true),
     aiEnabled: bool(process.env.IRPG_AI_ENABLED, false),
     aiGrokApiKey:
       decr(process.env.IRPG_AI_GROQ_API_KEY) ??

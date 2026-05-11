@@ -43,6 +43,7 @@ const CHRONICLE_KIND_LABEL: Record<string, string> = {
   admin_forcelogout: 'Admin',
   admin_delete: 'Admin',
   admin_shutdown: 'Shutdown',
+  admin_restart: 'Restart',
   lucky_hour_admin: 'Lucky',
   omen_rare: 'Rare omen',
   omen_boon: 'Omen+',

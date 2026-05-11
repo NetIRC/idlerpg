@@ -17,6 +17,9 @@
   # includes/ is loaded only via require(); block direct HTTP access
   RewriteRule ^includes/ - [F,L]
 
+  # Admin panel should not be indexed anywhere.
+  RewriteRule ^admin/?$ /admin/index.php [L]
+
   # --- Force HTTPS (skip on localhost / loopback for XAMPP dev) ---
   RewriteCond %{HTTP_HOST} !^localhost(:\d+)?$ [NC]
   RewriteCond %{HTTP_HOST} !^127\.0\.0\.1(:\d+)?$ [NC]
@@ -40,6 +43,7 @@
   Header always set X-Frame-Options "SAMEORIGIN"
   Header always set Referrer-Policy "strict-origin-when-cross-origin"
   Header always set Cross-Origin-Opener-Policy "same-origin"
+  Header always set X-Robots-Tag "noindex, nofollow, noarchive" "expr=%{REQUEST_URI} =~ m#^/admin/#"
   # Send HSTS only when the request is HTTPS (direct or forwarded). Drop includeSubDomains if you have HTTP-only subdomains.
   Header always set Strict-Transport-Security "max-age=15552000; includeSubDomains" env=IRPG_HTTPS
 </IfModule>

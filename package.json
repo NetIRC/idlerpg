@@ -7,6 +7,7 @@
   "type": "module",
   "scripts": {
     "start": "tsx src/irc/bot.ts",
+    "start:watchdog": "powershell -ExecutionPolicy Bypass -File ./scripts/idlerpg-watchdog.ps1",
     "dev:bot": "tsx watch src/irc/bot.ts",
     "dev:api": "tsx watch src/api/server.ts",
     "bot": "tsx src/irc/bot.ts",

@@ -4,6 +4,10 @@ declare(strict_types=1);
 /** Public web dashboard shell for leaderboard, hero detail, atlas, and chronicle. */
 $appCssPath = __DIR__ . '/assets/app.css';
 $appCssVer = is_file($appCssPath) ? (string) filemtime($appCssPath) : '0';
+$appJsPath = __DIR__ . '/assets/app.js';
+$appJsVer = is_file($appJsPath) ? (string) filemtime($appJsPath) : '0';
+$pwaJsPath = __DIR__ . '/assets/pwa.js';
+$pwaJsVer = is_file($pwaJsPath) ? (string) filemtime($pwaJsPath) : '0';
 $atlasTopPath = __DIR__ . '/assets/realm-atlas-top.png';
 $atlasBgPath = __DIR__ . '/assets/realm-atlas-bg.png';
 $atlasMapUsesZenith = is_file($atlasTopPath);
@@ -609,7 +613,7 @@ $jsonLdScript = json_encode($jsonLd, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNI
       });
     })();
   </script>
-  <script src="assets/pwa.js" defer></script>
-  <script src="assets/app.js" defer></script>
+  <script src="assets/pwa.js?v=<?= rawurlencode($pwaJsVer) ?>" defer></script>
+  <script src="assets/app.js?v=<?= rawurlencode($appJsVer) ?>" defer></script>
 </body>
 </html>

@@ -55,8 +55,9 @@ if ($configFile === null) {
 
 /** Project root for resolving relative db_path (same folder as the loaded config). */
 $ROOT = dirname($configFile);
+$GLOBALS['irpg_site_config_file'] = $configFile;
 
-/** @var array{db_path: string, case_sensitive_names: bool, debug?: bool, ai_enabled?: bool} $IRPG */
+/** @var array{db_path: string, case_sensitive_names: bool, debug?: bool, ai_enabled?: bool, admin_panel?: array<string, mixed>} $IRPG */
 $IRPG = require $configFile;
 
 $dbPath = $IRPG['db_path'];
@@ -375,9 +376,10 @@ function irpg_env_bool(string $key, bool $default): bool
  */
 function irpg_realm_pulse(PDO $pdo): array
 {
-    $v3Mode = irpg_env_bool('IRPG_V3_MODE_ENABLED', true);
+    // Keep defaults aligned with src/config.ts to avoid web/bot feature drift in pulse text.
+    $v3Mode = irpg_env_bool('IRPG_V3_MODE_ENABLED', false);
     $luckyEnabled = irpg_env_bool('IRPG_LUCKY_HOUR_ENABLED', true);
-    $trialEnabled = irpg_env_bool('IRPG_V3_DAILY_TRIAL_ENABLED', true);
+    $trialEnabled = irpg_env_bool('IRPG_V3_DAILY_TRIAL_ENABLED', false);
     $streakEnabled = irpg_env_bool('IRPG_V3_STREAK_ENABLED', false);
     $seasonEnabled = irpg_env_bool('IRPG_V3_SEASON_ENABLED', true);
     $worldBossEnabled = irpg_env_bool('IRPG_V3_WORLD_BOSS_ENABLED', true);

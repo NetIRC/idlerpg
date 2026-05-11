@@ -47,6 +47,8 @@ let outboundDrainTimer: ReturnType<typeof setTimeout> | null = null;
 let outboundDroppedCount = 0;
 let lastServerSplitSignalAt = 0;
 const splitLikeQuitTimestamps: number[] = [];
+const EXIT_CODE_SHUTDOWN = 0;
+const EXIT_CODE_RESTART = 23;
 
 function normNick(n: string): string {
   return stripStatusPrefix(n);
@@ -562,10 +564,11 @@ bot.on('message', (event) => {
   }
 
   if (cmd === 'admin') {
-    const { notices, announcements, requestShutdown } = engine.adminCommand(from, parts, namesInChannel);
+    const { notices, announcements, requestShutdown, requestRestart } = engine.adminCommand(from, parts, namesInChannel, inChan);
     for (const n of notices) sendNotice(from, formatAdminPmNotice(n));
     for (const a of announcements) deliver(a);
-    if (requestShutdown) scheduleIrcShutdown();
+    if (requestRestart) scheduleIrcExit('restart');
+    else if (requestShutdown) scheduleIrcExit('shutdown');
     return;
   }
 
@@ -806,16 +809,24 @@ function formatAdminPmNotice(text: string): string {
   ) {
     return ircGreen(text);
   }
+  if (text.startsWith('Restarting:')) {
+    return ircGreen(text);
+  }
   return text;
 }
 
-/** After ADMIN SHUTDOWN: one line in channel, QUIT, clear heartbeat, exit Node (restart via host / systemd / scripts). */
-function scheduleIrcShutdown(): void {
-  const quitReason = 'IdleRPG admin shutdown';
+/** After ADMIN SHUTDOWN/RESTART: one line in channel, QUIT, clear heartbeat, exit Node. */
+function scheduleIrcExit(mode: 'shutdown' | 'restart'): void {
+  const isRestart = mode === 'restart';
+  const quitReason = isRestart ? 'IdleRPG admin restart' : 'IdleRPG admin shutdown';
+  const exitCode = isRestart ? EXIT_CODE_RESTART : EXIT_CODE_SHUTDOWN;
+  const channelLine = isRestart
+    ? '⌛ IdleRPG is restarting now (admin restart). Level timers pause briefly until it reconnects.'
+    : '⌛ IdleRPG is going offline (admin shutdown). Level timers pause until the bot is running again.';
   try {
     if (bot.connected) {
       // Use direct send here so the line is not delayed behind queue backlog.
-      bot.say(channel, '⌛ IdleRPG is going offline (admin shutdown). Level timers pause until the bot is running again.');
+      bot.say(channel, channelLine);
     }
   } catch {
     /* ignore */
@@ -830,7 +841,7 @@ function scheduleIrcShutdown(): void {
     } catch {
       /* ignore */
     }
-    setTimeout(() => process.exit(0), 1500);
+    setTimeout(() => process.exit(exitCode), 1500);
   }, 600);
 }
 
