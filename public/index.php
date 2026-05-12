@@ -553,9 +553,38 @@ $jsonLdScript = json_encode($jsonLd, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNI
       </div>
     </div>
   </div>
-  <button id="refresh-fab" class="refresh-fab mono" type="button" aria-label="Refresh leaderboard now">
-    <span class="refresh-fab-prefix">Next sync in</span><span id="refresh-fab-count" class="refresh-countdown">60</span><span>s</span>
-  </button>
+  <?php /* Floating sync pill: inset CSS ring (stable) + SVG dash shows scroll along outline. */ ?>
+  <div id="refresh-fab-banner" class="refresh-fab-banner" role="group" aria-label="Leaderboard refresh controls">
+    <svg
+      id="refresh-fab-banner-edge"
+      class="refresh-fab-banner__edge"
+      preserveAspectRatio="none"
+      role="progressbar"
+      aria-valuemin="0"
+      aria-valuemax="100"
+      aria-valuenow="0"
+      aria-label="Scroll depth"
+    >
+      <path class="refresh-fab-banner__edge-fill" fill="none"></path>
+    </svg>
+    <div class="refresh-fab-banner__grow">
+      <button id="fab-scroll-top" class="refresh-fab-banner__top hidden" type="button" aria-label="Back to top">
+        <svg class="refresh-fab-banner__top-arrow" width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">
+          <path
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2.25"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            d="M12 18V6M7.5 11.5L12 6l4.5 5.5"
+          />
+        </svg>
+      </button>
+    </div>
+    <button id="refresh-fab" class="refresh-fab-banner__sync mono" type="button" aria-label="Refresh leaderboard now">
+      <span class="refresh-fab-prefix">Next sync in</span><span id="refresh-fab-count" class="refresh-countdown">60</span><span>s</span>
+    </button>
+  </div>
   <script>
     (function () {
       const modal = document.getElementById('guide-modal');

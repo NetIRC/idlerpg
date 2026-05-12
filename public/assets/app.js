@@ -12,8 +12,12 @@
   const errEl = document.getElementById('err');
   const lastUpdatedEl = document.getElementById('last-updated');
   const refreshCountdownEl = document.getElementById('refresh-countdown');
+  const refreshFabBannerEl = document.getElementById('refresh-fab-banner');
+  const fabScrollTopEl = document.getElementById('fab-scroll-top');
   const refreshFabEl = document.getElementById('refresh-fab');
   const refreshFabCountEl = document.getElementById('refresh-fab-count');
+  const refreshFabEdgeSvg = document.getElementById('refresh-fab-banner-edge');
+  const refreshFabEdgeFillEl = refreshFabEdgeSvg?.querySelector('.refresh-fab-banner__edge-fill') ?? null;
 
   let rows = [];
   let selName = null;
@@ -23,6 +27,8 @@
   let refreshInFlight = false;
   /** Incremented on each openPlayer call so stale responses do not overwrite the panel. */
   let detailFetchGen = 0;
+  const countdownPulseOk = !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let countdownSecondTimer = 0;
 
   function setupScrollReveal() {
     const items = Array.from(document.querySelectorAll('.section-rise'));
@@ -69,6 +75,216 @@
 
   setupScrollReveal();
 
+  /** Expandable pill: CSS inset ring; bright stroke hidden during width tween (frozen SVG stretch); unlock on max-width end. */
+  function setupRefreshBannerScroll() {
+    const banner = refreshFabBannerEl;
+    const topBtn = fabScrollTopEl;
+    const svg = refreshFabEdgeSvg;
+    const fill = refreshFabEdgeFillEl;
+    if (!banner || !topBtn || !refreshFabEl || !svg || !fill) return;
+
+    const EDGE_LEN = 1000;
+    let edgeLayoutW = 0;
+    let edgeLayoutH = 0;
+    let edgeReady = false;
+    /** Skip SVG geometry updates while max-width is transitioning — track stays visible via CSS. */
+    let growLayoutFrozen = false;
+    let growLayoutUnlockTimer = 0;
+    /** While frozen, hold dash offset so stroke does not crawl as the stretched SVG resizes. */
+    let frozenDashRatio = null;
+
+    const grow = banner.querySelector('.refresh-fab-banner__grow');
+    const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    let scheduled = false;
+    let prevExpanded = null;
+    let collapseHideGen = 0;
+
+    function readScrollRatio() {
+      const root = document.documentElement;
+      const y = window.scrollY || root.scrollTop || 0;
+      const scrollable = Math.max(1, root.scrollHeight - window.innerHeight);
+      return Math.min(1, Math.max(0, y / scrollable));
+    }
+
+    function roundedOutlinePath(x0, y0, iw, ih, rxCap) {
+      const r = Math.min(rxCap, iw / 2, ih / 2);
+      const n = (v) => (Number.isFinite(v) ? Number(v.toFixed(2)) : 0);
+      const x = n(x0);
+      const y = n(y0);
+      const rr = n(r);
+      const right = n(x0 + iw);
+      const bottom = n(y0 + ih);
+      const xr = n(x0 + iw - r);
+      const yb = n(y0 + ih - r);
+      const xl = n(x0 + r);
+      return [
+        `M ${xl} ${y}`,
+        `L ${xr} ${y}`,
+        `A ${rr} ${rr} 0 0 1 ${right} ${n(y0 + r)}`,
+        `L ${right} ${yb}`,
+        `A ${rr} ${rr} 0 0 1 ${xr} ${bottom}`,
+        `L ${xl} ${bottom}`,
+        `A ${rr} ${rr} 0 0 1 ${x} ${yb}`,
+        `L ${x} ${n(y0 + r)}`,
+        `A ${rr} ${rr} 0 0 1 ${xl} ${y}`,
+        'Z',
+      ].join(' ');
+    }
+
+    function layoutBannerEdge() {
+      if (growLayoutFrozen) return;
+      const rect = banner.getBoundingClientRect();
+      const W = Math.max(8, Math.round(rect.width));
+      const H = Math.max(8, Math.round(rect.height));
+      if (W === edgeLayoutW && H === edgeLayoutH && edgeReady) return;
+      edgeLayoutW = W;
+      edgeLayoutH = H;
+      const strokeInset = 2;
+      const x = strokeInset / 2;
+      const y = strokeInset / 2;
+      const iw = W - strokeInset;
+      const ih = H - strokeInset;
+      const rxCap = Math.min(iw, ih) / 2;
+      const d = roundedOutlinePath(x, y, iw, ih, rxCap);
+      fill.setAttribute('d', d);
+      fill.setAttribute('pathLength', String(EDGE_LEN));
+      svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+      edgeReady = typeof fill.getTotalLength === 'function' && fill.getTotalLength() > 0;
+    }
+
+    function setGrowLayoutFrozen(on) {
+      growLayoutFrozen = on;
+      banner.classList.toggle('is-grow-layout-frozen', on);
+    }
+
+    function clearGrowFreezeState() {
+      frozenDashRatio = null;
+      setGrowLayoutFrozen(false);
+    }
+
+    function armGrowLayoutUnlockFallback() {
+      if (growLayoutUnlockTimer) {
+        window.clearTimeout(growLayoutUnlockTimer);
+        growLayoutUnlockTimer = 0;
+      }
+      growLayoutUnlockTimer = window.setTimeout(() => {
+        growLayoutUnlockTimer = 0;
+        clearGrowFreezeState();
+        scheduled = false;
+        apply();
+      }, 220);
+    }
+
+    function unlockGrowLayoutAndSync() {
+      if (growLayoutUnlockTimer) {
+        window.clearTimeout(growLayoutUnlockTimer);
+        growLayoutUnlockTimer = 0;
+      }
+      clearGrowFreezeState();
+      scheduled = false;
+      apply();
+    }
+
+    if (grow && !prefersReduced) {
+      grow.addEventListener('transitionrun', (ev) => {
+        if (ev.propertyName !== 'max-width') return;
+        frozenDashRatio = readScrollRatio();
+        setGrowLayoutFrozen(true);
+        armGrowLayoutUnlockFallback();
+      });
+      grow.addEventListener('transitionend', (ev) => {
+        if (ev.propertyName !== 'max-width') return;
+        unlockGrowLayoutAndSync();
+      });
+      grow.addEventListener('transitioncancel', (ev) => {
+        if (ev.propertyName !== 'max-width' && ev.propertyName !== 'opacity') return;
+        armGrowLayoutUnlockFallback();
+      });
+    }
+
+    function scheduleHideTopAfterCollapse() {
+      collapseHideGen += 1;
+      const gen = collapseHideGen;
+      const finish = () => {
+        if (gen !== collapseHideGen) return;
+        if (banner.classList.contains('is-scrolled')) return;
+        topBtn.classList.add('hidden');
+      };
+      if (prefersReduced || !grow) {
+        finish();
+        return;
+      }
+      const onEnd = (ev) => {
+        if (ev.target !== grow || ev.propertyName !== 'max-width') return;
+        grow.removeEventListener('transitionend', onEnd);
+        finish();
+      };
+      grow.addEventListener('transitionend', onEnd);
+      window.setTimeout(() => {
+        grow.removeEventListener('transitionend', onEnd);
+        finish();
+      }, 220);
+    }
+
+    function apply() {
+      scheduled = false;
+      const ratio = readScrollRatio();
+      const y = window.scrollY || document.documentElement.scrollTop || 0;
+      const expanded = y > 72 || ratio > 0.025;
+      const dashRatio = growLayoutFrozen ? frozenDashRatio ?? ratio : ratio;
+
+      layoutBannerEdge();
+
+      if (edgeReady) {
+        fill.style.strokeDasharray = `${EDGE_LEN} ${EDGE_LEN}`;
+        fill.style.strokeDashoffset = String(EDGE_LEN * (1 - dashRatio));
+      }
+      svg.setAttribute('aria-valuenow', String(Math.round(ratio * 100)));
+
+      if (prevExpanded === null || expanded !== prevExpanded) {
+        if (expanded) {
+          collapseHideGen += 1;
+          topBtn.classList.remove('hidden');
+        } else {
+          scheduleHideTopAfterCollapse();
+        }
+        if (grow && !prefersReduced) {
+          const growAnimating =
+            (prevExpanded !== null && expanded !== prevExpanded) ||
+            (prevExpanded === null && expanded);
+          if (growAnimating) {
+            frozenDashRatio = ratio;
+            setGrowLayoutFrozen(true);
+            armGrowLayoutUnlockFallback();
+          }
+        }
+        prevExpanded = expanded;
+      }
+
+      banner.classList.toggle('is-scrolled', expanded);
+    }
+
+    function scheduleApply() {
+      if (scheduled) return;
+      scheduled = true;
+      requestAnimationFrame(apply);
+    }
+
+    window.addEventListener('scroll', scheduleApply, { passive: true });
+    window.addEventListener('resize', scheduleApply, { passive: true });
+    if ('ResizeObserver' in window) {
+      const ro = new ResizeObserver(() => scheduleApply());
+      ro.observe(banner);
+    }
+    topBtn.addEventListener('click', () => {
+      window.scrollTo({ top: 0, behavior: prefersReduced ? 'auto' : 'smooth' });
+    });
+
+    scheduleApply();
+  }
+
+  setupRefreshBannerScroll();
+
   function updateCountdownDisplay() {
     if (refreshCountdownEl) {
       refreshCountdownEl.textContent = String(Math.max(0, countdown));
@@ -76,6 +292,42 @@
     if (refreshFabCountEl) {
       refreshFabCountEl.textContent = String(Math.max(0, countdown));
     }
+  }
+
+  function msUntilNextSecondBoundary() {
+    const ms = 1000 - (Date.now() % 1000);
+    return ms === 1000 ? 1000 : ms;
+  }
+
+  function clearCountdownSecondTimer() {
+    if (!countdownSecondTimer) return;
+    window.clearTimeout(countdownSecondTimer);
+    countdownSecondTimer = 0;
+  }
+
+  function pulseRefreshCountdownDigits() {
+    if (!countdownPulseOk) return;
+    for (const el of [refreshCountdownEl, refreshFabCountEl]) {
+      if (!el) continue;
+      el.classList.remove('refresh-countdown-pulse');
+      void el.offsetWidth;
+      el.classList.add('refresh-countdown-pulse');
+    }
+  }
+
+  function scheduleCountdownSecondTick() {
+    clearCountdownSecondTimer();
+    countdownSecondTimer = window.setTimeout(async () => {
+      countdownSecondTimer = 0;
+      if (countdown > 0) {
+        countdown -= 1;
+        updateCountdownDisplay();
+        pulseRefreshCountdownDigits();
+        scheduleCountdownSecondTick();
+        return;
+      }
+      await forceRefreshNow();
+    }, msUntilNextSecondBoundary());
   }
 
   function setLastUpdated(iso) {
@@ -139,6 +391,9 @@
     if (refreshFabEl) {
       refreshFabEl.classList.toggle('is-refreshing', busy);
       refreshFabEl.setAttribute('aria-busy', busy ? 'true' : 'false');
+    }
+    if (refreshFabBannerEl) {
+      refreshFabBannerEl.classList.toggle('is-refreshing', busy);
     }
   }
 
@@ -871,9 +1126,9 @@
         }
       }
     }
-    if (refreshFabEl) {
-      refreshFabEl.classList.toggle('hidden', !botOnline);
-      refreshFabEl.setAttribute('aria-hidden', botOnline ? 'false' : 'true');
+    if (refreshFabBannerEl) {
+      refreshFabBannerEl.classList.toggle('hidden', !botOnline);
+      refreshFabBannerEl.setAttribute('aria-hidden', botOnline ? 'false' : 'true');
     }
   }
 
@@ -1721,6 +1976,8 @@
       updateCountdownDisplay();
     } finally {
       refreshInFlight = false;
+      clearCountdownSecondTimer();
+      scheduleCountdownSecondTick();
     }
   }
 
@@ -1829,23 +2086,11 @@
     });
   }
 
-  if (refreshCountdownEl) refreshCountdownEl.classList.add('refresh-countdown-live');
-  if (refreshFabCountEl) refreshFabCountEl.classList.add('refresh-countdown-live');
-
   if (refreshFabEl) {
     refreshFabEl.addEventListener('click', () => {
       forceRefreshNow();
     });
   }
-
-  setInterval(async () => {
-    if (countdown > 0) {
-      countdown -= 1;
-      updateCountdownDisplay();
-    }
-    if (countdown > 0) return;
-    await forceRefreshNow();
-  }, 1000);
 
   (async () => {
     try {
@@ -1853,6 +2098,7 @@
       countdown = REFRESH_SEC;
     } finally {
       updateCountdownDisplay();
+      scheduleCountdownSecondTick();
     }
   })();
 
