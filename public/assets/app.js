@@ -41,22 +41,25 @@
     const slowNetwork = ect === 'slow-2g' || ect === '2g';
     const hwThreads = Number(navigator.hardwareConcurrency) || 0;
     const memGiB = Number(navigator.deviceMemory) || 0;
+    const likelyTouchUi =
+      window.matchMedia('(pointer: coarse)').matches ||
+      (navigator.maxTouchPoints > 0 && window.matchMedia('(hover: none)').matches);
 
     /** rAF deltas stay ~16ms even when compositing janks — do not rely on probe alone. */
     const ultraHint =
       prefersReduced ||
       saveData ||
       slowNetwork ||
-      (hwThreads > 0 && hwThreads <= 6) ||
+      (!likelyTouchUi && hwThreads > 0 && hwThreads <= 6) ||
       (memGiB > 0 && memGiB <= 8) ||
-      (memGiB === 0 && hwThreads > 0 && hwThreads <= 6);
+      (!likelyTouchUi && memGiB === 0 && hwThreads > 0 && hwThreads <= 6);
 
     const strongDesktop =
       !prefersReduced &&
       !saveData &&
       !slowNetwork &&
-      hwThreads >= 16 &&
-      memGiB >= 16;
+      hwThreads >= 12 &&
+      memGiB >= 12;
 
     let frameProbeDone = prefersReduced;
     let frameProbeSamples = 0;
@@ -100,7 +103,8 @@
         if (frameProbeSamples >= targetSamples) {
           frameProbeDone = true;
           const avgDelta = frameProbeTotalDelta / Math.max(1, frameProbeSamples - 1);
-          if (avgDelta > 22) setUltraLiteFx(true);
+          const ultraProbeMs = likelyTouchUi ? 28 : 22;
+          if (avgDelta > ultraProbeMs) setUltraLiteFx(true);
           return;
         }
         if (frameProbePrevTs > 0) frameProbeTotalDelta += ts - frameProbePrevTs;
