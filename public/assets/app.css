@@ -354,17 +354,24 @@ body {
   padding: 0.4rem 0.5rem;
 }
 
-.treasure-rule summary {
-  list-style: none;
-  cursor: pointer;
+.treasure-guide .treasure-rule-toggle.finds-strip-toggle {
   font-family: var(--font-m);
   font-size: 0.76rem;
-  color: rgba(255, 255, 255, 0.94);
+  font-weight: 600;
   letter-spacing: 0.02em;
+  text-transform: none;
+  padding: 0.42rem 0.55rem;
+  border-radius: 0.55rem;
 }
 
-.treasure-rule summary::-webkit-details-marker {
-  display: none;
+.treasure-rule.treasure-rule-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.38rem;
+}
+
+.treasure-rule-panel > .finds-collapse-panel {
+  margin-top: 0;
 }
 
 .treasure-rule p {
@@ -376,6 +383,10 @@ body {
 
 .treasure-rule .treasure-list {
   margin-top: 0.38rem;
+}
+
+.treasure-rule .finds-collapse-panel-inner > :first-child {
+  margin-top: 0;
 }
 
 .guild-preview-item {
@@ -2428,10 +2439,17 @@ body.full-page-sync--locked {
 
 .chronicle-collapsible {
   margin-top: 0.2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.chronicle-collapsible .finds-list-wrap {
+  margin-top: 0;
 }
 
 .chronicle-list-outer {
-  margin-top: 0.55rem;
+  margin-top: 0;
 }
 
 .chronicle-list {
@@ -2720,7 +2738,7 @@ body.full-page-sync--locked {
   border-left: 7px solid var(--arc);
   opacity: 0.85;
   transform: rotate(0deg);
-  transition: transform 0.2s ease;
+  transition: transform 0.58s cubic-bezier(0.33, 1, 0.32, 1);
 }
 
 .finds-strip-toggle.is-open .finds-chevron {
@@ -2750,8 +2768,49 @@ body.full-page-sync--locked {
   margin-top: 0.55rem;
 }
 
-.finds-list-wrap[hidden] {
-  display: none !important;
+.finds-collapse-panel {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition: grid-template-rows 0.58s cubic-bezier(0.33, 1, 0.32, 1);
+}
+
+.finds-collapse-panel-inner {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.finds-collapse-panel.is-collapsed {
+  grid-template-rows: 0fr;
+  pointer-events: none;
+}
+
+.season-history-panel.finds-collapse-panel {
+  margin-top: 0.45rem;
+}
+
+.season-current-extra-panel,
+.season-history-extra-panel {
+  margin-top: 0.4rem;
+}
+
+.season-history-extra-li {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .finds-collapse-panel {
+    transition: none;
+  }
+
+  .finds-chevron {
+    transition: transform 90ms ease;
+  }
+}
+
+.finds-list-wrap .recent-ledger-highlights {
+  margin-bottom: 0.55rem;
 }
 
 .finds-list {
@@ -3028,6 +3087,11 @@ body.full-page-sync--locked {
   stroke-linecap: butt;
   vector-effect: non-scaling-stroke;
   opacity: 0;
+  transition: stroke-dashoffset 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.refresh-fab-banner.is-edge-dash-instant .refresh-fab-banner__edge-fill {
+  transition: stroke-dashoffset 0s linear;
 }
 
 .refresh-fab-banner.is-scrolled:not(.is-grow-layout-frozen) .refresh-fab-banner__edge-fill {

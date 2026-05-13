@@ -132,11 +132,11 @@
     }
 
     function layoutBannerEdge() {
-      if (growLayoutFrozen) return;
+      if (growLayoutFrozen) return false;
       const rect = banner.getBoundingClientRect();
       const W = Math.max(8, Math.round(rect.width));
       const H = Math.max(8, Math.round(rect.height));
-      if (W === edgeLayoutW && H === edgeLayoutH && edgeReady) return;
+      if (W === edgeLayoutW && H === edgeLayoutH && edgeReady) return false;
       edgeLayoutW = W;
       edgeLayoutH = H;
       const strokeInset = 2;
@@ -150,6 +150,7 @@
       fill.setAttribute('pathLength', String(EDGE_LEN));
       svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
       edgeReady = typeof fill.getTotalLength === 'function' && fill.getTotalLength() > 0;
+      return true;
     }
 
     function setGrowLayoutFrozen(on) {
@@ -226,6 +227,8 @@
       }, 220);
     }
 
+    let edgeDashInstantUntil = 0;
+
     function apply() {
       scheduled = false;
       const ratio = readScrollRatio();
@@ -233,13 +236,17 @@
       const expanded = y > 72 || ratio > 0.025;
       const dashRatio = growLayoutFrozen ? frozenDashRatio ?? ratio : ratio;
 
-      layoutBannerEdge();
+      const edgePathRelaid = layoutBannerEdge();
 
       if (edgeReady) {
         fill.style.strokeDasharray = `${EDGE_LEN} ${EDGE_LEN}`;
         fill.style.strokeDashoffset = String(EDGE_LEN * (1 - dashRatio));
       }
       svg.setAttribute('aria-valuenow', String(Math.round(ratio * 100)));
+
+      const dashSnap =
+        prefersReduced || performance.now() < edgeDashInstantUntil || edgePathRelaid;
+      banner.classList.toggle('is-edge-dash-instant', dashSnap);
 
       if (prevExpanded === null || expanded !== prevExpanded) {
         if (expanded) {
@@ -270,11 +277,35 @@
       requestAnimationFrame(apply);
     }
 
-    window.addEventListener('scroll', scheduleApply, { passive: true });
+    window.addEventListener('scroll', () => {
+      edgeDashInstantUntil = performance.now() + 160;
+      scheduleApply();
+    }, { passive: true });
     window.addEventListener('resize', scheduleApply, { passive: true });
     if ('ResizeObserver' in window) {
       const ro = new ResizeObserver(() => scheduleApply());
       ro.observe(banner);
+      ro.observe(document.documentElement);
+      if (document.body) ro.observe(document.body);
+      const appRoot = document.getElementById('app');
+      if (appRoot) ro.observe(appRoot);
+    }
+    const appRootMo = document.getElementById('app');
+    if (appRootMo && 'MutationObserver' in window) {
+      let moRaf = 0;
+      const mo = new MutationObserver(() => {
+        if (moRaf) return;
+        moRaf = window.requestAnimationFrame(() => {
+          moRaf = 0;
+          scheduleApply();
+        });
+      });
+      mo.observe(appRootMo, {
+        subtree: true,
+        childList: true,
+        attributes: true,
+        attributeFilter: ['class', 'style', 'hidden', 'aria-hidden', 'aria-expanded'],
+      });
     }
     topBtn.addEventListener('click', () => {
       window.scrollTo({ top: 0, behavior: prefersReduced ? 'auto' : 'smooth' });
@@ -985,7 +1016,7 @@
       chronicleList.innerHTML = '';
       if (chronicleCollapsible) chronicleCollapsible.classList.add('hidden');
       if (chronicleListWrap) {
-        chronicleListWrap.setAttribute('hidden', '');
+        chronicleListWrap.classList.add('is-collapsed');
       }
       const btn = chronicleCollapsible?.querySelector('.chronicle-strip-toggle');
       if (btn) {
@@ -1011,7 +1042,7 @@
         return `${dayHead}<li class="chronicle-item chronicle-item--${safeKind}"><div class="chronicle-meta">${escapeHtml(kind)} <span class="chronicle-ago">· ${ago} ago</span></div><div class="chronicle-detail">${det}</div></li>`;
       })
       .join('');
-    if (chronicleListWrap) chronicleListWrap.toggleAttribute('hidden', !chronicleExpanded);
+    if (chronicleListWrap) chronicleListWrap.classList.toggle('is-collapsed', !chronicleExpanded);
     const btn = chronicleCollapsible?.querySelector('.chronicle-strip-toggle');
     if (btn) {
       btn.classList.toggle('is-open', chronicleExpanded);
@@ -1253,6 +1284,8 @@
       seasonHistoryOpen = false;
       seasonStandingsHistoryExpanded = false;
     }
+    if (seasonCurrentRows.length <= 3 && seasonCurrentExpanded) seasonCurrentExpanded = false;
+    if (ended.length <= 3 && seasonStandingsHistoryExpanded) seasonStandingsHistoryExpanded = false;
 
     const renderLeaderRow = (r, i) => {
       const dotClass = r && r.online ? 'dot dot--online' : 'dot dot--offline';
@@ -1276,10 +1309,23 @@
       seasonMeta && Number.isFinite(Number(seasonMeta.endsAt)) ? Number(seasonMeta.endsAt) : 0;
     const currentStartsLabel = currentStartsAt > 0 ? new Date(currentStartsAt * 1000).toLocaleDateString() : 'N/A';
     const currentEndsLabel = currentEndsAt > 0 ? new Date(currentEndsAt * 1000).toLocaleDateString() : 'N/A';
-    const currentVisible = seasonCurrentExpanded ? seasonCurrentRows : seasonCurrentRows.slice(0, 3);
-    const currentBody = currentVisible.length
-      ? currentVisible.map((r, i) => renderLeaderRow(r, i)).join('')
-      : '<div class="mono muted-strong">No standings data for the active season.</div>';
+    let leadersBlock = '';
+    if (!seasonCurrentRows.length) {
+      leadersBlock = '<div class="mono muted-strong">No standings data for the active season.</div>';
+    } else {
+      const topRows = seasonCurrentRows.slice(0, 3);
+      const restRows = seasonCurrentRows.slice(3);
+      const topHtml = topRows.map((r, i) => renderLeaderRow(r, i)).join('');
+      const extraPanel =
+        restRows.length > 0
+          ? `<div class="finds-collapse-panel season-current-extra-panel${
+              seasonCurrentExpanded ? '' : ' is-collapsed'
+            }"><div class="finds-collapse-panel-inner">${restRows
+              .map((r, i) => renderLeaderRow(r, i + 3))
+              .join('')}</div></div>`
+          : '';
+      leadersBlock = topHtml + extraPanel;
+    }
 
     const renderSeasonCard = (s) => {
       const seasonLabel = escapeHtml(String((s && s.label) || `Season ${Number((s && s.id) || 0)}`));
@@ -1294,21 +1340,32 @@
       return `<li class="guild-preview-item"><div class="guild-preview-head">${seasonLabel} · ended</div><div class="mono muted-strong">Window: ${escapeHtml(startsLabel)} → ${escapeHtml(endsLabel)}</div>${leadersHtml}</li>`;
     };
 
-    const historyVisible = !seasonHistoryOpen
-      ? []
-      : seasonStandingsHistoryExpanded
-        ? ended
-        : ended.slice(0, 3);
+    currentWrap.classList.toggle('is-collapsed', seasonHistoryOpen);
+    historyWrap.classList.toggle('is-collapsed', !seasonHistoryOpen);
 
-    currentWrap.toggleAttribute('hidden', seasonHistoryOpen);
-    currentRoot.innerHTML = `<li class="guild-preview-item"><div class="guild-preview-head">${escapeHtml(currentSeasonLabel)} · active</div><div class="mono muted-strong">Window: ${escapeHtml(currentStartsLabel)} → ${escapeHtml(currentEndsLabel)}</div>${currentBody}</li>`;
+    currentRoot.innerHTML = `<li class="guild-preview-item"><div class="guild-preview-head">${escapeHtml(currentSeasonLabel)} · active</div><div class="mono muted-strong">Window: ${escapeHtml(currentStartsLabel)} → ${escapeHtml(currentEndsLabel)}</div>${leadersBlock}</li>`;
 
-    historyWrap.toggleAttribute('hidden', !seasonHistoryOpen);
-    historyRoot.innerHTML = seasonHistoryOpen
-      ? historyVisible.length
-        ? historyVisible.map(renderSeasonCard).join('')
-        : '<li class="guild-preview-item"><div class="mono muted-strong">No past seasons available.</div></li>'
-      : '<li class="muted">History closed.</li>';
+    let historyHtml = '<li class="muted">History closed.</li>';
+    if (seasonHistoryOpen) {
+      if (!ended.length) {
+        historyHtml =
+          '<li class="guild-preview-item"><div class="mono muted-strong">No past seasons available.</div></li>';
+      } else {
+        const topSeasons = ended.slice(0, 3);
+        const restSeasons = ended.slice(3);
+        const topLis = topSeasons.map(renderSeasonCard).join('');
+        const extraLi =
+          restSeasons.length > 0
+            ? `<li class="season-history-extra-li"><div class="finds-collapse-panel season-history-extra-panel${
+                seasonStandingsHistoryExpanded ? '' : ' is-collapsed'
+              }"><div class="finds-collapse-panel-inner"><ul class="rules-list">${restSeasons
+                .map(renderSeasonCard)
+                .join('')}</ul></div></div></li>`
+            : '';
+        historyHtml = topLis + extraLi;
+      }
+    }
+    historyRoot.innerHTML = historyHtml;
 
     if (seasonCurrentExpandEl) {
       const canExpandCurrent = seasonCurrentRows.length > 3;
@@ -1721,8 +1778,10 @@
         <span class="finds-count mono">${items.length}</span>
       </button>
       <ul class="rules-list">${topItems}</ul>
-      <div id="season-history-panel"${seasonHistoryExpanded ? '' : ' hidden'}>
-        <ul class="rules-list">${extraItems}</ul>
+      <div id="season-history-panel" class="finds-collapse-panel season-history-panel${seasonHistoryExpanded ? '' : ' is-collapsed'}">
+        <div class="finds-collapse-panel-inner">
+          <ul class="rules-list">${extraItems}</ul>
+        </div>
       </div>
     </div>`;
   }
@@ -1737,9 +1796,11 @@
         <span class="finds-strip-label">Recent ledger <span class="finds-strip-scope">(this hero, last 0)</span></span>
         <span class="finds-count mono">0</span>
       </button>
-      <div class="finds-list-wrap" id="finds-ledger-panel"${heroLedgerExpanded ? '' : ' hidden'}>
-        ${highlights}
-        <p class="muted" style="margin:0.45rem 0 0;font-size:0.8rem">No hero-scoped ledger lines yet for today.</p>
+      <div class="finds-list-wrap finds-collapse-panel${heroLedgerExpanded ? '' : ' is-collapsed'}" id="finds-ledger-panel">
+        <div class="finds-collapse-panel-inner">
+          ${highlights}
+          <p class="muted" style="margin:0.45rem 0 0;font-size:0.8rem">No hero-scoped ledger lines yet for today.</p>
+        </div>
       </div>
     </div>`;
     }
@@ -1751,9 +1812,11 @@
         <span class="finds-strip-label">Recent ledger <span class="finds-strip-scope">(this hero, last 0)</span></span>
         <span class="finds-count mono">0</span>
       </button>
-      <div class="finds-list-wrap" id="finds-ledger-panel"${heroLedgerExpanded ? '' : ' hidden'}>
-        ${highlights}
-        <p class="muted" style="margin:0.45rem 0 0;font-size:0.8rem">No hero-scoped ledger lines yet for today.</p>
+      <div class="finds-list-wrap finds-collapse-panel${heroLedgerExpanded ? '' : ' is-collapsed'}" id="finds-ledger-panel">
+        <div class="finds-collapse-panel-inner">
+          ${highlights}
+          <p class="muted" style="margin:0.45rem 0 0;font-size:0.8rem">No hero-scoped ledger lines yet for today.</p>
+        </div>
       </div>
     </div>`;
     }
@@ -1775,9 +1838,11 @@
         <span class="finds-strip-label">Recent ledger <span class="finds-strip-scope">(this hero, last 15)</span></span>
         <span class="finds-count mono">${n}</span>
       </button>
-      <div class="finds-list-wrap" id="finds-ledger-panel"${heroLedgerExpanded ? '' : ' hidden'}>
-        ${highlights}
-        <ul class="finds-list">${items}</ul>
+      <div class="finds-list-wrap finds-collapse-panel${heroLedgerExpanded ? '' : ' is-collapsed'}" id="finds-ledger-panel">
+        <div class="finds-collapse-panel-inner">
+          ${highlights}
+          <ul class="finds-list">${items}</ul>
+        </div>
       </div>
     </div>`;
   }
@@ -1951,7 +2016,7 @@
           if (chronicleList) {
             chronicleList.innerHTML = '';
           }
-          if (chronicleListWrap) chronicleListWrap.setAttribute('hidden', '');
+          if (chronicleListWrap) chronicleListWrap.classList.add('is-collapsed');
         }
       }
     } catch (e) {
@@ -2003,16 +2068,16 @@
       if (seasonBtn && detail.contains(seasonBtn)) {
         const panel = document.getElementById('season-history-panel');
         if (!panel || !detail.contains(panel)) return;
-        const willOpen = panel.hasAttribute('hidden');
+        const willOpen = panel.classList.contains('is-collapsed');
         const scope = seasonBtn.querySelector('.finds-strip-scope');
         if (willOpen) {
-          panel.removeAttribute('hidden');
+          panel.classList.remove('is-collapsed');
           seasonBtn.classList.add('is-open');
           seasonBtn.setAttribute('aria-expanded', 'true');
           if (scope) scope.textContent = '(expanded)';
           seasonHistoryExpanded = true;
         } else {
-          panel.setAttribute('hidden', '');
+          panel.classList.add('is-collapsed');
           seasonBtn.classList.remove('is-open');
           seasonBtn.setAttribute('aria-expanded', 'false');
           if (scope) scope.textContent = '(showing 3 / expand)';
@@ -2024,14 +2089,14 @@
       if (!btn || !detail.contains(btn)) return;
       const wrap = document.getElementById('finds-ledger-panel');
       if (!wrap || !detail.contains(wrap)) return;
-      const willOpen = wrap.hasAttribute('hidden');
+      const willOpen = wrap.classList.contains('is-collapsed');
       if (willOpen) {
-        wrap.removeAttribute('hidden');
+        wrap.classList.remove('is-collapsed');
         btn.classList.add('is-open');
         btn.setAttribute('aria-expanded', 'true');
         heroLedgerExpanded = true;
       } else {
-        wrap.setAttribute('hidden', '');
+        wrap.classList.add('is-collapsed');
         btn.classList.remove('is-open');
         btn.setAttribute('aria-expanded', 'false');
         heroLedgerExpanded = false;
@@ -2045,14 +2110,14 @@
       if (!btn || !chronicleRoot.contains(btn)) return;
       const wrap = document.getElementById('chronicle-list-wrap');
       if (!wrap) return;
-      const willOpen = wrap.hasAttribute('hidden');
+      const willOpen = wrap.classList.contains('is-collapsed');
       if (willOpen) {
-        wrap.removeAttribute('hidden');
+        wrap.classList.remove('is-collapsed');
         btn.classList.add('is-open');
         btn.setAttribute('aria-expanded', 'true');
         chronicleExpanded = true;
       } else {
-        wrap.setAttribute('hidden', '');
+        wrap.classList.add('is-collapsed');
         btn.classList.remove('is-open');
         btn.setAttribute('aria-expanded', 'false');
         chronicleExpanded = false;
@@ -2072,17 +2137,33 @@
       if (seasonHistoryOpen) {
         seasonHistoryOpen = false;
         seasonStandingsHistoryExpanded = false;
-      } else {
-        seasonCurrentExpanded = !seasonCurrentExpanded;
+        setSeasonPreview(seasonCurrentRows, seasonStandingsRows, seasonCurrentMeta, seasonCurrentLabel);
+        return;
       }
-      setSeasonPreview(seasonCurrentRows, seasonStandingsRows, seasonCurrentMeta, seasonCurrentLabel);
+      seasonCurrentExpanded = !seasonCurrentExpanded;
+      const panel = document.querySelector('#season-current-preview .season-current-extra-panel');
+      if (panel) panel.classList.toggle('is-collapsed', !seasonCurrentExpanded);
+      seasonCurrentExpandEl.classList.toggle('is-open', seasonCurrentExpanded);
+      seasonCurrentExpandEl.setAttribute('aria-expanded', seasonCurrentExpanded ? 'true' : 'false');
+      const scopeEl = seasonCurrentExpandEl.querySelector('.finds-strip-scope');
+      if (scopeEl) scopeEl.textContent = seasonCurrentExpanded ? '(all / top 3)' : '(top 3 / all)';
     });
   }
   if (seasonHistoryExpandEl) {
     seasonHistoryExpandEl.addEventListener('click', () => {
       if (!seasonHistoryOpen || seasonHistoryCount <= 3) return;
       seasonStandingsHistoryExpanded = !seasonStandingsHistoryExpanded;
-      setSeasonPreview(seasonCurrentRows, seasonStandingsRows, seasonCurrentMeta, seasonCurrentLabel);
+      const panel = document.querySelector('#season-history-preview .season-history-extra-panel');
+      if (panel) panel.classList.toggle('is-collapsed', !seasonStandingsHistoryExpanded);
+      seasonHistoryExpandEl.classList.toggle('is-open', seasonStandingsHistoryExpanded);
+      seasonHistoryExpandEl.setAttribute(
+        'aria-expanded',
+        seasonStandingsHistoryExpanded ? 'true' : 'false',
+      );
+      const scopeEl = seasonHistoryExpandEl.querySelector('.finds-strip-scope');
+      if (scopeEl) {
+        scopeEl.textContent = seasonStandingsHistoryExpanded ? '(all / latest 3)' : '(latest 3 / all)';
+      }
     });
   }
 
@@ -2091,6 +2172,30 @@
       forceRefreshNow();
     });
   }
+
+  function setupTreasureRulePanels() {
+    const guide = document.querySelector('.treasure-guide');
+    if (!guide) return;
+    guide.querySelectorAll('[data-treasure-rule-toggle]').forEach((btn) => {
+      const panelId = btn.getAttribute('aria-controls');
+      const panel = panelId ? document.getElementById(panelId) : null;
+      if (!panel || !panel.classList.contains('finds-collapse-panel')) return;
+      btn.addEventListener('click', () => {
+        const willOpen = panel.classList.contains('is-collapsed');
+        if (willOpen) {
+          panel.classList.remove('is-collapsed');
+          btn.classList.add('is-open');
+          btn.setAttribute('aria-expanded', 'true');
+        } else {
+          panel.classList.add('is-collapsed');
+          btn.classList.remove('is-open');
+          btn.setAttribute('aria-expanded', 'false');
+        }
+      });
+    });
+  }
+
+  setupTreasureRulePanels();
 
   (async () => {
     try {

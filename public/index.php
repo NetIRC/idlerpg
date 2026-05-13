@@ -373,29 +373,81 @@ $jsonLdScript = json_encode($jsonLd, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNI
             <div class="treasure-card treasure-card--omen">
               <h3 class="treasure-h3">Quick command guide</h3>
               <div class="treasure-guide" aria-label="Gameplay quick command guide">
-                <details class="treasure-rule" open>
-                  <summary>How <span class="mono">!omen</span> works</summary>
-                  <ul class="treasure-list">
-                    <li>Requires a logged-in hero currently in the game channel.</li>
-                    <li><strong>Cooldown:</strong> 8 hours per hero.</li>
-                    <li><strong class="omen-odds omen-odds--fluff">~55%</strong> mood text only (no timer change).</li>
-                    <li><strong class="omen-odds omen-odds--boon">~23%</strong> small timer gain (shorter wait).</li>
-                    <li><strong class="omen-odds omen-odds--curse">~15%</strong> small timer loss (longer wait).</li>
-                    <li><strong class="omen-odds omen-odds--rare">~7%</strong> rare chronicle event line.</li>
-                  </ul>
-                </details>
-                <details class="treasure-rule">
-                  <summary>How <span class="mono">!boss</span> works</summary>
-                  <p>World Boss starts on cadence. Logged-in heroes online in channel contribute passive damage while idling. On slay, reward is shared as timer reduction.</p>
-                </details>
-                <details class="treasure-rule">
-                  <summary>How <span class="mono">!season</span> works</summary>
-                  <p>Season XP is earned while idling. Monthly season ladder resets tiers and rewards, while base hero progression remains intact.</p>
-                </details>
-                <details class="treasure-rule">
-                  <summary>How <span class="mono">!guild</span> / <span class="mono">!relic</span> / <span class="mono">!prestige</span> work</summary>
-                  <p>Guild gives light social bonuses, relic grants one active perk, and prestige unlocks soft permanent scaling at higher levels.</p>
-                </details>
+                <div class="treasure-rule treasure-rule-panel">
+                  <button
+                    type="button"
+                    class="treasure-rule-toggle finds-strip-toggle is-open"
+                    data-treasure-rule-toggle=""
+                    aria-expanded="true"
+                    aria-controls="treasure-rule-body-omen"
+                  >
+                    <span class="finds-chevron" aria-hidden="true"></span>
+                    <span>How <span class="mono">!omen</span> works</span>
+                  </button>
+                  <div id="treasure-rule-body-omen" class="finds-collapse-panel treasure-rule-collapse">
+                    <div class="finds-collapse-panel-inner">
+                      <ul class="treasure-list">
+                        <li>Requires a logged-in hero currently in the game channel.</li>
+                        <li><strong>Cooldown:</strong> 8 hours per hero.</li>
+                        <li><strong class="omen-odds omen-odds--fluff">~55%</strong> mood text only (no timer change).</li>
+                        <li><strong class="omen-odds omen-odds--boon">~23%</strong> small timer gain (shorter wait).</li>
+                        <li><strong class="omen-odds omen-odds--curse">~15%</strong> small timer loss (longer wait).</li>
+                        <li><strong class="omen-odds omen-odds--rare">~7%</strong> rare chronicle event line.</li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+                <div class="treasure-rule treasure-rule-panel">
+                  <button
+                    type="button"
+                    class="treasure-rule-toggle finds-strip-toggle"
+                    data-treasure-rule-toggle=""
+                    aria-expanded="false"
+                    aria-controls="treasure-rule-body-boss"
+                  >
+                    <span class="finds-chevron" aria-hidden="true"></span>
+                    <span>How <span class="mono">!boss</span> works</span>
+                  </button>
+                  <div id="treasure-rule-body-boss" class="finds-collapse-panel treasure-rule-collapse is-collapsed">
+                    <div class="finds-collapse-panel-inner">
+                      <p>World Boss starts on cadence. Logged-in heroes online in channel contribute passive damage while idling. On slay, reward is shared as timer reduction.</p>
+                    </div>
+                  </div>
+                </div>
+                <div class="treasure-rule treasure-rule-panel">
+                  <button
+                    type="button"
+                    class="treasure-rule-toggle finds-strip-toggle"
+                    data-treasure-rule-toggle=""
+                    aria-expanded="false"
+                    aria-controls="treasure-rule-body-season"
+                  >
+                    <span class="finds-chevron" aria-hidden="true"></span>
+                    <span>How <span class="mono">!season</span> works</span>
+                  </button>
+                  <div id="treasure-rule-body-season" class="finds-collapse-panel treasure-rule-collapse is-collapsed">
+                    <div class="finds-collapse-panel-inner">
+                      <p>Season XP is earned while idling. Monthly season ladder resets tiers and rewards, while base hero progression remains intact.</p>
+                    </div>
+                  </div>
+                </div>
+                <div class="treasure-rule treasure-rule-panel">
+                  <button
+                    type="button"
+                    class="treasure-rule-toggle finds-strip-toggle"
+                    data-treasure-rule-toggle=""
+                    aria-expanded="false"
+                    aria-controls="treasure-rule-body-grp"
+                  >
+                    <span class="finds-chevron" aria-hidden="true"></span>
+                    <span>How <span class="mono">!guild</span> / <span class="mono">!relic</span> / <span class="mono">!prestige</span> work</span>
+                  </button>
+                  <div id="treasure-rule-body-grp" class="finds-collapse-panel treasure-rule-collapse is-collapsed">
+                    <div class="finds-collapse-panel-inner">
+                      <p>Guild gives light social bonuses, relic grants one active perk, and prestige unlocks soft permanent scaling at higher levels.</p>
+                    </div>
+                  </div>
+                </div>
               </div>
               <p class="treasure-foot mono muted-strong">Major actions also write chronicle lines so the shard can audit results live.</p>
             </div>
@@ -451,8 +503,13 @@ $jsonLdScript = json_encode($jsonLd, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNI
               <span class="finds-strip-label">Ledger feed <span class="finds-strip-scope">(last <?= (int) $irpgChronicleUiLimit ?>)</span></span>
               <span class="finds-count mono" id="chronicle-count">0</span>
             </button>
-            <div class="finds-list-wrap chronicle-list-outer" id="chronicle-list-wrap" hidden>
-              <ul class="chronicle-list" id="chronicle-list"></ul>
+            <div
+              class="finds-list-wrap chronicle-list-outer finds-collapse-panel is-collapsed"
+              id="chronicle-list-wrap"
+            >
+              <div class="finds-collapse-panel-inner">
+                <ul class="chronicle-list" id="chronicle-list"></ul>
+              </div>
             </div>
           </div>
         </div>
@@ -510,13 +567,17 @@ $jsonLdScript = json_encode($jsonLd, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNI
               <span class="finds-chevron" aria-hidden="true"></span>
               <span class="finds-strip-label">Expand history <span class="finds-strip-scope">(latest 3 / all)</span></span>
             </button>
-            <div id="season-current-wrap" class="finds-list-wrap">
-              <p class="mono muted-strong">Current season</p>
-              <ul id="season-current-preview" class="rules-list"><li class="muted">Loading current season…</li></ul>
+            <div id="season-current-wrap" class="finds-list-wrap finds-collapse-panel">
+              <div class="finds-collapse-panel-inner">
+                <p class="mono muted-strong">Current season</p>
+                <ul id="season-current-preview" class="rules-list"><li class="muted">Loading current season…</li></ul>
+              </div>
             </div>
-            <div id="season-history-wrap" class="finds-list-wrap" hidden>
-              <p class="mono muted-strong">Season history</p>
-              <ul id="season-history-preview" class="rules-list"><li class="muted">History closed.</li></ul>
+            <div id="season-history-wrap" class="finds-list-wrap finds-collapse-panel is-collapsed">
+              <div class="finds-collapse-panel-inner">
+                <p class="mono muted-strong">Season history</p>
+                <ul id="season-history-preview" class="rules-list"><li class="muted">History closed.</li></ul>
+              </div>
             </div>
           </div>
         </div>
