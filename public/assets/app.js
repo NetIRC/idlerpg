@@ -18,6 +18,7 @@
   const refreshFabCountEl = document.getElementById('refresh-fab-count');
   const refreshFabEdgeSvg = document.getElementById('refresh-fab-banner-edge');
   const refreshFabEdgeFillEl = refreshFabEdgeSvg?.querySelector('.refresh-fab-banner__edge-fill') ?? null;
+  const realmAtlasPanelEl = document.getElementById('realm-atlas-root');
 
   let rows = [];
   let selName = null;
@@ -29,6 +30,151 @@
   let detailFetchGen = 0;
   const countdownPulseOk = !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   let countdownSecondTimer = 0;
+
+  function setupAtlasPerformanceMode() {
+    const panel = realmAtlasPanelEl;
+    if (!panel) return;
+
+    const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const saveData = !!navigator.connection?.saveData;
+    const ect = navigator.connection?.effectiveType;
+    const slowNetwork = ect === 'slow-2g' || ect === '2g';
+    const hwThreads = Number(navigator.hardwareConcurrency) || 0;
+    const memGiB = Number(navigator.deviceMemory) || 0;
+
+    /** rAF deltas stay ~16ms even when compositing janks — do not rely on probe alone. */
+    const ultraHint =
+      prefersReduced ||
+      saveData ||
+      slowNetwork ||
+      (hwThreads > 0 && hwThreads <= 6) ||
+      (memGiB > 0 && memGiB <= 8) ||
+      (memGiB === 0 && hwThreads > 0 && hwThreads <= 6);
+
+    const strongDesktop =
+      !prefersReduced &&
+      !saveData &&
+      !slowNetwork &&
+      hwThreads >= 16 &&
+      memGiB >= 16;
+
+    let frameProbeDone = prefersReduced;
+    let frameProbeSamples = 0;
+    let frameProbePrevTs = 0;
+    let frameProbeTotalDelta = 0;
+
+    const setLiteFx = (on) => {
+      panel.classList.toggle('realm-atlas-panel--litefx', on);
+    };
+    const setUltraLiteFx = (on) => {
+      panel.classList.toggle('realm-atlas-panel--ultralite', on);
+      if (on) setLiteFx(true);
+    };
+
+    const setPaused = (on) => {
+      panel.classList.toggle('realm-atlas-panel--fx-paused', on);
+    };
+
+    let atlasInView = false;
+    const syncPausedState = () => {
+      setPaused(document.hidden || !atlasInView);
+    };
+
+    /** Match IntersectionObserver threshold 0.08 before the first async IO callback. */
+    function syncAtlasInViewFromGeometry() {
+      const r = panel.getBoundingClientRect();
+      const vh = window.innerHeight || document.documentElement.clientHeight || 0;
+      if (vh <= 0 || r.height <= 0) {
+        atlasInView = false;
+      } else {
+        const visible = Math.min(r.bottom, vh) - Math.max(r.top, 0);
+        atlasInView = visible / r.height >= 0.08;
+      }
+      syncPausedState();
+    }
+
+    const runFrameProbe = () => {
+      if (frameProbeDone) return;
+      const targetSamples = 48;
+      const tick = (ts) => {
+        if (frameProbeSamples >= targetSamples) {
+          frameProbeDone = true;
+          const avgDelta = frameProbeTotalDelta / Math.max(1, frameProbeSamples - 1);
+          if (avgDelta > 22) setUltraLiteFx(true);
+          return;
+        }
+        if (frameProbePrevTs > 0) frameProbeTotalDelta += ts - frameProbePrevTs;
+        frameProbePrevTs = ts;
+        frameProbeSamples += 1;
+        window.requestAnimationFrame(tick);
+      };
+      window.requestAnimationFrame(tick);
+    };
+
+    function scheduleAtlasFrameProbe() {
+      if (frameProbeDone) return;
+      const kick = () => {
+        syncAtlasInViewFromGeometry();
+        window.requestAnimationFrame(() => {
+          window.requestAnimationFrame(() => {
+            syncAtlasInViewFromGeometry();
+            runFrameProbe();
+          });
+        });
+      };
+      if (document.readyState === 'complete') kick();
+      else window.addEventListener('load', kick, { once: true });
+    }
+
+    try {
+      if (window.sessionStorage?.getItem('IRPG_ATLAS_FULLFX') === '1') {
+        setUltraLiteFx(false);
+        setLiteFx(false);
+      } else {
+        setUltraLiteFx(ultraHint);
+        if (strongDesktop) {
+          setUltraLiteFx(false);
+          setLiteFx(false);
+        } else {
+          setLiteFx(true);
+        }
+      }
+    } catch {
+      setUltraLiteFx(ultraHint);
+      if (strongDesktop) {
+        setUltraLiteFx(false);
+        setLiteFx(false);
+      } else {
+        setLiteFx(true);
+      }
+    }
+
+    syncAtlasInViewFromGeometry();
+    scheduleAtlasFrameProbe();
+
+    window.addEventListener('pageshow', syncAtlasInViewFromGeometry, { passive: true });
+
+    if ('IntersectionObserver' in window) {
+      const io = new IntersectionObserver(
+        (entries) => {
+          const entry = entries[0];
+          if (!entry) return;
+          atlasInView = entry.intersectionRatio >= 0.08;
+          syncPausedState();
+        },
+        { threshold: [0, 0.08, 0.25] },
+      );
+      io.observe(panel);
+    } else {
+      window.addEventListener('scroll', syncAtlasInViewFromGeometry, { passive: true });
+      window.addEventListener('resize', syncAtlasInViewFromGeometry, { passive: true });
+    }
+
+    document.addEventListener('visibilitychange', () => {
+      if (!('IntersectionObserver' in window)) syncAtlasInViewFromGeometry();
+      else syncPausedState();
+    });
+  }
 
   function setupScrollReveal() {
     const items = Array.from(document.querySelectorAll('.section-rise'));
@@ -74,6 +220,7 @@
   }
 
   setupScrollReveal();
+  setupAtlasPerformanceMode();
 
   /** Expandable pill: CSS inset ring; bright stroke hidden during width tween (frozen SVG stretch); unlock on max-width end. */
   function setupRefreshBannerScroll() {
@@ -880,11 +1027,11 @@
 
       const bindMarker = (target) => {
         target.addEventListener('mousedown', (ev) => ev.stopPropagation());
-        target.addEventListener('click', (ev) => {
+        target.addEventListener('click', async (ev) => {
           ev.stopPropagation();
           hideAtlasTooltip();
-          openPlayer(p.name);
-          detail.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          await openPlayer(p.name);
+          scrollHeroSheetIntoView();
         });
         target.addEventListener('mouseenter', (ev) => {
           showAtlasTooltipFromPlayer(p, ev.clientX, ev.clientY);
@@ -902,6 +1049,20 @@
     });
 
     updateAtlasWorldTransform();
+  }
+
+  let atlasRenderRaf = 0;
+  let atlasRenderQueued = null;
+  function scheduleRealmAtlasRender(players, realmPulse, selectedName) {
+    atlasRenderQueued = { players, realmPulse, selectedName };
+    if (atlasRenderRaf) return;
+    atlasRenderRaf = window.requestAnimationFrame(() => {
+      atlasRenderRaf = 0;
+      const payload = atlasRenderQueued;
+      atlasRenderQueued = null;
+      if (!payload) return;
+      renderRealmAtlas(payload.players, payload.realmPulse, payload.selectedName);
+    });
   }
 
   const CHRONICLE_KIND = {
@@ -1855,6 +2016,18 @@
     renderTable(list);
   }
 
+  /** Bring the hero sheet panel into view (used after map marker clicks once data is loaded). */
+  function scrollHeroSheetIntoView() {
+    if (!detail) return;
+    const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const behavior = prefersReduced ? 'auto' : 'smooth';
+    window.requestAnimationFrame(() => {
+      if (!detail) return;
+      const y = detail.getBoundingClientRect().top + window.scrollY;
+      window.scrollTo({ top: Math.max(0, y - 12), left: 0, behavior });
+    });
+  }
+
   async function openPlayer(name) {
     selName = name;
     const gen = (detailFetchGen += 1);
@@ -1867,7 +2040,7 @@
       if (!d) {
         detailWrite('<p class="muted">No such hero in the database.</p>');
         selName = null;
-        renderRealmAtlas(rows, lastRealmPulse, null);
+        scheduleRealmAtlasRender(rows, lastRealmPulse, null);
         return;
       }
       const stats = Object.entries(d.stats || {})
@@ -1957,7 +2130,7 @@
         <div class="stats-label">Penalties (seconds)</div>
         <div class="stats-tags">${stats}</div>`);
       if (gen !== detailFetchGen) return;
-      renderRealmAtlas(rows, lastRealmPulse, selName);
+      scheduleRealmAtlasRender(rows, lastRealmPulse, selName);
     } catch (e) {
       if (gen !== detailFetchGen) return;
       const msg = formatApiErr(e.detail, 'Shard unreachable. Try api/health.php in the browser.');
@@ -2001,7 +2174,7 @@
       setSeasonPreview(seasonPreview, standingsRows, seasonMeta, season);
       setErr(null);
       applyFilter();
-      renderRealmAtlas(rows, realmPulse, selName);
+      scheduleRealmAtlasRender(rows, realmPulse, selName);
       if (selName) openPlayer(selName);
       try {
         chronicleBeforeId = null;

@@ -1739,12 +1739,149 @@ body.full-page-sync--locked {
   padding: 0;
   overflow: hidden;
   overflow: clip;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(110, 195, 220, 0.2);
   box-shadow:
     inset 0 0 0 1px rgba(0, 229, 199, 0.18),
     inset 0 0 34px rgba(0, 229, 199, 0.08),
     inset 0 0 66px rgba(150, 96, 245, 0.06);
   animation: atlas-panel-border-glow 12s ease-in-out infinite alternate;
+}
+
+.realm-atlas-panel::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  z-index: 5;
+  box-shadow:
+    inset 0 0 0 1px rgba(120, 230, 245, 0.22),
+    inset 0 0 0 2px rgba(120, 110, 220, 0.08);
+}
+
+/* Adaptive map effects: keep look, reduce expensive compositing on weaker devices. */
+.realm-atlas-panel.realm-atlas-panel--litefx {
+  box-shadow:
+    inset 0 0 0 1px rgba(0, 229, 199, 0.15),
+    inset 0 0 22px rgba(0, 229, 199, 0.07),
+    inset 0 0 44px rgba(140, 95, 220, 0.06);
+  animation-duration: 18s;
+}
+
+.realm-atlas-panel.realm-atlas-panel--litefx.realm-atlas-panel--quest #realm-atlas-svg {
+  filter: drop-shadow(0 0 12px rgba(255, 100, 60, 0.15)) drop-shadow(0 0 18px rgba(255, 140, 90, 0.09));
+}
+
+.realm-atlas-panel.realm-atlas-panel--litefx .atlas-fx-aurora {
+  width: 150%;
+  height: 150%;
+  left: -25%;
+  top: -25%;
+  filter: blur(10px);
+  opacity: 0.9;
+  animation-duration: 28s;
+}
+
+.realm-atlas-panel.realm-atlas-panel--litefx .atlas-fx-shimmer {
+  inset: -34%;
+  background-size: 180% 180%;
+  opacity: 0.78;
+  animation-duration: 12s;
+}
+
+.realm-atlas-panel.realm-atlas-panel--litefx .realm-atlas-svg .atlas-legend-ns {
+  animation-duration: 8s;
+}
+
+.realm-atlas-panel.realm-atlas-panel--litefx .realm-atlas-svg .atlas-star {
+  animation-duration: 6.5s;
+  filter: drop-shadow(0 0 2px rgba(0, 229, 199, 0.6));
+}
+
+/* Ultra-lite for very old devices: preserve scene styling, remove continuous heavy compositing. */
+.realm-atlas-panel.realm-atlas-panel--ultralite {
+  animation: none;
+  box-shadow:
+    inset 0 0 0 1px rgba(0, 229, 199, 0.14),
+    inset 0 0 14px rgba(0, 229, 199, 0.06);
+}
+
+.realm-atlas-panel.realm-atlas-panel--ultralite::after {
+  box-shadow: inset 0 0 0 1px rgba(120, 230, 245, 0.16);
+}
+
+.realm-atlas-panel.realm-atlas-panel--ultralite.realm-atlas-panel--lucky::before {
+  animation: none;
+  opacity: 0.68;
+}
+
+.realm-atlas-panel.realm-atlas-panel--ultralite .atlas-fx {
+  opacity: 0.55;
+}
+
+.realm-atlas-panel.realm-atlas-panel--ultralite .atlas-fx-aurora,
+.realm-atlas-panel.realm-atlas-panel--ultralite .atlas-fx-shimmer {
+  animation: none;
+  mix-blend-mode: normal;
+}
+
+.realm-atlas-panel.realm-atlas-panel--ultralite .atlas-fx-aurora {
+  filter: none;
+  transform: rotate(20deg);
+  opacity: 0.58;
+}
+
+.realm-atlas-panel.realm-atlas-panel--ultralite .atlas-fx-shimmer {
+  opacity: 0.26;
+}
+
+.realm-atlas-panel.realm-atlas-panel--ultralite .realm-atlas-svg .atlas-legend-ns {
+  animation: none;
+  filter: none;
+}
+
+.realm-atlas-panel.realm-atlas-panel--ultralite .realm-atlas-svg .atlas-star {
+  animation: none;
+  opacity: 0.74;
+  filter: drop-shadow(0 0 2px rgba(190, 245, 255, 0.28));
+}
+
+.realm-atlas-panel.realm-atlas-panel--ultralite .realm-atlas-svg .atlas-star:nth-child(5n + 1) {
+  opacity: 0.9;
+  transform: scale(1.15);
+}
+
+.realm-atlas-panel.realm-atlas-panel--ultralite .realm-atlas-svg .atlas-star:nth-child(5n + 2) {
+  opacity: 0.76;
+  transform: scale(0.95);
+}
+
+.realm-atlas-panel.realm-atlas-panel--ultralite .realm-atlas-svg .atlas-star:nth-child(5n + 3) {
+  opacity: 0.68;
+  transform: scale(0.8);
+}
+
+.realm-atlas-panel.realm-atlas-panel--ultralite .realm-atlas-svg .atlas-star:nth-child(5n + 4) {
+  opacity: 0.84;
+  transform: scale(1.05);
+}
+
+.realm-atlas-panel.realm-atlas-panel--ultralite .realm-atlas-svg .atlas-star:nth-child(5n) {
+  opacity: 0.6;
+  transform: scale(0.72);
+}
+
+/* Pause expensive continuous effects when map is offscreen/tab hidden. */
+.realm-atlas-panel.realm-atlas-panel--fx-paused .atlas-fx-aurora,
+.realm-atlas-panel.realm-atlas-panel--fx-paused .atlas-fx-shimmer,
+.realm-atlas-panel.realm-atlas-panel--fx-paused::before,
+.realm-atlas-panel.realm-atlas-panel--fx-paused .realm-atlas-svg .atlas-star,
+.realm-atlas-panel.realm-atlas-panel--fx-paused .realm-atlas-svg .atlas-legend-ns,
+.realm-atlas-panel.realm-atlas-panel--fx-paused .realm-atlas-svg .atlas-quest-path,
+.realm-atlas-panel.realm-atlas-panel--fx-paused .realm-atlas-svg .atlas-trail-front,
+.realm-atlas-panel.realm-atlas-panel--fx-paused .realm-atlas-svg .atlas-marker-g.is-online .atlas-marker-core,
+.realm-atlas-panel.realm-atlas-panel--fx-paused .realm-atlas-svg .atlas-marker-ring {
+  animation-play-state: paused !important;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1759,14 +1896,14 @@ body.full-page-sync--locked {
       inset 0 0 0 1px rgba(0, 229, 199, 0.18),
       inset 0 0 34px rgba(0, 229, 199, 0.08),
       inset 0 0 66px rgba(100, 60, 180, 0.08),
-      inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+      inset 0 0 0 1px rgba(140, 220, 245, 0.06);
   }
   100% {
     box-shadow:
       inset 0 0 0 1px rgba(0, 255, 220, 0.32),
       inset 0 0 42px rgba(0, 229, 199, 0.12),
       inset 0 0 82px rgba(160, 100, 255, 0.12),
-      inset 0 0 0 1px rgba(255, 255, 255, 0.09);
+      inset 0 0 0 1px rgba(175, 236, 255, 0.14);
   }
 }
 
@@ -2001,12 +2138,12 @@ body.full-page-sync--locked {
 }
 
 .realm-atlas-svg .atlas-star {
-  fill: rgba(255, 255, 255, 0.92);
+  fill: rgba(245, 252, 255, 0.95);
   pointer-events: none;
   transform-box: fill-box;
   transform-origin: center;
   animation: atlas-star-twinkle 3.5s ease-in-out infinite;
-  filter: drop-shadow(0 0 3px rgba(0, 229, 199, 0.85)) drop-shadow(0 0 1px rgba(255, 255, 255, 0.6));
+  filter: drop-shadow(0 0 2px rgba(180, 236, 255, 0.9)) drop-shadow(0 0 5px rgba(110, 210, 235, 0.35));
 }
 
 .realm-atlas-svg .atlas-star:nth-child(4n + 1) {
@@ -2032,12 +2169,12 @@ body.full-page-sync--locked {
 @keyframes atlas-star-twinkle {
   0%,
   100% {
-    opacity: 0.25;
-    transform: scale(0.75);
+    opacity: 0.38;
+    transform: scale(0.82);
   }
   50% {
     opacity: 1;
-    transform: scale(1.25);
+    transform: scale(1.16);
   }
 }
 
@@ -2131,8 +2268,12 @@ body.full-page-sync--locked {
   filter: drop-shadow(0 0 22px rgba(0, 229, 199, 0.06)) drop-shadow(0 0 50px rgba(90, 50, 140, 0.07));
 }
 
+.realm-atlas-panel.realm-atlas-panel--ultralite .realm-atlas-svg {
+  filter: drop-shadow(0 0 10px rgba(0, 229, 199, 0.05));
+}
+
 .realm-atlas-svg .atlas-region {
-  stroke: rgba(255, 255, 255, 0.12);
+  stroke: rgba(172, 215, 240, 0.2);
   stroke-width: 1;
   transition: opacity 0.3s ease;
 }
@@ -2159,6 +2300,13 @@ body.full-page-sync--locked {
   animation: atlas-quest-dash 2.2s linear infinite;
   opacity: 0.75;
   filter: drop-shadow(0 0 6px rgba(255, 140, 90, 0.45));
+}
+
+.realm-atlas-panel.realm-atlas-panel--ultralite .realm-atlas-svg .atlas-quest-path {
+  animation: none;
+  stroke-dasharray: 8 12;
+  opacity: 0.6;
+  filter: none;
 }
 
 @keyframes atlas-quest-dash {
@@ -2190,6 +2338,17 @@ body.full-page-sync--locked {
   stroke-dasharray: 14 12;
   opacity: 0.52;
   animation: atlas-trail-front-dash 2.8s linear infinite;
+}
+
+.realm-atlas-panel.realm-atlas-panel--ultralite .realm-atlas-svg .atlas-trail-march {
+  filter: none;
+  opacity: 0.54;
+}
+
+.realm-atlas-panel.realm-atlas-panel--ultralite .realm-atlas-svg .atlas-trail-front {
+  animation: none;
+  stroke-dasharray: 9 11;
+  opacity: 0.45;
 }
 
 .realm-atlas-svg .atlas-trail-supply {
@@ -2232,12 +2391,21 @@ body.full-page-sync--locked {
   animation: atlas-pulse 2.4s ease-in-out infinite;
 }
 
+.realm-atlas-panel.realm-atlas-panel--ultralite .realm-atlas-svg .atlas-marker-g.is-online .atlas-marker-core {
+  animation: none;
+  filter: drop-shadow(0 0 3px rgba(0, 255, 210, 0.38));
+}
+
 /* Offline heroes: high contrast on photo background (were nearly invisible before) */
 .realm-atlas-svg .atlas-marker-g:not(.is-online) .atlas-marker-core {
   fill: rgba(245, 238, 255, 0.98);
   stroke: rgba(8, 6, 20, 0.95);
   stroke-width: 1.65;
   filter: drop-shadow(0 0 4px rgba(0, 0, 0, 0.95)) drop-shadow(0 0 14px rgba(255, 255, 255, 0.35));
+}
+
+.realm-atlas-panel.realm-atlas-panel--ultralite .realm-atlas-svg .atlas-marker-g:not(.is-online) .atlas-marker-core {
+  filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.85));
 }
 
 .realm-atlas-svg .atlas-marker-g.is-selected .atlas-marker-ring {
@@ -2252,6 +2420,10 @@ body.full-page-sync--locked {
   pointer-events: none;
   transition: opacity 0.15s ease;
   animation: atlas-selected-glow 1.8s ease-in-out infinite;
+}
+
+.realm-atlas-panel.realm-atlas-panel--ultralite .realm-atlas-svg .atlas-marker-ring {
+  animation: none;
 }
 
 @keyframes atlas-pulse {
