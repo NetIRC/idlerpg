@@ -177,13 +177,14 @@ After deploy/startup, verify:
 |---|---|
 | `GET /api/health.php` | JSON includes `"ok": true` |
 | `GET /api/leaderboard.php` | JSON includes leaderboard rows and realm/season previews |
-| `GET /api/player.php?name=<hero>` | JSON includes hero detail, medals, and recent activity |
+| `GET /api/player.php?name=<hero>` | JSON includes hero detail, medals, recent activity, and offline/session cause fields |
 | `GET /api/chronicle.php` | JSON includes `events` array |
 
 Runtime notes:
 
 - Bot heartbeat controls whether web shows online/offline state.
 - Timers do not progress while bot is offline/disconnected.
+- Hero sheet status is cause-aware (`part`, `quit`, `netsplit`, `logout`, `kick`, admin actions).
 
 ---
 
@@ -200,7 +201,8 @@ Runtime notes:
 | Unrecognized `!something` | Treated as normal speech and can be penalized. |
 | Login requirement | Register/login via PM while your nick is in game channel. |
 | PART while logged in | Session is suspended; resume on rejoin. |
-| QUIT while logged in | Session usually closed with quit penalty (netsplit grace optional). |
+| QUIT while logged in | Session is suspended with quit penalty; rejoin resumes without a new LOGIN. |
+| LOGOUT while logged in | Session is closed immediately; LOGIN is required to reopen. |
 | Not in channel | No idle progression. |
 | Bot offline | No idle progression. |
 
@@ -272,7 +274,7 @@ General command notes:
 | `!relic` | `status/list/equip <key>` | Relic operations. |
 | `!prestige` | `[now]` | Prestige status or rebirth action. |
 | `!realm` / `!pulse` | - | Realm pulse line. |
-| `!chronicle` | - | Recent realm events summary line. |
+| `!chronicle` | - | Recent realm events summary line (includes session events such as `part`, `quit`, `netsplit`). |
 | `!omen` | - | Personal omen action (cooldown). |
 | `!duel` | `<irc_nick>` | PvP duel action. |
 | `!gauntlet` | - | PvE gauntlet action. |
@@ -329,8 +331,8 @@ All API responses are JSON.
 |---|---|---|
 | `/api/health.php` | Service health check | Includes `"ok": true` when healthy. |
 | `/api/leaderboard.php` | Public leaderboard + realm/season slices | Used by web home dashboard. |
-| `/api/player.php?name=...` | Hero detail lookup | Returns hero profile by character name. |
-| `/api/chronicle.php` | Realm event feed | Supports filters such as `limit`, `kind`, `search`, `since`, `until`. |
+| `/api/player.php?name=...` | Hero detail lookup | Returns hero profile by character name, including `sessionOpen`, `offlineSinceTs`, and `offlineReason`. |
+| `/api/chronicle.php` | Realm event feed | Supports filters such as `limit`, `kind`, `search`, `since`, `until` (includes `part`, `quit`, `netsplit` kinds). |
 | `/api/php-diag.php` | PHP runtime diagnostics | Local-only by default; non-local access requires explicit `IRPG_PHP_DIAG_ENABLED=true`. |
 
 Public `robots.txt` blocks indexing of `/api/` and API endpoints emit noindex headers.

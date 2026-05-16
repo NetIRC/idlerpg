@@ -38,6 +38,7 @@ let lastTopicRefreshAttemptMs = 0;
 let lastTopicSignal = '';
 const OUTBOUND_MIN_GAP_MS = 320;
 const OUTBOUND_MAX_QUEUE = 800;
+const STALE_SESSION_RECOVERY_INTERVAL_MS = 30_000;
 const NETSPLIT_BURST_WINDOW_MS = 12_000;
 const NETSPLIT_BURST_MIN_EVENTS = 3;
 const NETSPLIT_SERVER_SIGNAL_WINDOW_MS = 45_000;
@@ -46,6 +47,7 @@ const outboundQueue: OutboundMessage[] = [];
 let outboundDrainTimer: ReturnType<typeof setTimeout> | null = null;
 let outboundDroppedCount = 0;
 let lastServerSplitSignalAt = 0;
+let lastStaleSessionRecoveryAt = 0;
 const splitLikeQuitTimestamps: number[] = [];
 const EXIT_CODE_SHUTDOWN = 0;
 const EXIT_CODE_RESTART = 23;
@@ -294,6 +296,23 @@ bot.on('close', (hadError?: boolean) => {
 const JOIN_ONBOARD_NOTICE_COOLDOWN_MS = 5 * 60 * 1000;
 const joinOnboardNoticeLast = new Map<string, number>();
 
+/**
+ * Keep anti-spam cooldown, but allow a different onboarding state to notify immediately.
+ * Example: "session resumed" and later "please LOGIN" must not suppress each other.
+ */
+function joinOnboardingBucket(text: string): 'resumed' | 'login' | 'register' | 'other' {
+  if (text.startsWith('Welcome back: your session')) return 'resumed';
+  if (text.startsWith('Welcome back. Character')) return 'login';
+  if (text.startsWith('Welcome to IdleRPG.')) return 'register';
+  return 'other';
+}
+
+function joinOnboardingCooldownMs(bucket: ReturnType<typeof joinOnboardingBucket>): number {
+  // Rejoin feedback should always be immediate after PART/QUIT recovery.
+  if (bucket === 'resumed') return 0;
+  return JOIN_ONBOARD_NOTICE_COOLDOWN_MS;
+}
+
 bot.on('join', (event) => {
   const chLower = event.channel.toLowerCase();
   const who = normNick(event.nick);
@@ -310,9 +329,10 @@ bot.on('join', (event) => {
   const resumed = engine.resumeSuspendedSessionOnJoin(who);
   const onboarding = engine.joinOnboardingNotice(who, resumed);
   if (onboarding) {
-    const key = who.toLowerCase();
+    const bucket = joinOnboardingBucket(onboarding);
+    const key = `${who.toLowerCase()}:${bucket}`;
     const now = Date.now();
-    if (now - (joinOnboardNoticeLast.get(key) ?? 0) >= JOIN_ONBOARD_NOTICE_COOLDOWN_MS) {
+    if (now - (joinOnboardNoticeLast.get(key) ?? 0) >= joinOnboardingCooldownMs(bucket)) {
       joinOnboardNoticeLast.set(key, now);
       sendNotice(who, onboarding);
     }
@@ -380,6 +400,8 @@ bot.on('userlist', (event) => {
   }
   const n = engine.reconcileOpenSessionsInChannel(namesInChannel, (a, b) => bot.caseCompare(a, b));
   if (n > 0) console.log(`[irc] restored ${n} open session(s) still in channel (bot reconnect)`);
+  const fixed = engine.recoverStaleSessionsInChannel(namesInChannel, (a, b) => bot.caseCompare(a, b));
+  if (fixed > 0) console.log(`[irc] repaired ${fixed} stale logged-out session(s) from channel presence`);
 });
 
 /** Channel lines starting with ! — no idle penalty if recognized (interactive). */
@@ -895,6 +917,14 @@ function deliver(a: GameAnnouncement) {
 
 setInterval(() => {
   if (!bot.connected) return;
+  const now = Date.now();
+  if (now - lastStaleSessionRecoveryAt >= STALE_SESSION_RECOVERY_INTERVAL_MS) {
+    lastStaleSessionRecoveryAt = now;
+    const repaired = engine.recoverStaleSessionsInChannel(namesInChannel, (a, b) => bot.caseCompare(a, b));
+    if (repaired > 0) {
+      console.log(`[irc] repaired ${repaired} stale logged-out session(s) from channel presence`);
+    }
+  }
   for (const a of engine.tick(namesInChannel)) {
     deliver(a);
   }

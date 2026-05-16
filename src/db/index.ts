@@ -31,6 +31,10 @@ export type PlayerRow = {
   is_admin: number;
   created_at: number;
   last_login: number;
+  /** Unix seconds when the hero was last marked offline (0 while online). */
+  last_offline_at: number;
+  /** Cause used by web status messaging (logout, part, quit, netsplit, kick, admin_*). */
+  last_offline_reason: string;
   /** Cosmetic charm; tiny idle bonus when set. */
   trinket: string;
   /** Total arena duel wins (PvP). */
@@ -178,6 +182,8 @@ function initSchema(db: Database.Database) {
       is_admin INTEGER NOT NULL DEFAULT 0,
       created_at INTEGER NOT NULL,
       last_login INTEGER NOT NULL DEFAULT 0,
+      last_offline_at INTEGER NOT NULL DEFAULT 0,
+      last_offline_reason TEXT NOT NULL DEFAULT '',
       guild_id INTEGER DEFAULT NULL,
       prestige_rank INTEGER NOT NULL DEFAULT 0,
       prestige_points INTEGER NOT NULL DEFAULT 0
@@ -191,6 +197,8 @@ function initSchema(db: Database.Database) {
     );
   `);
   ensureSessionOpenColumn(db);
+  ensureLastOfflineAtColumn(db);
+  ensureLastOfflineReasonColumn(db);
   ensureMetaTextColumn(db);
   ensureTrinketColumn(db);
   ensureRealmEventsTable(db);
@@ -456,6 +464,19 @@ function ensureSessionOpenColumn(db: Database.Database) {
   if (cols.some((c) => c.name === 'session_open')) return;
   db.exec('ALTER TABLE players ADD COLUMN session_open INTEGER NOT NULL DEFAULT 0');
   db.exec('UPDATE players SET session_open = online');
+}
+
+function ensureLastOfflineAtColumn(db: Database.Database) {
+  const cols = db.prepare('PRAGMA table_info(players)').all() as { name: string }[];
+  if (cols.some((c) => c.name === 'last_offline_at')) return;
+  db.exec('ALTER TABLE players ADD COLUMN last_offline_at INTEGER NOT NULL DEFAULT 0');
+  db.exec(`UPDATE players SET last_offline_at = strftime('%s','now') WHERE online = 0`);
+}
+
+function ensureLastOfflineReasonColumn(db: Database.Database) {
+  const cols = db.prepare('PRAGMA table_info(players)').all() as { name: string }[];
+  if (cols.some((c) => c.name === 'last_offline_reason')) return;
+  db.exec(`ALTER TABLE players ADD COLUMN last_offline_reason TEXT NOT NULL DEFAULT ''`);
 }
 
 export function findByCharacter(db: Database.Database, name: string, caseSensitive: boolean): PlayerRow | undefined {

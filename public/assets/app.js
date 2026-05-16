@@ -1081,6 +1081,9 @@
     register: 'Join',
     login: 'Login',
     logout: 'Logout',
+    part: 'Part',
+    quit: 'Quit',
+    netsplit: 'Netsplit',
     admin_resetpass: 'Admin',
     admin_forcelogout: 'Admin',
     admin_delete: 'Admin',
@@ -1641,8 +1644,34 @@
 
   function formatStatus(d) {
     if (d.online) return 'IRC: ' + escapeHtml(d.ircNick || '');
+    const sinceTs = Number(d && d.offlineSinceTs);
+    const hasSince = Number.isFinite(sinceTs) && sinceTs > 0;
+    const sinceLabel = hasSince ? new Date(sinceTs * 1000).toLocaleString() : null;
+    const reason = String((d && d.offlineReason) || '').trim().toLowerCase();
+    let sessionHint = '';
+    if (d && d.sessionOpen) {
+      if (reason === 'part') {
+        sessionHint = 'Left the game channel (PART). Rejoin the game channel to resume automatically.';
+      } else if (reason === 'quit' || reason === 'netsplit') {
+        sessionHint = 'IRC disconnected (QUIT/netsplit). Rejoin the game channel to resume automatically.';
+      } else {
+        sessionHint = 'Session paused. Rejoin the game channel to resume automatically.';
+      }
+    } else if (reason === 'logout') {
+      sessionHint = 'Logged out from this hero. LOGIN is required again. If you are already in channel, send LOGIN by private message.';
+    } else if (reason === 'kick') {
+      sessionHint = 'Kicked from the game channel. Rejoin the channel, then LOGIN again by private message.';
+    } else if (reason === 'admin_forcelogout') {
+      sessionHint = 'Session closed by an admin command. LOGIN is required again.';
+    } else if (reason === 'admin_resetpass') {
+      sessionHint = 'Password was reset by admin and session was closed. Use the new password to LOGIN again.';
+    } else {
+      sessionHint = 'No active IRC session. If you are in channel, send LOGIN by private message; otherwise join the game channel first.';
+    }
     return (
-      'Offline<br><span class="muted" style="display:inline-block;margin-top:0.35rem;font-size:0.78rem;line-height:1.4">Not in an IRC session (left channel or LOGOUT). Use LOGIN via private message while in the game channel.</span>'
+      'Offline' +
+      (sinceLabel ? ` <span class="muted mono">(since ${escapeHtml(sinceLabel)})</span>` : '') +
+      `<br><span class="muted" style="display:inline-block;margin-top:0.35rem;font-size:0.78rem;line-height:1.4">${escapeHtml(sessionHint)}</span>`
     );
   }
 

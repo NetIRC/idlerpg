@@ -81,7 +81,7 @@ $jsonLd = [
     <h2 class="h2" style="font-size:1.05rem;">3) Login when you return</h2>
     <p>Private message the bot:</p>
     <p class="mono">LOGIN &lt;CharacterName&gt; &lt;password&gt;</p>
-    <p>If you leave IRC, your session may close. When in doubt, use <span class="mono">!whoami</span> or PM <span class="mono">WHOAMI</span>.</p>
+    <p>If you PART or QUIT, your session is paused and resumes on rejoin. Use LOGIN again only after LOGOUT (or an admin session reset). When in doubt, use <span class="mono">!whoami</span> or PM <span class="mono">WHOAMI</span>.</p>
 
     <h2 class="h2" style="font-size:1.05rem;">4) Level efficiently</h2>
     <ul>

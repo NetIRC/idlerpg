@@ -24,7 +24,7 @@ $faqEntities = [
     ['q' => 'How do I start playing IdleRPG?', 'a' => 'Join the game channel, then private message the bot with REGISTER <name> <password> <class...>.'],
     ['q' => 'Why am I not leveling up?', 'a' => 'Your nick must be visible in the game channel and your session must be logged in.'],
     ['q' => 'Do chat messages slow me down?', 'a' => 'Normal channel chat adds timer penalty. Recognized command lines are exempt.'],
-    ['q' => 'What happens if I leave the channel?', 'a' => 'PART suspends session; QUIT usually closes session. Netsplit grace can be enabled by server config.'],
+    ['q' => 'What happens if I leave the channel?', 'a' => 'PART or QUIT suspends your session; rejoin the game channel to resume. Only LOGOUT closes it immediately.'],
     ['q' => 'How do quests and world boss work?', 'a' => 'They run automatically when enabled. Use !quest and !boss to see live status and outcomes.'],
 ];
 $faqJson = [

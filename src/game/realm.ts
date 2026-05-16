@@ -576,7 +576,10 @@ export function adminForceLogout(db: Database, characterName: string, caseSensit
   const p = findByCharacterName(db, characterName.trim(), caseSensitive);
   if (!p) return { err: 'Character not found.' };
   if (!p.online) return { err: 'Character not online.' };
-  db.prepare('UPDATE players SET online = 0, session_open = 0 WHERE id = ?').run(p.id);
+  const now = Math.floor(Date.now() / 1000);
+  db.prepare(
+    `UPDATE players SET online = 0, session_open = 0, last_offline_at = ?, last_offline_reason = 'admin_forcelogout' WHERE id = ?`,
+  ).run(now, p.id);
   insertRealmEvent(db, 'admin_forcelogout', characterName.trim());
   return { ok: true };
 }

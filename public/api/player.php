@@ -52,13 +52,13 @@ if (strlen($name) > 32) {
 
 $case = !empty($IRPG['case_sensitive_names']);
 $sql = $case
-    ? 'SELECT id, character_name, class, level, next_seconds, idled, online, alignment, irc_nick, created_at,
+    ? 'SELECT id, character_name, class, level, next_seconds, idled, online, session_open, alignment, irc_nick, created_at, last_offline_at, last_offline_reason,
               pen_mesg, pen_nick, pen_part, pen_quit, pen_kick, pen_quest, pen_logout, trinket,
               COALESCE(duel_wins, 0) AS duel_wins, COALESCE(gauntlet_wins, 0) AS gauntlet_wins,
               COALESCE(idle_streak_sec, 0) AS idle_streak_sec, COALESCE(streak_reward_count, 0) AS streak_reward_count,
               COALESCE(guild_id, 0) AS guild_id, COALESCE(prestige_rank, 0) AS prestige_rank, COALESCE(prestige_points, 0) AS prestige_points
        FROM players WHERE character_name = ? LIMIT 1'
-    : 'SELECT id, character_name, class, level, next_seconds, idled, online, alignment, irc_nick, created_at,
+    : 'SELECT id, character_name, class, level, next_seconds, idled, online, session_open, alignment, irc_nick, created_at, last_offline_at, last_offline_reason,
               pen_mesg, pen_nick, pen_part, pen_quit, pen_kick, pen_quest, pen_logout, trinket,
               COALESCE(duel_wins, 0) AS duel_wins, COALESCE(gauntlet_wins, 0) AS gauntlet_wins,
               COALESCE(idle_streak_sec, 0) AS idle_streak_sec, COALESCE(streak_reward_count, 0) AS streak_reward_count,
@@ -266,6 +266,9 @@ try {
         'nextSeconds' => $next,
         'nextHuman' => irpg_duration_it($next),
         'online' => $online,
+        'sessionOpen' => ((int) ($r['session_open'] ?? 0)) === 1,
+        'offlineSinceTs' => $online ? null : max(0, (int) ($r['last_offline_at'] ?? 0)),
+        'offlineReason' => $online ? null : trim((string) ($r['last_offline_reason'] ?? '')),
         'alignment' => $r['alignment'],
         'trinket' => isset($r['trinket']) && (string) $r['trinket'] !== '' ? (string) $r['trinket'] : null,
         'duelWins' => (int) $r['duel_wins'],

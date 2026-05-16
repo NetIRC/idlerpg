@@ -186,7 +186,11 @@ export class GameEngine {
 
     const now = Math.floor(Date.now() / 1000);
     this.db
-      .prepare(`UPDATE players SET online = 1, session_open = 1, irc_nick = ?, userhost = ?, last_login = ? WHERE id = ?`)
+      .prepare(
+        `UPDATE players
+         SET online = 1, session_open = 1, irc_nick = ?, userhost = ?, last_login = ?, last_offline_at = 0, last_offline_reason = ''
+         WHERE id = ?`,
+      )
       .run(nick, userhost, now, p.id);
     clearIrcNickConflicts(this.db, nick, p.id);
 
@@ -209,11 +213,16 @@ export class GameEngine {
     if (!p) return { ok: false, err: MSG.activeSessionRequired };
     insertRealmEvent(this.db, 'logout', p.character_name);
     const pen = this.applyPenaltyAmount(p, 20);
+    const now = Math.floor(Date.now() / 1000);
     this.db
       .prepare(
-        `UPDATE players SET online = 0, session_open = 0, pen_logout = pen_logout + ?, next_seconds = next_seconds + ? WHERE id = ?`,
+        `UPDATE players
+         SET online = 0, session_open = 0, last_offline_at = ?,
+             last_offline_reason = 'logout',
+             pen_logout = pen_logout + ?, next_seconds = next_seconds + ?
+         WHERE id = ?`,
       )
-      .run(pen, pen, p.id);
+      .run(now, pen, pen, p.id);
     this.resetIdleStreak(p.id);
     return {
       ok: true,
@@ -251,7 +260,7 @@ export class GameEngine {
       const name = p.character_name;
       const caseHint = this.cfg.caseSensitiveNames ? ' Character name must match exactly (case-sensitive).' : '';
       return (
-        `Welcome back. Character "${name}" is registered but not logged in.${caseHint} ` +
+        `Welcome back. Character "${name}" is registered but currently logged out.${caseHint} ` +
         `From this nick in ${ch}, PM this bot: LOGIN ${name} <password> (password = one word). ` +
         `Need help? PM HELP.`
       );
@@ -266,7 +275,7 @@ export class GameEngine {
    * After bot reconnect and NAMES: restore `online` for players who still have LOGIN session
    * (`session_open`) and are present in the game channel — no second LOGIN required.
    * Same state is used when a player PARTed the channel (session suspended, not ended).
-   * LOGOUT / QUIT / KICK / explicit closes clear `session_open`, so those are not revived.
+   * LOGOUT / KICK / explicit admin closes clear `session_open`, so those are not revived.
    */
   reconcileOpenSessionsInChannel(channelNicks: Set<string>, nickEquals: (a: string, b: string) => boolean): number {
     const now = Math.floor(Date.now() / 1000);
@@ -275,7 +284,9 @@ export class GameEngine {
         `SELECT id, irc_nick FROM players WHERE session_open = 1 AND online = 0 AND irc_nick != ''`,
       )
       .all() as { id: number; irc_nick: string }[];
-    const upd = this.db.prepare('UPDATE players SET online = 1, irc_nick = ? WHERE id = ?');
+    const upd = this.db.prepare(
+      `UPDATE players SET online = 1, irc_nick = ?, last_offline_at = 0, last_offline_reason = '' WHERE id = ?`,
+    );
     let restored = 0;
     for (const r of rows) {
       const graceKey = this.netsplitGraceKey(r.id);
@@ -298,6 +309,41 @@ export class GameEngine {
   }
 
   /**
+   * Repair legacy/stale rows: user is in channel now, but DB says logged out because
+   * previous runtime closed session_open on QUIT/disconnect without explicit LOGOUT.
+   */
+  recoverStaleSessionsInChannel(channelNicks: Set<string>, nickEquals: (a: string, b: string) => boolean): number {
+    if (channelNicks.size === 0) return 0;
+    const now = Math.floor(Date.now() / 1000);
+    const rows = this.db
+      .prepare(
+        `SELECT id, character_name, irc_nick, last_offline_at
+         FROM players
+         WHERE online = 0 AND session_open = 0 AND irc_nick != ''
+         ORDER BY last_offline_at DESC, id DESC
+         LIMIT 600`,
+      )
+      .all() as { id: number; character_name: string; irc_nick: string; last_offline_at: number }[];
+    if (!rows.length) return 0;
+    const upd = this.db.prepare(
+      `UPDATE players
+       SET online = 1, session_open = 1, irc_nick = ?, last_offline_at = 0, last_offline_reason = ''
+       WHERE id = ?`,
+    );
+    let restored = 0;
+    for (const r of rows) {
+      if (!this.canAutoRecoverJoin(r.character_name, r.last_offline_at, now)) continue;
+      for (const inChan of channelNicks) {
+        if (!nickEquals(r.irc_nick, inChan)) continue;
+        upd.run(inChan, r.id);
+        restored += 1;
+        break;
+      }
+    }
+    return restored;
+  }
+
+  /**
    * When a player rejoins the game channel after PART: restore `online` if their session was only suspended.
    */
   resumeSuspendedSessionOnJoin(ircNick: string): boolean {
@@ -307,17 +353,63 @@ export class GameEngine {
         `SELECT id FROM players WHERE session_open = 1 AND online = 0 AND irc_nick != '' AND irc_nick COLLATE NOCASE = ?`,
       )
       .get(ircNick) as { id: number } | undefined;
-    if (!row) return false;
-    const graceKey = this.netsplitGraceKey(row.id);
-    const graceUntil = Math.max(0, metaGetInt(this.db, graceKey) ?? 0);
-    if (graceUntil > 0 && now > graceUntil) {
-      this.db.prepare(`UPDATE players SET session_open = 0 WHERE id = ?`).run(row.id);
-      metaSetInt(this.db, graceKey, 0);
-      return false;
+    if (row) {
+      const graceKey = this.netsplitGraceKey(row.id);
+      const graceUntil = Math.max(0, metaGetInt(this.db, graceKey) ?? 0);
+      if (graceUntil > 0 && now > graceUntil) {
+        this.db.prepare(`UPDATE players SET session_open = 0 WHERE id = ?`).run(row.id);
+        metaSetInt(this.db, graceKey, 0);
+        return false;
+      }
+      this.db
+        .prepare(`UPDATE players SET online = 1, irc_nick = ?, last_offline_at = 0, last_offline_reason = '' WHERE id = ?`)
+        .run(ircNick, row.id);
+      if (graceUntil > 0) metaSetInt(this.db, graceKey, 0);
+      return true;
     }
-    this.db.prepare(`UPDATE players SET online = 1, irc_nick = ? WHERE id = ?`).run(ircNick, row.id);
-    if (graceUntil > 0) metaSetInt(this.db, graceKey, 0);
+
+    /**
+     * Safety recovery: older rows (or prior behavior) can end up with session_open=0
+     * after QUIT/disconnect without an explicit LOGOUT. If no explicit close marker exists
+     * around the recorded offline time, restore as suspended-session resume.
+     */
+    const stale = this.db
+      .prepare(
+        `SELECT id, character_name, last_offline_at
+         FROM players
+         WHERE online = 0 AND session_open = 0 AND irc_nick != '' AND irc_nick COLLATE NOCASE = ?
+         ORDER BY last_offline_at DESC, id DESC
+         LIMIT 1`,
+      )
+      .get(ircNick) as { id: number; character_name: string; last_offline_at: number } | undefined;
+    if (!stale) return false;
+    if (!this.canAutoRecoverJoin(stale.character_name, stale.last_offline_at, now)) return false;
+    this.db
+      .prepare(
+        `UPDATE players
+         SET online = 1, session_open = 1, irc_nick = ?, last_offline_at = 0, last_offline_reason = ''
+         WHERE id = ?`,
+      )
+      .run(ircNick, stale.id);
     return true;
+  }
+
+  private canAutoRecoverJoin(characterName: string, offlineAt: number, now: number): boolean {
+    if (!characterName.trim()) return false;
+    if (!Number.isFinite(offlineAt) || offlineAt <= 0) return false;
+    // Do not auto-recover very old rows.
+    if (now - offlineAt > 7 * 24 * 3600) return false;
+    const explicit = this.db
+      .prepare(
+        `SELECT ts FROM realm_events
+         WHERE kind IN ('logout', 'admin_forcelogout', 'admin_resetpass')
+           AND detail COLLATE NOCASE = ?
+           AND ts >= ?
+         ORDER BY id DESC
+         LIMIT 1`,
+      )
+      .get(characterName, Math.max(0, offlineAt - 15)) as { ts: number } | undefined;
+    return !explicit;
   }
 
   stats(ircNick: string, who?: string): { text: string } | { err: string } {
@@ -860,9 +952,14 @@ export class GameEngine {
         return { notices, announcements };
       }
       const hash = bcrypt.hashSync(pass, 10);
+      const now = Math.floor(Date.now() / 1000);
       this.db
-        .prepare('UPDATE players SET password_hash = ?, online = 0, session_open = 0 WHERE id = ?')
-        .run(hash, p.id);
+        .prepare(
+          `UPDATE players
+           SET password_hash = ?, online = 0, session_open = 0, last_offline_at = ?, last_offline_reason = 'admin_resetpass'
+           WHERE id = ?`,
+        )
+        .run(hash, now, p.id);
       insertRealmEvent(this.db, 'admin_resetpass', p.character_name);
       notices.push(
         `Password reset for ${p.character_name}. They must LOGIN again (session cleared).`,
@@ -988,8 +1085,9 @@ export class GameEngine {
     if (kind === 'netsplit') {
       const now = Math.floor(Date.now() / 1000);
       this.db
-        .prepare(`UPDATE players SET online = 0, session_open = 1 WHERE id = ?`)
-        .run(p.id);
+        .prepare(`UPDATE players SET online = 0, session_open = 1, last_offline_at = ?, last_offline_reason = 'netsplit' WHERE id = ?`)
+        .run(now, p.id);
+      insertRealmEvent(this.db, 'netsplit', `${p.character_name} IRC netsplit/disconnect (session suspended)`);
       this.resetIdleStreak(p.id);
       metaSetInt(this.db, graceKey, now + Math.max(1, this.cfg.netsplitGraceSec));
       return [];
@@ -998,12 +1096,16 @@ export class GameEngine {
     const pen = this.applyPenaltyAmount(p, mult);
     const col = kind === 'part' ? 'pen_part' : 'pen_quit';
     if (kind === 'part') {
+      const now = Math.floor(Date.now() / 1000);
       metaSetInt(this.db, graceKey, 0);
       this.db
         .prepare(
-          `UPDATE players SET online = 0, session_open = 1, ${col} = ${col} + ?, next_seconds = next_seconds + ? WHERE id = ?`,
+          `UPDATE players
+           SET online = 0, session_open = 1, last_offline_at = ?, last_offline_reason = 'part', ${col} = ${col} + ?, next_seconds = next_seconds + ?
+           WHERE id = ?`,
         )
-        .run(pen, pen, p.id);
+        .run(now, pen, pen, p.id);
+      insertRealmEvent(this.db, 'part', `${p.character_name} +${durationIt(pen)} (left ${this.cfg.ircChannel}; session suspended)`);
       this.resetIdleStreak(p.id);
       const ch = this.cfg.ircChannel;
       return [
@@ -1015,21 +1117,18 @@ export class GameEngine {
         },
       ];
     } else {
+      const now = Math.floor(Date.now() / 1000);
       metaSetInt(this.db, graceKey, 0);
       this.db
         .prepare(
-          `UPDATE players SET online = 0, session_open = 0, ${col} = ${col} + ?, next_seconds = next_seconds + ? WHERE id = ?`,
+          `UPDATE players
+           SET online = 0, session_open = 1, last_offline_at = ?, last_offline_reason = 'quit', ${col} = ${col} + ?, next_seconds = next_seconds + ?
+           WHERE id = ?`,
         )
-        .run(pen, pen, p.id);
+        .run(now, pen, pen, p.id);
+      insertRealmEvent(this.db, 'quit', `${p.character_name} +${durationIt(pen)} (IRC disconnect; session suspended)`);
       this.resetIdleStreak(p.id);
-      return [
-        {
-          target: 'notice',
-          nick: ircNick,
-          text: `IRC disconnect: session closed; level timer +${durationIt(pen)}. LOGIN again when you return.`,
-          tone: 'loss',
-        },
-      ];
+      return [];
     }
   }
 
@@ -1037,11 +1136,14 @@ export class GameEngine {
     const p = findOnlineByNickCi(this.db, ircNick);
     if (!p) return [];
     const pen = this.applyPenaltyAmount(p, 250);
+    const now = Math.floor(Date.now() / 1000);
     this.db
       .prepare(
-        `UPDATE players SET online = 0, session_open = 0, pen_kick = pen_kick + ?, next_seconds = next_seconds + ? WHERE id = ?`,
+        `UPDATE players
+         SET online = 0, session_open = 0, last_offline_at = ?, last_offline_reason = 'kick', pen_kick = pen_kick + ?, next_seconds = next_seconds + ?
+         WHERE id = ?`,
       )
-      .run(pen, pen, p.id);
+      .run(now, pen, pen, p.id);
     this.resetIdleStreak(p.id);
     return [
       {

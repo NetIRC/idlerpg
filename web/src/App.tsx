@@ -15,6 +15,9 @@ type Row = {
 type Detail = Row & {
   alignment: string;
   ircNick: string | null;
+  sessionOpen?: boolean;
+  offlineSinceTs?: number | null;
+  offlineReason?: string | null;
   trinket?: string | null;
   stats: Record<string, number>;
 };
@@ -239,7 +242,27 @@ export default function App() {
                   </div>
                   <div className="rounded-lg bg-black/30 p-3">
                     <dt className="text-dust/50">Status</dt>
-                    <dd className="mt-1 text-white">{sel.online ? `IRC: ${sel.ircNick}` : 'Offline'}</dd>
+                    <dd className="mt-1 text-white">
+                      {sel.online
+                        ? `IRC: ${sel.ircNick}`
+                        : (() => {
+                            const ts = Number(sel.offlineSinceTs ?? 0);
+                            const hasSince = Number.isFinite(ts) && ts > 0;
+                            const since = hasSince ? new Date(ts * 1000).toLocaleString() : null;
+                            const suffix = since ? ` (since ${since})` : '';
+                            const reason = String(sel.offlineReason || '').toLowerCase();
+                            if (sel.sessionOpen) {
+                              if (reason === 'part') return `Offline${suffix} · left channel (PART), auto-resume on rejoin`;
+                              if (reason === 'quit' || reason === 'netsplit') {
+                                return `Offline${suffix} · disconnected, auto-resume on rejoin`;
+                              }
+                              return `Offline${suffix} · session paused`;
+                            }
+                            if (reason === 'logout') return `Offline${suffix} · logged out (LOGIN required)`;
+                            if (reason === 'kick') return `Offline${suffix} · kicked (rejoin + LOGIN required)`;
+                            return `Offline${suffix}`;
+                          })()}
+                    </dd>
                   </div>
                   <div className="rounded-lg bg-black/30 p-3">
                     <dt className="text-dust/50">Alignment</dt>
