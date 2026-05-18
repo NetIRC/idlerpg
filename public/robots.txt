@@ -2,8 +2,10 @@
 User-agent: *
 Allow: /
 
-# Keep raw API payloads out of search indexes.
+# Keep raw API payloads and server-side includes out of search indexes.
 Disallow: /api/
+Disallow: /includes/
+Disallow: /admin/
 
-# Dynamic sitemap endpoint (absolute URL recommended by crawlers).
+# Dynamic sitemap (update host if your public URL differs from production).
 Sitemap: https://idlerpg.netirc.eu/sitemap.php

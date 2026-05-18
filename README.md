@@ -50,7 +50,7 @@ Additional docs: [DEPLOY.md](DEPLOY.md), [SECURITY.md](SECURITY.md), [LICENSE](L
 | Layer | Responsibility |
 |---|---|
 | `src/` IRC bot | Gameplay engine, session handling, level ticks, penalties, events, optional V3 systems, chronicle writes. |
-| `public/` PHP UI | Leaderboard, player details, realm chronicle feed, guild standings, season standings, rules pages, PWA shell. |
+| `public/` PHP UI | Leaderboard, player details, realm chronicle feed, guild standings, season standings, SEO guide pages, PWA shell. |
 | `public/api/*.php` | Read-only JSON endpoints for health, leaderboard, player detail, chronicle feed. |
 | SQLite DB | Shared source of truth. Bot writes state; website reads state. |
 
@@ -335,7 +335,7 @@ All API responses are JSON.
 | `/api/chronicle.php` | Realm event feed | Supports filters such as `limit`, `kind`, `search`, `since`, `until` (includes `part`, `quit`, `netsplit` kinds). |
 | `/api/php-diag.php` | PHP runtime diagnostics | Local-only by default; non-local access requires explicit `IRPG_PHP_DIAG_ENABLED=true`. |
 
-Public `robots.txt` blocks indexing of `/api/` and API endpoints emit noindex headers.
+Public `robots.txt` blocks indexing of `/api/`, `/includes/`, and `/admin/`; API endpoints emit noindex headers. `/admin/` also gets `X-Robots-Tag: noindex` via `.htaccess`.
 
 ---
 
@@ -389,17 +389,37 @@ php -r "echo password_hash('StrongPassHere', PASSWORD_DEFAULT), PHP_EOL;"
 
 The web layer includes:
 
-- canonical/social tags and JSON-LD metadata
-- landing pages (`how-to-play`, `commands`, `faq`)
-- XML sitemap endpoint
+- canonical/social tags and JSON-LD metadata on the home dashboard and guide pages
+- SEO landing pages: `/how-to-play.php`, `/commands.php`, `/faq.php`
+- footer **guide modal** on the home page (iframe); guide footers link only to each other (no link back to `/` inside the iframe)
+- XML sitemap at `/sitemap.php` (lists home + the three guides; served with `X-Robots-Tag: noindex`)
+- `robots.txt` with `Sitemap:` URL (update the host in that file if your public domain differs)
 - web app manifest + service worker + offline fallback
+
+### Guide pages (`public/`)
+
+Shared PHP under `public/includes/`:
+
+| File | Role |
+|---|---|
+| `guide-init.php` | Bootstrap; friendly error if includes are missing on the server |
+| `guide-env.php` | Reads gameplay tuning from project `.env` / `IRPG_*` (server-side only; not exposed to the browser) |
+| `guide-data.php` | Command tables, FAQ copy, HTML render helpers |
+| `guide-seo.php` | Shared `<head>` SEO tags (canonical, Open Graph, Twitter, JSON-LD) |
+| `guide-styles.php` | Loads `assets/app.css` (and optional `assets/guide.css`) |
+
+Guide pages show a **Realm settings** section with live values from the same defaults as the bot (`src/config.ts`). Keep `.env` outside the web document root; use `public/includes/local-root.php` when `site.config.php` and `.env` live beside the bot, not under `public_html`.
+
+**`public_html`-only deploy:** upload the three guide `.php` files, `includes/guide-*.php`, and `assets/app.css` (plus optional `assets/guide.css`). Do not upload `.env` into the web root.
 
 Post-deploy checklist:
 
-1. Set `IRPG_PUBLIC_URL` to final HTTPS domain.
-2. Validate `/sitemap.php`.
-3. Submit sitemap to search consoles.
-4. Request indexing for main/editorial pages.
+1. Set `IRPG_PUBLIC_URL` to final HTTPS domain (canonical URLs, sitemap, Open Graph).
+2. Validate `/how-to-play.php`, `/commands.php`, and `/faq.php` (not a blank page).
+3. Validate `/sitemap.php` lists four URLs with your domain.
+4. Confirm `https://your-domain/.env` returns 403/404.
+5. Submit sitemap to search consoles; request indexing for home and guide URLs.
+6. Hard-refresh or bump service worker cache after CSS changes.
 
 ---
 

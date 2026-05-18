@@ -1,6 +1,6 @@
 /** Service worker for IdleRPG app shell, static assets, and offline fallback. */
 
-const CACHE_NAME = 'idlerpg-shell-v2';
+const CACHE_NAME = 'idlerpg-shell-v3';
 const SHELL_URLS = [
   '/',
   '/index.php',
@@ -9,6 +9,7 @@ const SHELL_URLS = [
   '/faq.php',
   '/offline.html',
   '/assets/app.css',
+  '/assets/guide.css',
   '/assets/app.js',
   '/assets/pwa.js',
   '/favicon.svg',
@@ -63,16 +64,13 @@ self.addEventListener('fetch', (event) => {
 
   if (isStaticAsset(url.pathname)) {
     event.respondWith(
-      caches.match(req).then((cached) => {
-        const network = fetch(req)
-          .then((res) => {
-            const copy = res.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(req, copy)).catch(() => undefined);
-            return res;
-          })
-          .catch(() => cached || Response.error());
-        return cached || network;
-      }),
+      fetch(req)
+        .then((res) => {
+          const copy = res.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(req, copy)).catch(() => undefined);
+          return res;
+        })
+        .catch(() => caches.match(req).then((cached) => cached || Response.error())),
     );
   }
 });

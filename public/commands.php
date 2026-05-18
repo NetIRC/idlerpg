@@ -3,32 +3,21 @@ declare(strict_types=1);
 
 /** SEO landing: command reference for public and private IdleRPG bot commands. */
 
-$title = 'IdleRPG Commands List (IRC) | Public and PM Commands';
-$description = 'Complete IdleRPG command reference for IRC: public !commands and private bot commands for register, login, progression, quest, season, and boss.';
+require_once __DIR__ . '/includes/guide-init.php';
+guide_init();
 
-$publicBase = '';
-$envPublic = getenv('IRPG_PUBLIC_URL');
-if (is_string($envPublic) && trim($envPublic) !== '') {
-    $publicBase = rtrim(trim($envPublic), '/');
-} else {
-    $host = $_SERVER['HTTP_HOST'] ?? '';
-    if (is_string($host) && $host !== '') {
-        $https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
-            || (isset($_SERVER['SERVER_PORT']) && (string) $_SERVER['SERVER_PORT'] === '443');
-        $publicBase = ($https ? 'https' : 'http') . '://' . $host;
-    }
-}
-$canonical = $publicBase !== '' ? $publicBase . '/commands.php' : '';
+$title = 'IdleRPG Commands List (IRC) | Public and PM Commands';
+$description = 'Complete IdleRPG command reference for IRC: public !commands and private bot commands with explanations for register, login, progression, quest, season, boss, and V3 systems.';
 
 $jsonLd = [
     '@context' => 'https://schema.org',
     '@type' => 'ItemList',
     'name' => 'IdleRPG Commands',
+    'description' => $description,
     'itemListElement' => [
-        ['@type' => 'ListItem', 'position' => 1, 'name' => '!help, !cmds, !rules'],
-        ['@type' => 'ListItem', 'position' => 2, 'name' => '!time, !stats, !whoami'],
-        ['@type' => 'ListItem', 'position' => 3, 'name' => '!quest, !season, !boss'],
-        ['@type' => 'ListItem', 'position' => 4, 'name' => 'REGISTER, LOGIN, LOGOUT (PM)'],
+        ['@type' => 'ListItem', 'position' => 1, 'name' => 'Channel commands (!help, !time, !stats, …)'],
+        ['@type' => 'ListItem', 'position' => 2, 'name' => 'PM commands (REGISTER, LOGIN, LOGOUT, …)'],
+        ['@type' => 'ListItem', 'position' => 3, 'name' => 'Admin PM commands'],
     ],
 ];
 ?>
@@ -37,57 +26,51 @@ $jsonLd = [
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title><?= htmlspecialchars($title, ENT_QUOTES, 'UTF-8') ?></title>
-  <meta name="description" content="<?= htmlspecialchars($description, ENT_QUOTES, 'UTF-8') ?>" />
-  <meta name="robots" content="index,follow,max-image-preview:large" />
+  <?php guide_render_head($title, $description, '/commands.php', 'article', $jsonLd); ?>
   <meta name="theme-color" content="#05040a" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="IdleRPG" />
-  <?php if ($canonical !== ''): ?>
-  <link rel="canonical" href="<?= htmlspecialchars($canonical, ENT_QUOTES, 'UTF-8') ?>" />
-  <?php endif; ?>
-  <meta property="og:type" content="article" />
-  <meta property="og:title" content="<?= htmlspecialchars($title, ENT_QUOTES, 'UTF-8') ?>" />
-  <meta property="og:description" content="<?= htmlspecialchars($description, ENT_QUOTES, 'UTF-8') ?>" />
-  <?php if ($canonical !== ''): ?>
-  <meta property="og:url" content="<?= htmlspecialchars($canonical, ENT_QUOTES, 'UTF-8') ?>" />
-  <?php endif; ?>
-  <meta name="twitter:card" content="summary_large_image" />
-  <script type="application/ld+json"><?= json_encode($jsonLd, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR) ?></script>
   <link rel="icon" href="favicon.svg" type="image/svg+xml" />
   <link rel="apple-touch-icon" href="favicon.svg" />
   <link rel="manifest" href="/manifest.webmanifest" />
-  <link rel="stylesheet" href="assets/app.css?v=<?= is_file(__DIR__ . '/assets/app.css') ? (string) filemtime(__DIR__ . '/assets/app.css') : '0' ?>" />
+  <?php guide_stylesheet_links(); ?>
 </head>
 <body>
   <main class="inner" style="padding-top:2rem;padding-bottom:2rem;max-width:62rem;">
     <h1 class="h2" style="font-size:1.4rem;">IdleRPG Commands (IRC)</h1>
-    <p>This page lists the core commands players use most often. For full live behavior, always treat the in-bot help as source of truth.</p>
+    <p class="guide-lead">Use commands in <strong>#IdleRPG</strong> on NetIRC. Channel syntax is <span class="mono">!command</span>; account commands are sent by <strong>private message</strong> to the bot without <span class="mono">!</span>.</p>
+
+    <p class="guide-note">Recognized public <span class="mono">!commands</span> do not add normal chat penalty. Unknown <span class="mono">!something</span> lines are treated as regular speech. Commands are case-insensitive on the token (<span class="mono">!TIME</span> = <span class="mono">!time</span>).</p>
 
     <h2 class="h2" style="font-size:1.05rem;">Public channel commands</h2>
-    <p class="mono">!help !cmds !rules !ping !time !whoami !stats !records !quest !bounty !season !boss !guild !relic !prestige !realm !chronicle !omen !duel !gauntlet !medals !top !lore</p>
-    <p>These command messages are recognized and do not apply normal chat penalty.</p>
+    <?php guide_render_command_table(guide_channel_commands()); ?>
 
     <h2 class="h2" style="font-size:1.05rem;">Private message commands</h2>
-    <p class="mono">REGISTER &lt;name&gt; &lt;password&gt; &lt;class...&gt;</p>
-    <p class="mono">LOGIN &lt;name&gt; &lt;password&gt;</p>
-    <p class="mono">LOGOUT · HELP · CMDS · WHOAMI · STATS · TIME · QUEST · DUEL · GAUNTLET</p>
+    <p class="guide-note">Send these to the bot in PM while your nick is visible in the game channel (required for REGISTER and LOGIN).</p>
+    <?php guide_render_command_table(guide_pm_commands()); ?>
 
-    <h2 class="h2" style="font-size:1.05rem;">Admin-only (private)</h2>
-    <p class="mono">ADMIN HELP · FORCELOGOUT · RESETPASS · STARTQUEST · LUCKY · SAY · SHUTDOWN</p>
+    <h2 class="h2" style="font-size:1.05rem;">Admin-only (private message)</h2>
+    <p class="guide-note">Authorized admin IRC nicks or admin-flagged characters only. By default you must also be in the game channel.</p>
+    <?php
+    $adminRows = [];
+    foreach (guide_admin_commands() as $a) {
+        $adminRows[] = ['cmd' => $a['cmd'], 'args' => $a['args'], 'desc' => $a['desc']];
+    }
+    guide_render_command_table($adminRows);
+    ?>
 
-    <h2 class="h2" style="font-size:1.05rem;">Most useful progression commands</h2>
-    <ul>
-      <li><span class="mono">!time</span> - next level timer.</li>
-      <li><span class="mono">!stats</span> - class, level, timers, extras.</li>
-      <li><span class="mono">!quest</span> - active quest status.</li>
-      <li><span class="mono">!season</span> - season progress and time left.</li>
-      <li><span class="mono">!boss</span> - world boss status.</li>
+    <?php guide_render_shard_tuning(guide_runtime_config()); ?>
+
+    <h2 class="h2" style="font-size:1.05rem;">Session quick reference</h2>
+    <ul class="rules-list">
+      <li><strong>PART</strong> or <strong>QUIT IRC</strong> — session suspended; rejoin channel to resume (no LOGIN).</li>
+      <li><strong>LOGOUT</strong> (PM) — session closed; LOGIN required.</li>
+      <li><strong>KICK</strong> — session closed; rejoin and LOGIN.</li>
     </ul>
 
-    <p class="mono muted-strong">Also read: <a href="/how-to-play.php" style="color:inherit;">How to Play</a> · <a href="/faq.php" style="color:inherit;">FAQ</a></p>
+    <p class="guide-footer-links">Also read: <a href="/how-to-play.php">How to Play</a> · <a href="/faq.php">FAQ</a></p>
   </main>
   <script src="assets/pwa.js" defer></script>
 </body>
