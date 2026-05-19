@@ -44,7 +44,7 @@ try {
              LEFT JOIN guild_members m ON m.guild_id = g.id
              GROUP BY g.id, g.tag, g.name, g.created_at
              ORDER BY members DESC, g.created_at ASC
-             LIMIT 5'
+             LIMIT 10'
         );
         $grow = $gstmt ? $gstmt->fetchAll(PDO::FETCH_ASSOC) : [];
         foreach ($grow as $g) {
@@ -54,7 +54,7 @@ try {
             $memberRows = [];
             if ($gidRow && isset($gidRow['id'])) {
                 $mstmt = $pdo->prepare(
-                    'SELECT p.character_name, m.role
+                    'SELECT p.character_name, p.online, p.level, m.role
                      FROM guild_members m
                      JOIN players p ON p.id = m.player_id
                      WHERE m.guild_id = ?
@@ -69,6 +69,8 @@ try {
                 $members[] = [
                     'name' => (string) ($m['character_name'] ?? ''),
                     'role' => (string) ($m['role'] ?? 'member'),
+                    'online' => ((int) ($m['online'] ?? 0)) === 1,
+                    'level' => (int) ($m['level'] ?? 0),
                 ];
             }
             $guildPreview[] = [
@@ -147,7 +149,7 @@ try {
                  JOIN players p ON p.id = psp.player_id
                  WHERE psp.season_id = ?
                  ORDER BY psp.xp DESC, p.level DESC, p.next_seconds ASC, p.character_name ASC
-                 LIMIT 3'
+                 LIMIT 10'
             );
             foreach ($allSeasons as $sr) {
                 $sid = (int) ($sr['id'] ?? 0);

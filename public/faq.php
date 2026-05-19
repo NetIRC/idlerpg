@@ -40,7 +40,7 @@ $jsonLd = [
   <?php guide_stylesheet_links(); ?>
 </head>
 <body>
-  <main class="inner" style="padding-top:2rem;padding-bottom:2rem;max-width:58rem;">
+  <main class="inner guide-page" style="padding-top:2rem;padding-bottom:2rem;max-width:58rem;">
     <h1 class="h2" style="font-size:1.4rem;">IdleRPG FAQ</h1>
     <p class="guide-lead">Common gameplay questions from new and returning players on NetIRC. For every command and argument, open the <a href="/commands.php">command reference</a>.</p>
 
@@ -48,7 +48,7 @@ $jsonLd = [
     $guideCfg = guide_runtime_config();
     foreach ($faqEntities as $item):
     ?>
-      <section style="margin-bottom:1.25rem;">
+      <section>
         <h2 class="h2" style="font-size:1.02rem;"><?= htmlspecialchars($item['q'], ENT_QUOTES, 'UTF-8') ?></h2>
         <p><?= htmlspecialchars($item['a'], ENT_QUOTES, 'UTF-8') ?></p>
       </section>

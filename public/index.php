@@ -376,15 +376,15 @@ $jsonLdScript = json_encode($jsonLd, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNI
                 <div class="treasure-rule treasure-rule-panel">
                   <button
                     type="button"
-                    class="treasure-rule-toggle finds-strip-toggle is-open"
+                    class="treasure-rule-toggle finds-strip-toggle"
                     data-treasure-rule-toggle=""
-                    aria-expanded="true"
+                    aria-expanded="false"
                     aria-controls="treasure-rule-body-omen"
                   >
                     <span class="finds-chevron" aria-hidden="true"></span>
                     <span>How <span class="mono">!omen</span> works</span>
                   </button>
-                  <div id="treasure-rule-body-omen" class="finds-collapse-panel treasure-rule-collapse">
+                  <div id="treasure-rule-body-omen" class="finds-collapse-panel treasure-rule-collapse is-collapsed">
                     <div class="finds-collapse-panel-inner">
                       <ul class="treasure-list">
                         <li>Requires a logged-in hero currently in the game channel.</li>
@@ -522,11 +522,25 @@ $jsonLdScript = json_encode($jsonLd, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNI
         <div class="section-head section-head-row treasures-head">
           <div>
             <h2 class="h2"><span class="h2-mark h2-mark-omen" aria-hidden="true"></span> Guild standings</h2>
-            <p class="lb-meta mono treasures-sub">Top guilds by member count (live from the same shard ledger).</p>
+            <p id="guild-preview-meta" class="lb-meta mono treasures-sub">Guild rosters ranked by member count (live from the shard ledger).</p>
           </div>
         </div>
-        <div class="panel treasures-panel">
-          <ul id="guild-preview" class="rules-list"><li class="muted">Loading guilds…</li></ul>
+        <div class="panel treasures-panel guild-board">
+          <div class="guild-board__toolbar" role="toolbar" aria-label="Guild standings controls">
+            <button
+              type="button"
+              id="guild-list-expand"
+              class="finds-strip-toggle guild-board__btn hidden"
+              aria-expanded="false"
+              aria-controls="guild-board-list"
+            >
+              <span class="finds-chevron" aria-hidden="true"></span>
+              <span class="finds-strip-label">All guilds <span class="finds-strip-scope">(top 3)</span></span>
+            </button>
+          </div>
+          <div id="guild-board-list" class="guild-board__list">
+            <p class="guild-loading mono muted">Loading guild standings…</p>
+          </div>
         </div>
       </section>
 
@@ -534,53 +548,49 @@ $jsonLdScript = json_encode($jsonLd, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNI
         <div class="section-head section-head-row treasures-head">
           <div>
             <h2 class="h2"><span class="h2-mark h2-mark-omen" aria-hidden="true"></span> Season standings</h2>
-            <p id="season-preview-meta" class="lb-meta mono treasures-sub">Current season shows top 3 by default (expandable). History opens separately with its own expand.</p>
+            <p id="season-preview-meta" class="lb-meta mono treasures-sub">Season pass standings from the live shard ledger.</p>
           </div>
         </div>
-        <div class="panel treasures-panel">
-          <div class="finds-strip">
+        <div class="panel treasures-panel season-board">
+          <div class="season-board__toolbar" role="toolbar" aria-label="Season standings controls">
             <button
               type="button"
               id="season-current-expand"
-              class="finds-strip-toggle hidden"
+              class="finds-strip-toggle season-board__btn hidden"
               aria-expanded="false"
-              aria-controls="season-current-preview"
+              aria-controls="season-roster-extra-current"
             >
               <span class="finds-chevron" aria-hidden="true"></span>
-              <span class="finds-strip-label">Expand current <span class="finds-strip-scope">(top 3 / all)</span></span>
+              <span class="finds-strip-label">All ranks <span class="finds-strip-scope">(top 3)</span></span>
             </button>
             <button
               type="button"
               id="season-history-toggle"
-              class="finds-strip-toggle hidden"
+              class="finds-strip-toggle season-board__btn hidden"
               aria-expanded="false"
               aria-controls="season-history-wrap"
             >
               <span class="finds-chevron" aria-hidden="true"></span>
-              <span class="finds-strip-label">History <span class="finds-strip-scope">(open/close)</span></span>
+              <span class="finds-strip-label">Past seasons</span>
               <span class="finds-count mono" id="season-history-count">0</span>
             </button>
             <button
               type="button"
               id="season-history-expand"
-              class="finds-strip-toggle hidden"
+              class="finds-strip-toggle season-board__btn hidden"
               aria-expanded="false"
-              aria-controls="season-history-preview"
+              aria-controls="season-history-extra-panel"
             >
               <span class="finds-chevron" aria-hidden="true"></span>
-              <span class="finds-strip-label">Expand history <span class="finds-strip-scope">(latest 3 / all)</span></span>
+              <span class="finds-strip-label">All past seasons <span class="finds-strip-scope">(latest 3)</span></span>
             </button>
-            <div id="season-current-wrap" class="finds-list-wrap finds-collapse-panel">
-              <div class="finds-collapse-panel-inner">
-                <p class="mono muted-strong">Current season</p>
-                <ul id="season-current-preview" class="rules-list"><li class="muted">Loading current season…</li></ul>
-              </div>
-            </div>
-            <div id="season-history-wrap" class="finds-list-wrap finds-collapse-panel is-collapsed">
-              <div class="finds-collapse-panel-inner">
-                <p class="mono muted-strong">Season history</p>
-                <ul id="season-history-preview" class="rules-list"><li class="muted">History closed.</li></ul>
-              </div>
+          </div>
+          <div id="season-current-board" class="season-board__pane">
+            <p class="season-loading mono muted">Loading current season…</p>
+          </div>
+          <div id="season-history-wrap" class="season-board__pane season-board__pane--history finds-collapse-panel is-collapsed">
+            <div id="season-history-board" class="finds-collapse-panel-inner season-history-stack">
+              <p class="season-loading mono muted">Past seasons closed.</p>
             </div>
           </div>
         </div>

@@ -1,9 +1,55 @@
 /** Guide pages: command tables and realm settings layout (how-to-play, commands, FAQ). */
 
+/* Vertical rhythm (how-to-play, commands, FAQ) */
+.guide-page > h1.h2 {
+  margin-bottom: 0.75rem;
+}
+
+.guide-page > h2.h2 {
+  margin-top: 1.85rem;
+  margin-bottom: 0.7rem;
+}
+
+.guide-page > .guide-lead + h2.h2 {
+  margin-top: 0;
+}
+
+.guide-page > p,
+.guide-page > p.mono {
+  margin: 0 0 1rem;
+  line-height: 1.55;
+}
+
+.guide-page > ul.rules-list {
+  margin: 0 0 1.15rem;
+}
+
+.guide-page > .guide-note {
+  margin-bottom: 1.15rem;
+}
+
+.guide-page > .cmd-ref-wrap {
+  margin-top: 0;
+}
+
+.guide-page > section {
+  margin: 0 0 1.5rem;
+  padding: 0;
+}
+
+.guide-page > section > h2.h2 {
+  margin: 0 0 0.55rem;
+}
+
+.guide-page > section > p {
+  margin: 0;
+  line-height: 1.55;
+}
+
 .guide-lead {
   font-size: 0.92rem;
   line-height: 1.55;
-  margin: 0 0 1.1rem;
+  margin: 0 0 1.25rem;
 }
 
 .guide-note {

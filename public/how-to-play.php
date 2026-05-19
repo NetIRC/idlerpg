@@ -40,7 +40,7 @@ $jsonLd = [
   <?php guide_stylesheet_links(); ?>
 </head>
 <body>
-  <main class="inner" style="padding-top:2rem;padding-bottom:2rem;max-width:56rem;">
+  <main class="inner guide-page" style="padding-top:2rem;padding-bottom:2rem;max-width:56rem;">
     <h1 class="h2" style="font-size:1.4rem;">How to Play IdleRPG on IRC</h1>
     <p class="guide-lead">IdleRPG rewards silence. The less you talk in channel, the faster your level timer reaches the next level. Stay in <strong>#IdleRPG</strong> on NetIRC while logged in.</p>
 

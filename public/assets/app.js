@@ -623,6 +623,7 @@
   const seasonHistoryToggleEl = document.getElementById('season-history-toggle');
   const seasonHistoryExpandEl = document.getElementById('season-history-expand');
   const seasonHistoryCountEl = document.getElementById('season-history-count');
+  const guildListExpandEl = document.getElementById('guild-list-expand');
   let chronicleBeforeId = null;
   /** Must match irpg_chronicle_max_limit() / chronicle-omen.ts CHRONICLE_API_MAX_LIMIT */
   const CHRONICLE_API_MAX = 40;
@@ -647,6 +648,10 @@
   let chronicleExpanded = false;
   let heroLedgerExpanded = false;
   let seasonHistoryExpanded = false;
+  let guildPreviewRows = [];
+  let guildListExpanded = false;
+  /** Guild card keys (`tag|name`) with full roster visible */
+  const guildMembersExpanded = new Set();
 
   function hash32(str) {
     let h = 2166136261 >>> 0;
@@ -1346,7 +1351,7 @@
   function setSeasonPreviewMeta(seasonMeta, fallbackLabel) {
     const el = document.getElementById('season-preview-meta');
     if (!el) return;
-    const base = 'Current season shows top 3 by default (expandable). History opens separately with its own expand.';
+    const base = 'Live season pass ladder — top ranks by tier and XP. Open past seasons for archives.';
     const label =
       seasonMeta && typeof seasonMeta.label === 'string' && seasonMeta.label.trim()
         ? seasonMeta.label.trim()
@@ -1405,45 +1410,270 @@
     }).catch(() => undefined);
   }
 
+  function guildCardKey(g) {
+    return `${String((g && g.tag) || '')}|${String((g && g.name) || '')}`;
+  }
+
+  function sortGuildMembersLeaderFirst(members) {
+    if (!Array.isArray(members) || !members.length) return [];
+    return members.slice().sort((a, b) => {
+      const al = String(a.role || 'member').toLowerCase() === 'leader' ? 0 : 1;
+      const bl = String(b.role || 'member').toLowerCase() === 'leader' ? 0 : 1;
+      if (al !== bl) return al - bl;
+      const lv = (Number(b.level) || 0) - (Number(a.level) || 0);
+      if (lv !== 0) return lv;
+      return String(a.name || '').localeCompare(String(b.name || ''));
+    });
+  }
+
+  /** Shared 6-column grid: #, Player, Tier, Class/Role, XP, L (Guild + Season align) */
+  const STANDINGS_COLGROUP = `<colgroup>
+    <col class="standings-col-rank" />
+    <col class="standings-col-player" />
+    <col class="standings-col-tier" />
+    <col class="standings-col-class" />
+    <col class="standings-col-xp" />
+    <col class="standings-col-lv" />
+  </colgroup>`;
+
+  function renderGuildMemberRow(m, rank) {
+    const role = String(m.role || 'member').toLowerCase() === 'leader' ? 'leader' : 'member';
+    const roleLabel = role === 'leader' ? 'Leader' : 'Member';
+    const name = escapeHtml(String(m.name || 'Unknown'));
+    const dotClass = m.online ? 'dot dot--online' : 'dot dot--offline';
+    const dotTitle = m.online ? 'Online' : 'Offline';
+    return `<tr class="guild-standings-row">
+      <td class="mono guild-standings-rank">${rank}</td>
+      <td><span class="player-presence player-presence--dot-left"><span class="${dotClass}" title="${dotTitle}" aria-hidden="true"></span><strong class="player-presence__name">${name}</strong></span></td>
+      <td class="mono standings-tier-cell" aria-hidden="true"></td>
+      <td class="hide-sm standings-role-cell"><span class="guild-role guild-role--${role}">${roleLabel}</span></td>
+      <td class="mono standings-xp-cell" aria-hidden="true"></td>
+      <td class="lv guild-standings-lv">${Number(m.level) || 0}</td>
+    </tr>`;
+  }
+
+  function renderGuildLeaderTable(members) {
+    if (!Array.isArray(members) || !members.length) {
+      return '<p class="guild-empty mono muted">No linked members yet.</p>';
+    }
+    const sorted = sortGuildMembersLeaderFirst(members);
+    const leaderHtml = renderGuildMemberRow(sorted[0], 1);
+    return `<div class="table-wrap guild-standings-wrap">
+      <table class="table guild-standings-table">
+        ${STANDINGS_COLGROUP}
+        <thead>
+          <tr>
+            <th scope="col">#</th>
+            <th scope="col">Player</th>
+            <th scope="col" class="standings-spacer-head standings-tier-head" aria-hidden="true"></th>
+            <th scope="col" class="hide-sm">Role</th>
+            <th scope="col" class="standings-spacer-head standings-xp-head" aria-hidden="true"></th>
+            <th scope="col" class="guild-standings-lv-head" title="Hero level">L</th>
+          </tr>
+        </thead>
+        <tbody>${leaderHtml}</tbody>
+      </table>
+    </div>`;
+  }
+
+  function renderGuildRosterExtraPanel(members, rosterExpanded, panelId) {
+    const sorted = sortGuildMembersLeaderFirst(members);
+    const rest = sorted.slice(1);
+    if (!rest.length) return '';
+    const collapsed = rosterExpanded ? '' : ' is-collapsed';
+    return `<div class="finds-collapse-panel guild-roster-extra-panel${collapsed}" id="${escapeHtml(panelId)}">
+      <div class="finds-collapse-panel-inner">
+        <div class="table-wrap guild-standings-wrap guild-standings-wrap--extra">
+          <table class="table guild-standings-table guild-standings-table--extra">
+            ${STANDINGS_COLGROUP}
+            <tbody>${rest.map((m, i) => renderGuildMemberRow(m, i + 2)).join('')}</tbody>
+          </table>
+        </div>
+      </div>
+    </div>`;
+  }
+
+  function renderGuildMembersToggle(members, rosterExpanded, cardKey, panelId) {
+    const sorted = sortGuildMembersLeaderFirst(members);
+    if (sorted.length <= 1) return '';
+    const extra = sorted.length - 1;
+    const scope = rosterExpanded ? '(showing all)' : `(+${extra})`;
+    return `<button
+      type="button"
+      class="finds-strip-toggle guild-card__members-toggle${rosterExpanded ? ' is-open' : ''}"
+      data-guild-key="${escapeHtml(cardKey)}"
+      data-member-extra="${extra}"
+      aria-expanded="${rosterExpanded ? 'true' : 'false'}"
+      aria-controls="${escapeHtml(panelId)}"
+    >
+      <span class="finds-chevron" aria-hidden="true"></span>
+      <span class="finds-strip-label">All members <span class="finds-strip-scope">${scope}</span></span>
+    </button>`;
+  }
+
+  function renderGuildCard(g, rank) {
+    const tag = escapeHtml(String(g.tag || 'TAG'));
+    const name = escapeHtml(String(g.name || 'Guild'));
+    const members = Number(g.members) || 0;
+    const createdTs = Number(g.createdAt);
+    const createdLabel =
+      Number.isFinite(createdTs) && createdTs > 0
+        ? new Date(createdTs * 1000).toLocaleDateString()
+        : 'N/A';
+    const rankMod =
+      rank === 1 ? ' guild-card--gold' : rank === 2 ? ' guild-card--silver' : rank === 3 ? ' guild-card--bronze' : '';
+    const membersList = Array.isArray(g.memberList) ? g.memberList : [];
+    const cardKey = guildCardKey(g);
+    const rosterExpanded = guildMembersExpanded.has(cardKey);
+    const panelId = `guild-roster-extra-${rank}`;
+    return `<article class="guild-card${rankMod}" data-guild-key="${escapeHtml(cardKey)}">
+      <header class="guild-card__head">
+        <div class="guild-card__title-row">
+          <h3 class="guild-card__title"><span class="mono guild-card__tag">[${tag}]</span> ${name}</h3>
+          <span class="guild-card__badge">#${rank}</span>
+        </div>
+        <p class="guild-card__window mono">${members} member${members !== 1 ? 's' : ''} · Founded ${escapeHtml(createdLabel)}</p>
+      </header>
+      ${renderGuildLeaderTable(membersList)}
+      ${renderGuildMembersToggle(membersList, rosterExpanded, cardKey, panelId)}
+      ${renderGuildRosterExtraPanel(membersList, rosterExpanded, panelId)}
+    </article>`;
+  }
+
   function setGuildPreview(guilds) {
-    const root = document.getElementById('guild-preview');
+    const root = document.getElementById('guild-board-list');
+    const meta = document.getElementById('guild-preview-meta');
     if (!root) return;
-    if (!Array.isArray(guilds) || !guilds.length) {
-      root.innerHTML = '<li class="muted">No guilds yet.</li>';
+    guildPreviewRows = Array.isArray(guilds) ? guilds.slice() : [];
+    if (guildPreviewRows.length <= 3 && guildListExpanded) guildListExpanded = false;
+    const validGuildKeys = new Set(guildPreviewRows.map((g) => guildCardKey(g)));
+    for (const k of guildMembersExpanded) {
+      if (!validGuildKeys.has(k)) guildMembersExpanded.delete(k);
+    }
+
+    if (meta) {
+      const n = guildPreviewRows.length;
+      meta.textContent =
+        n > 0
+          ? `${n} guild${n !== 1 ? 's' : ''} on this shard — leader shown first; tap All members to expand each roster.`
+          : 'Guild rosters ranked by member count (live from the shard ledger).';
+    }
+
+    if (!guildPreviewRows.length) {
+      root.innerHTML = '<p class="guild-empty mono muted">No guilds registered on this shard yet.</p>';
+      if (guildListExpandEl) guildListExpandEl.classList.add('hidden');
       return;
     }
-    root.innerHTML = guilds
-      .slice(0, 5)
-      .map((g) => {
-        const list = Array.isArray(g.memberList) ? g.memberList : [];
-        const membersHtml =
-          list.length > 0
-            ? `<div class="guild-members">${list
-                .map((m) => {
-                  const role = String(m.role || 'member').toLowerCase() === 'leader' ? 'leader' : 'member';
-                  return `<span class="guild-member-chip guild-member-chip--${role}">${escapeHtml(String(m.name || ''))}</span>`;
-                })
-                .join('')}</div>`
-            : '<div class="guild-members guild-members--empty">No linked members yet.</div>';
-        const createdTs = Number(g && g.createdAt);
-        const createdLabel =
-          Number.isFinite(createdTs) && createdTs > 0
-            ? new Date(createdTs * 1000).toLocaleDateString()
-            : null;
-        const createdHtml = createdLabel
-          ? `<div class="mono muted-strong">Created: ${escapeHtml(createdLabel)}</div>`
-          : '';
-        return `<li class="guild-preview-item"><div class="guild-preview-head">[${escapeHtml(String(g.tag || 'TAG'))}] ${escapeHtml(String(g.name || 'Guild'))} · ${Number(g.members || 0)} members</div>${createdHtml}${membersHtml}</li>`;
-      })
-      .join('');
+
+    const topGuilds = guildPreviewRows.slice(0, 3);
+    const restGuilds = guildPreviewRows.slice(3);
+    const topHtml = topGuilds.map((g, i) => renderGuildCard(g, i + 1)).join('');
+    const restHtml =
+      restGuilds.length > 0
+        ? `<div class="finds-collapse-panel guild-list-extra-panel${
+            guildListExpanded ? '' : ' is-collapsed'
+          }"><div class="finds-collapse-panel-inner guild-board__stack">${restGuilds
+            .map((g, i) => renderGuildCard(g, i + 4))
+            .join('')}</div></div>`
+        : '';
+    root.innerHTML = topHtml + restHtml;
+
+    if (guildListExpandEl) {
+      const canExpand = guildPreviewRows.length > 3;
+      guildListExpandEl.classList.toggle('hidden', !canExpand);
+      guildListExpandEl.classList.toggle('is-open', guildListExpanded);
+      guildListExpandEl.setAttribute('aria-expanded', guildListExpanded ? 'true' : 'false');
+      const scopeEl = guildListExpandEl.querySelector('.finds-strip-scope');
+      if (scopeEl) scopeEl.textContent = guildListExpanded ? '(showing all)' : '(top 3)';
+    }
+  }
+
+
+  function renderSeasonStandingsRow(r, rank) {
+    const dotClass = r && r.online ? 'dot dot--online' : 'dot dot--offline';
+    const dotTitle = r && r.online ? 'Online' : 'Offline';
+    const name = escapeHtml(String((r && r.name) || 'Unknown'));
+    const tier = Number((r && r.tier) || 0);
+    const xp = Number((r && r.xp) || 0);
+    const heroLevel = Number((r && r.level) || 0);
+    const heroClass = escapeHtml(String((r && r.class) || ''));
+    const rankMod =
+      rank === 1
+        ? ' season-rank--gold'
+        : rank === 2
+          ? ' season-rank--silver'
+          : rank === 3
+            ? ' season-rank--bronze'
+            : '';
+    return `<tr class="season-standings-row${rankMod}">
+      <td class="mono season-standings-rank">${rank}</td>
+      <td><span class="player-presence player-presence--dot-left"><span class="${dotClass}" title="${dotTitle}" aria-hidden="true"></span><strong class="player-presence__name">${name}</strong></span></td>
+      <td class="mono season-standings-tier">${tier}</td>
+      <td class="hide-sm season-standings-class">${heroClass || '—'}</td>
+      <td class="mono season-standings-xp">${xp}</td>
+      <td class="lv season-standings-lv">${heroLevel}</td>
+    </tr>`;
+  }
+
+  function renderSeasonStandingsTable(rows, rosterExpanded, panelId) {
+    if (!rows.length) {
+      return '<p class="season-empty mono muted">No standings recorded yet.</p>';
+    }
+    const top = rows.slice(0, 3);
+    const rest = rows.slice(3);
+    const topHtml = top.map((r, i) => renderSeasonStandingsRow(r, i + 1)).join('');
+    const collapsed = rosterExpanded ? '' : ' is-collapsed';
+    const extraPanel =
+      rest.length > 0
+        ? `<div class="finds-collapse-panel season-standings-extra-panel${collapsed}" id="${escapeHtml(panelId)}">
+        <div class="finds-collapse-panel-inner">
+          <div class="table-wrap season-standings-wrap season-standings-wrap--extra">
+            <table class="table season-standings-table season-standings-table--extra">
+              ${STANDINGS_COLGROUP}
+              <tbody>${rest.map((r, i) => renderSeasonStandingsRow(r, i + 4)).join('')}</tbody>
+            </table>
+          </div>
+        </div>
+      </div>`
+        : '';
+    return `<div class="table-wrap season-standings-wrap">
+      <table class="table season-standings-table">
+        ${STANDINGS_COLGROUP}
+        <thead>
+          <tr>
+            <th scope="col">#</th>
+            <th scope="col">Player</th>
+            <th scope="col">Tier</th>
+            <th scope="col" class="hide-sm">Class</th>
+            <th scope="col">XP</th>
+            <th scope="col" class="season-standings-lv-head" title="Hero level">L</th>
+          </tr>
+        </thead>
+        <tbody>${topHtml}</tbody>
+      </table>
+    </div>
+    ${extraPanel}`;
+  }
+
+  function renderSeasonCardMarkup(label, badge, badgeMod, windowText, rows, rosterExpanded, panelId) {
+    const mod = badgeMod ? ` ${badgeMod}` : '';
+    return `<article class="season-card${mod}">
+      <header class="season-card__head">
+        <div class="season-card__title-row">
+          <h3 class="season-card__title">${label}</h3>
+          <span class="season-card__badge">${badge}</span>
+        </div>
+        <p class="season-card__window mono">${windowText}</p>
+      </header>
+      ${renderSeasonStandingsTable(rows, rosterExpanded, panelId)}
+    </article>`;
   }
 
   function setSeasonPreview(currentRows, standingsRows, seasonMeta, fallbackLabel) {
-    const currentWrap = document.getElementById('season-current-wrap');
-    const currentRoot = document.getElementById('season-current-preview');
+    const currentBoard = document.getElementById('season-current-board');
     const historyWrap = document.getElementById('season-history-wrap');
-    const historyRoot = document.getElementById('season-history-preview');
-    if (!currentWrap || !currentRoot || !historyWrap || !historyRoot) return;
+    const historyBoard = document.getElementById('season-history-board');
+    if (!currentBoard || !historyWrap || !historyBoard) return;
     seasonCurrentRows = Array.isArray(currentRows) ? currentRows.slice() : [];
     seasonStandingsRows = Array.isArray(standingsRows) ? standingsRows.slice() : [];
     const ended = seasonStandingsRows.filter((s) => s && !s.isActive);
@@ -1455,16 +1685,6 @@
     if (seasonCurrentRows.length <= 3 && seasonCurrentExpanded) seasonCurrentExpanded = false;
     if (ended.length <= 3 && seasonStandingsHistoryExpanded) seasonStandingsHistoryExpanded = false;
 
-    const renderLeaderRow = (r, i) => {
-      const dotClass = r && r.online ? 'dot dot--online' : 'dot dot--offline';
-      const name = escapeHtml(String((r && r.name) || 'Unknown'));
-      const tier = Number((r && r.tier) || 0);
-      const xp = Number((r && r.xp) || 0);
-      const heroLevel = Number((r && r.level) || 0);
-      const heroClass = escapeHtml(String((r && r.class) || ''));
-      return `<div class="mono muted-strong">#${i + 1} <span class="player-presence"><span>${name}</span><span class="${dotClass} season-presence-dot" title="${r && r.online ? 'Online' : 'Offline'}"></span></span> · Tier ${tier} · XP ${xp} · L${heroLevel}${heroClass ? ` ${heroClass}` : ''}</div>`;
-    };
-
     const currentSeasonLabel =
       seasonMeta && typeof seasonMeta.label === 'string' && seasonMeta.label.trim()
         ? seasonMeta.label.trim()
@@ -1475,75 +1695,74 @@
       seasonMeta && Number.isFinite(Number(seasonMeta.startsAt)) ? Number(seasonMeta.startsAt) : 0;
     const currentEndsAt =
       seasonMeta && Number.isFinite(Number(seasonMeta.endsAt)) ? Number(seasonMeta.endsAt) : 0;
-    const currentStartsLabel = currentStartsAt > 0 ? new Date(currentStartsAt * 1000).toLocaleDateString() : 'N/A';
-    const currentEndsLabel = currentEndsAt > 0 ? new Date(currentEndsAt * 1000).toLocaleDateString() : 'N/A';
-    let leadersBlock = '';
-    if (!seasonCurrentRows.length) {
-      leadersBlock = '<div class="mono muted-strong">No standings data for the active season.</div>';
-    } else {
-      const topRows = seasonCurrentRows.slice(0, 3);
-      const restRows = seasonCurrentRows.slice(3);
-      const topHtml = topRows.map((r, i) => renderLeaderRow(r, i)).join('');
-      const extraPanel =
-        restRows.length > 0
-          ? `<div class="finds-collapse-panel season-current-extra-panel${
-              seasonCurrentExpanded ? '' : ' is-collapsed'
-            }"><div class="finds-collapse-panel-inner">${restRows
-              .map((r, i) => renderLeaderRow(r, i + 3))
-              .join('')}</div></div>`
-          : '';
-      leadersBlock = topHtml + extraPanel;
-    }
+    const currentStartsLabel =
+      currentStartsAt > 0 ? new Date(currentStartsAt * 1000).toLocaleDateString() : 'N/A';
+    const currentEndsLabel =
+      currentEndsAt > 0 ? new Date(currentEndsAt * 1000).toLocaleDateString() : 'N/A';
 
-    const renderSeasonCard = (s) => {
-      const seasonLabel = escapeHtml(String((s && s.label) || `Season ${Number((s && s.id) || 0)}`));
-      const startsAt = Number((s && s.startsAt) || 0);
-      const endsAt = Number((s && s.endsAt) || 0);
-      const startsLabel = startsAt > 0 ? new Date(startsAt * 1000).toLocaleDateString() : 'N/A';
-      const endsLabel = endsAt > 0 ? new Date(endsAt * 1000).toLocaleDateString() : 'N/A';
-      const leaders = Array.isArray(s && s.leaders) ? s.leaders : [];
-      const leadersHtml = leaders.length
-        ? leaders.map((r, i) => renderLeaderRow(r, i)).join('')
-        : '<div class="mono muted-strong">No standings data for this season.</div>';
-      return `<li class="guild-preview-item"><div class="guild-preview-head">${seasonLabel} · ended</div><div class="mono muted-strong">Window: ${escapeHtml(startsLabel)} → ${escapeHtml(endsLabel)}</div>${leadersHtml}</li>`;
-    };
-
-    currentWrap.classList.toggle('is-collapsed', seasonHistoryOpen);
     historyWrap.classList.toggle('is-collapsed', !seasonHistoryOpen);
 
-    currentRoot.innerHTML = `<li class="guild-preview-item"><div class="guild-preview-head">${escapeHtml(currentSeasonLabel)} · active</div><div class="mono muted-strong">Window: ${escapeHtml(currentStartsLabel)} → ${escapeHtml(currentEndsLabel)}</div>${leadersBlock}</li>`;
+    currentBoard.innerHTML = renderSeasonCardMarkup(
+      escapeHtml(currentSeasonLabel),
+      'Active',
+      'season-card--active',
+      `${escapeHtml(currentStartsLabel)} → ${escapeHtml(currentEndsLabel)}`,
+      seasonCurrentRows,
+      seasonCurrentExpanded,
+      'season-roster-extra-current',
+    );
 
-    let historyHtml = '<li class="muted">History closed.</li>';
-    if (seasonHistoryOpen) {
-      if (!ended.length) {
-        historyHtml =
-          '<li class="guild-preview-item"><div class="mono muted-strong">No past seasons available.</div></li>';
-      } else {
-        const topSeasons = ended.slice(0, 3);
-        const restSeasons = ended.slice(3);
-        const topLis = topSeasons.map(renderSeasonCard).join('');
-        const extraLi =
-          restSeasons.length > 0
-            ? `<li class="season-history-extra-li"><div class="finds-collapse-panel season-history-extra-panel${
-                seasonStandingsHistoryExpanded ? '' : ' is-collapsed'
-              }"><div class="finds-collapse-panel-inner"><ul class="rules-list">${restSeasons
-                .map(renderSeasonCard)
-                .join('')}</ul></div></div></li>`
-            : '';
-        historyHtml = topLis + extraLi;
-      }
+    if (!seasonHistoryOpen) {
+      historyBoard.innerHTML =
+        '<p class="season-empty mono muted">Tap <strong>Past seasons</strong> above to view archived ladders.</p>';
+    } else if (!ended.length) {
+      historyBoard.innerHTML =
+        '<h3 class="season-history-heading">Past seasons</h3><p class="season-empty mono muted">No completed seasons recorded yet.</p>';
+    } else {
+      const topSeasons = ended.slice(0, 3);
+      const restSeasons = ended.slice(3);
+      const renderEnded = (s) => {
+        const label = escapeHtml(String((s && s.label) || `Season ${Number((s && s.id) || 0)}`));
+        const startsAt = Number((s && s.startsAt) || 0);
+        const endsAt = Number((s && s.endsAt) || 0);
+        const startsLabel = startsAt > 0 ? new Date(startsAt * 1000).toLocaleDateString() : 'N/A';
+        const endsLabel = endsAt > 0 ? new Date(endsAt * 1000).toLocaleDateString() : 'N/A';
+        const leaders = Array.isArray(s && s.leaders) ? s.leaders : [];
+        const seasonId = Number((s && s.id) || 0);
+        return renderSeasonCardMarkup(
+          label,
+          'Ended',
+          'season-card--ended',
+          `${escapeHtml(startsLabel)} → ${escapeHtml(endsLabel)}`,
+          leaders,
+          true,
+          `season-roster-ended-${seasonId}`,
+        );
+      };
+      const topHtml = topSeasons.map(renderEnded).join('');
+      const restHtml =
+        restSeasons.length > 0
+          ? `<div id="season-history-extra-panel" class="finds-collapse-panel season-history-extra-panel${
+              seasonStandingsHistoryExpanded ? '' : ' is-collapsed'
+            }"><div class="finds-collapse-panel-inner season-history-stack">${restSeasons
+              .map(renderEnded)
+              .join('')}</div></div>`
+          : '';
+      historyBoard.innerHTML =
+        `<h3 class="season-history-heading">Past seasons <span class="season-history-count mono">${ended.length}</span></h3>` +
+        topHtml +
+        restHtml;
     }
-    historyRoot.innerHTML = historyHtml;
 
     if (seasonCurrentExpandEl) {
       const canExpandCurrent = seasonCurrentRows.length > 3;
       seasonCurrentExpandEl.classList.toggle('hidden', !canExpandCurrent);
       seasonCurrentExpandEl.classList.toggle('is-open', seasonCurrentExpanded);
       seasonCurrentExpandEl.setAttribute('aria-expanded', seasonCurrentExpanded ? 'true' : 'false');
+      seasonCurrentExpandEl.setAttribute('aria-controls', 'season-roster-extra-current');
       const scopeEl = seasonCurrentExpandEl.querySelector('.finds-strip-scope');
       if (scopeEl) {
-        if (seasonHistoryOpen) scopeEl.textContent = '(close history)';
-        else scopeEl.textContent = seasonCurrentExpanded ? '(all / top 3)' : '(top 3 / all)';
+        scopeEl.textContent = seasonCurrentExpanded ? '(showing all)' : '(top 3)';
       }
     }
 
@@ -1551,8 +1770,6 @@
       seasonHistoryToggleEl.classList.toggle('hidden', seasonHistoryCount <= 0);
       seasonHistoryToggleEl.classList.toggle('is-open', seasonHistoryOpen);
       seasonHistoryToggleEl.setAttribute('aria-expanded', seasonHistoryOpen ? 'true' : 'false');
-      const scopeEl = seasonHistoryToggleEl.querySelector('.finds-strip-scope');
-      if (scopeEl) scopeEl.textContent = seasonHistoryOpen ? '(close)' : '(open)';
     }
     if (seasonHistoryCountEl) seasonHistoryCountEl.textContent = String(seasonHistoryCount);
 
@@ -1561,11 +1778,13 @@
       seasonHistoryExpandEl.classList.toggle('hidden', !seasonHistoryOpen || !canExpandHistory);
       seasonHistoryExpandEl.classList.toggle('is-open', seasonStandingsHistoryExpanded);
       seasonHistoryExpandEl.setAttribute('aria-expanded', seasonStandingsHistoryExpanded ? 'true' : 'false');
+      seasonHistoryExpandEl.setAttribute('aria-controls', 'season-history-extra-panel');
       const scopeEl = seasonHistoryExpandEl.querySelector('.finds-strip-scope');
-      if (scopeEl) scopeEl.textContent = seasonStandingsHistoryExpanded ? '(all / latest 3)' : '(latest 3 / all)';
+      if (scopeEl) {
+        scopeEl.textContent = seasonStandingsHistoryExpanded ? '(showing all)' : '(latest 3)';
+      }
     }
   }
-
   async function fetchPlayer(name) {
     const r = await fetch('api/player.php?' + new URLSearchParams({ name }), { cache: 'no-store' });
     const text = await r.text();
@@ -1608,7 +1827,7 @@
         : '<span class="timer-offline-tag">Offline</span>';
       tr.innerHTML = `
         <td class="mono" style="opacity:0.55">${i + 1}</td>
-        <td><span class="player-presence"><strong style="color:#fff">${escapeHtml(p.name)}</strong><span class="${dotClass}" title="${dotTitle}"></span></span></td>
+        <td><span class="player-presence player-presence--dot-left"><span class="${dotClass}" title="${dotTitle}" aria-hidden="true"></span><strong class="player-presence__name" style="color:#fff">${escapeHtml(p.name)}</strong></span></td>
         <td class="lv">${p.level}</td>
         <td class="hide-sm" style="opacity:0.85">${escapeHtml(p.class)}</td>
         <td class="timer">${timerCell}</td>`;
@@ -2346,29 +2565,80 @@
         setSeasonPreview(seasonCurrentRows, seasonStandingsRows, seasonCurrentMeta, seasonCurrentLabel);
         return;
       }
-      seasonCurrentExpanded = !seasonCurrentExpanded;
-      const panel = document.querySelector('#season-current-preview .season-current-extra-panel');
-      if (panel) panel.classList.toggle('is-collapsed', !seasonCurrentExpanded);
-      seasonCurrentExpandEl.classList.toggle('is-open', seasonCurrentExpanded);
-      seasonCurrentExpandEl.setAttribute('aria-expanded', seasonCurrentExpanded ? 'true' : 'false');
-      const scopeEl = seasonCurrentExpandEl.querySelector('.finds-strip-scope');
-      if (scopeEl) scopeEl.textContent = seasonCurrentExpanded ? '(all / top 3)' : '(top 3 / all)';
+      const panel = document.getElementById('season-roster-extra-current');
+      if (!panel) return;
+      const willOpen = panel.classList.contains('is-collapsed');
+      if (willOpen) {
+        panel.classList.remove('is-collapsed');
+        seasonCurrentExpandEl.classList.add('is-open');
+        seasonCurrentExpandEl.setAttribute('aria-expanded', 'true');
+        seasonCurrentExpanded = true;
+        const scope = seasonCurrentExpandEl.querySelector('.finds-strip-scope');
+        if (scope) scope.textContent = '(showing all)';
+      } else {
+        panel.classList.add('is-collapsed');
+        seasonCurrentExpandEl.classList.remove('is-open');
+        seasonCurrentExpandEl.setAttribute('aria-expanded', 'false');
+        seasonCurrentExpanded = false;
+        const scope = seasonCurrentExpandEl.querySelector('.finds-strip-scope');
+        if (scope) scope.textContent = '(top 3)';
+      }
     });
   }
   if (seasonHistoryExpandEl) {
     seasonHistoryExpandEl.addEventListener('click', () => {
       if (!seasonHistoryOpen || seasonHistoryCount <= 3) return;
-      seasonStandingsHistoryExpanded = !seasonStandingsHistoryExpanded;
-      const panel = document.querySelector('#season-history-preview .season-history-extra-panel');
-      if (panel) panel.classList.toggle('is-collapsed', !seasonStandingsHistoryExpanded);
-      seasonHistoryExpandEl.classList.toggle('is-open', seasonStandingsHistoryExpanded);
-      seasonHistoryExpandEl.setAttribute(
-        'aria-expanded',
-        seasonStandingsHistoryExpanded ? 'true' : 'false',
-      );
-      const scopeEl = seasonHistoryExpandEl.querySelector('.finds-strip-scope');
-      if (scopeEl) {
-        scopeEl.textContent = seasonStandingsHistoryExpanded ? '(all / latest 3)' : '(latest 3 / all)';
+      const panel = document.getElementById('season-history-extra-panel');
+      if (!panel) return;
+      const willOpen = panel.classList.contains('is-collapsed');
+      if (willOpen) {
+        panel.classList.remove('is-collapsed');
+        seasonHistoryExpandEl.classList.add('is-open');
+        seasonHistoryExpandEl.setAttribute('aria-expanded', 'true');
+        seasonStandingsHistoryExpanded = true;
+        const scope = seasonHistoryExpandEl.querySelector('.finds-strip-scope');
+        if (scope) scope.textContent = '(showing all)';
+      } else {
+        panel.classList.add('is-collapsed');
+        seasonHistoryExpandEl.classList.remove('is-open');
+        seasonHistoryExpandEl.setAttribute('aria-expanded', 'false');
+        seasonStandingsHistoryExpanded = false;
+        const scope = seasonHistoryExpandEl.querySelector('.finds-strip-scope');
+        if (scope) scope.textContent = '(latest 3)';
+      }
+    });
+  }
+  if (guildListExpandEl) {
+    guildListExpandEl.addEventListener('click', () => {
+      guildListExpanded = !guildListExpanded;
+      setGuildPreview(guildPreviewRows);
+    });
+  }
+  const guildBoardListEl = document.getElementById('guild-board-list');
+  if (guildBoardListEl) {
+    guildBoardListEl.addEventListener('click', (e) => {
+      const btn = e.target.closest('.guild-card__members-toggle');
+      if (!btn) return;
+      const panelId = btn.getAttribute('aria-controls');
+      const panel = panelId ? document.getElementById(panelId) : null;
+      if (!panel) return;
+      const key = btn.getAttribute('data-guild-key');
+      const extra = btn.getAttribute('data-member-extra') || '0';
+      const willOpen = panel.classList.contains('is-collapsed');
+      if (willOpen) {
+        panel.classList.remove('is-collapsed');
+        btn.classList.add('is-open');
+        btn.setAttribute('aria-expanded', 'true');
+        if (key) guildMembersExpanded.add(key);
+        const scope = btn.querySelector('.finds-strip-scope');
+        if (scope) scope.textContent = '(showing all)';
+      } else {
+        panel.classList.add('is-collapsed');
+        btn.classList.remove('is-open');
+        btn.setAttribute('aria-expanded', 'false');
+        if (key) guildMembersExpanded.delete(key);
+        const scope = btn.querySelector('.finds-strip-scope');
+        if (scope) scope.textContent = `(+${extra})`;
       }
     });
   }

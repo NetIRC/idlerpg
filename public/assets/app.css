@@ -342,10 +342,51 @@ body {
 }
 
 /* Guide pages (how-to-play, commands, FAQ) — duplicated in guide.css for optional extra cache file */
+.guide-page > h1.h2 {
+  margin-bottom: 0.75rem;
+}
+
+.guide-page > h2.h2 {
+  margin-top: 1.85rem;
+  margin-bottom: 0.7rem;
+}
+
+.guide-page > .guide-lead + h2.h2 {
+  margin-top: 0;
+}
+
+.guide-page > p,
+.guide-page > p.mono {
+  margin: 0 0 1rem;
+  line-height: 1.55;
+}
+
+.guide-page > ul.rules-list {
+  margin: 0 0 1.15rem;
+}
+
+.guide-page > .guide-note {
+  margin-bottom: 1.15rem;
+}
+
+.guide-page > section {
+  margin: 0 0 1.5rem;
+  padding: 0;
+}
+
+.guide-page > section > h2.h2 {
+  margin: 0 0 0.55rem;
+}
+
+.guide-page > section > p {
+  margin: 0;
+  line-height: 1.55;
+}
+
 .guide-lead {
   font-size: 0.92rem;
   line-height: 1.55;
-  margin: 0 0 1.1rem;
+  margin: 0 0 1.25rem;
 }
 
 .guide-note {
@@ -663,8 +704,8 @@ body {
 }
 
 .guild-member-chip--leader {
-  border-color: rgba(255, 196, 120, 0.5);
-  background: rgba(255, 196, 120, 0.12);
+  border-color: rgba(0, 229, 199, 0.55);
+  background: rgba(0, 229, 199, 0.14);
 }
 
 .rules-cmd {
@@ -1254,10 +1295,48 @@ body.full-page-sync--locked {
   white-space: nowrap;
 }
 
+.table td:nth-child(2) {
+  min-width: 7.5rem;
+}
+
 .player-presence {
-  display: inline-flex;
+  display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: 0.55rem;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.player-presence__name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.player-presence .dot {
+  flex: 0 0 0.5rem;
+  margin-left: 0;
+}
+
+.player-presence--dot-left {
+  justify-content: flex-start;
   gap: 0.42rem;
+}
+
+.player-presence--dot-left .dot {
+  flex: 0 0 0.5rem;
+  flex-shrink: 0;
+}
+
+.player-presence--dot-left .player-presence__name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
@@ -1293,6 +1372,636 @@ body.full-page-sync--locked {
 
 .season-presence-dot {
   margin-left: 0;
+}
+
+/* Season standings board (current + history) */
+.season-board {
+  padding-top: 0.35rem;
+}
+
+.season-board__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin-bottom: 0.85rem;
+}
+
+.season-board__btn {
+  flex: 1 1 10.5rem;
+  min-width: min(100%, 10.5rem);
+}
+
+.season-board__pane {
+  margin-top: 0.15rem;
+}
+
+.season-board__pane--history {
+  margin-top: 0.65rem;
+}
+
+.season-history-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.season-loading,
+.season-empty {
+  margin: 0.5rem 0;
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.season-card {
+  border-radius: 0.95rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.32);
+  overflow: hidden;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.season-card--active {
+  border-color: rgba(0, 229, 199, 0.28);
+  background:
+    linear-gradient(155deg, rgba(0, 229, 199, 0.1) 0%, transparent 42%),
+    rgba(0, 0, 0, 0.34);
+}
+
+.season-card--ended {
+  border-color: rgba(167, 139, 250, 0.22);
+  opacity: 0.94;
+}
+
+.season-card__head {
+  padding: 0.85rem 1rem 0.65rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.season-card__title-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.65rem;
+}
+
+.season-card__title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #fff;
+  line-height: 1.25;
+}
+
+.season-card__badge {
+  flex-shrink: 0;
+  font-family: var(--font-m);
+  font-size: 0.58rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 0.2rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid rgba(0, 229, 199, 0.45);
+  color: var(--arc);
+  background: rgba(0, 229, 199, 0.1);
+}
+
+.season-card--ended .season-card__badge {
+  border-color: rgba(167, 139, 250, 0.45);
+  color: rgba(220, 205, 255, 0.95);
+  background: rgba(167, 139, 250, 0.12);
+}
+
+.season-card__window {
+  margin: 0.35rem 0 0;
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
+  color: rgba(196, 184, 212, 0.72);
+}
+
+.season-standings-wrap {
+  margin: 0;
+  padding: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+}
+
+.guild-board,
+.season-board {
+  /* Shared standings grid (Guild + Season); L columns stay aligned when stacked */
+  --st-col-rank: 1.75rem;
+  --st-col-tier: 2.35rem;
+  --st-col-class: 0;
+  --st-col-xp: 3.15rem;
+  --st-col-lv: 2.5rem;
+}
+
+.season-standings-table,
+.guild-standings-table,
+.season-standings-table--extra,
+.guild-standings-table--extra {
+  min-width: 20rem;
+  width: 100%;
+  font-size: 0.82rem;
+}
+
+@media (min-width: 640px) {
+  .season-standings-table,
+  .guild-standings-table,
+  .season-standings-table--extra,
+  .guild-standings-table--extra {
+    table-layout: fixed;
+  }
+}
+
+/* Shared column grid — Guild Role aligns with Season Class; L with L */
+.standings-col-rank {
+  width: var(--st-col-rank);
+}
+
+.standings-col-player {
+  width: auto;
+}
+
+.standings-col-tier {
+  width: var(--st-col-tier);
+}
+
+.standings-col-class {
+  width: var(--st-col-class);
+}
+
+.standings-col-xp {
+  width: var(--st-col-xp);
+}
+
+.standings-col-lv {
+  width: var(--st-col-lv);
+}
+
+@media (min-width: 640px) {
+  .guild-board,
+  .season-board {
+    --st-col-rank: 9%;
+    --st-col-tier: 11%;
+    --st-col-class: 24%;
+    --st-col-xp: 16%;
+    --st-col-lv: 12%;
+  }
+
+  .standings-col-player {
+    width: 28%;
+  }
+}
+
+.season-standings-lv-head,
+.guild-standings-lv-head,
+.season-standings-table .season-standings-lv,
+.guild-standings-table .guild-standings-lv {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.season-standings-table thead {
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.season-standings-table th,
+.season-standings-table td {
+  padding: 0.62rem 0.85rem;
+}
+
+.season-standings-table .season-standings-rank {
+  width: 2.2rem;
+  opacity: 0.7;
+  font-variant-numeric: tabular-nums;
+}
+
+.season-standings-table tbody tr {
+  cursor: default;
+}
+
+.season-standings-table tbody tr:hover {
+  background: linear-gradient(90deg, rgba(0, 229, 199, 0.06), transparent);
+  box-shadow: none;
+}
+
+.season-standings-extra-panel {
+  margin: 0;
+}
+
+.season-standings-wrap--extra {
+  margin-top: 0;
+}
+
+.season-standings-table--extra {
+  border-top: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.season-rank--gold .season-standings-rank {
+  color: #ffd36e;
+  opacity: 1;
+  text-shadow: 0 0 12px rgba(255, 211, 110, 0.45);
+}
+
+.season-rank--silver .season-standings-rank {
+  color: #d8e4f0;
+  opacity: 1;
+}
+
+.season-rank--bronze .season-standings-rank {
+  color: #e8a86a;
+  opacity: 1;
+}
+
+.season-standings-tier,
+.season-standings-xp {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.season-standings-class {
+  opacity: 0.82;
+  max-width: 8rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.season-current-extra-panel,
+.season-history-extra-panel {
+  margin-top: 0;
+}
+
+.season-history-heading {
+  margin: 0 0 0.65rem;
+  font-family: var(--font-m);
+  font-size: 0.68rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(196, 184, 212, 0.72);
+}
+
+.season-history-count {
+  color: var(--arc);
+  opacity: 0.9;
+}
+
+/* Guild standings board */
+.guild-board {
+  padding-top: 0.35rem;
+}
+
+.guild-board__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin-bottom: 0.85rem;
+}
+
+.guild-board__btn {
+  flex: 1 1 10.5rem;
+  min-width: min(100%, 10.5rem);
+}
+
+.guild-board__list,
+.guild-board__stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.guild-loading,
+.guild-empty {
+  margin: 0.5rem 0;
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.guild-card {
+  border-radius: 0.95rem;
+  border: 1px solid rgba(0, 229, 199, 0.28);
+  background:
+    linear-gradient(155deg, rgba(0, 229, 199, 0.1) 0%, transparent 42%),
+    rgba(0, 0, 0, 0.34);
+  overflow: hidden;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+/* Rank tint on table rows only — card shell stays green like season-card--active */
+.guild-card--gold,
+.guild-card--silver,
+.guild-card--bronze {
+  border-color: rgba(0, 229, 199, 0.28);
+  background:
+    linear-gradient(155deg, rgba(0, 229, 199, 0.1) 0%, transparent 42%),
+    rgba(0, 0, 0, 0.34);
+}
+
+.guild-card__head {
+  padding: 0.85rem 1rem 0.65rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.guild-card__title-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.65rem;
+}
+
+.guild-card__title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #fff;
+  line-height: 1.25;
+}
+
+.guild-card__tag {
+  color: var(--arc);
+  margin-right: 0.2rem;
+}
+
+.guild-card__badge {
+  flex-shrink: 0;
+  font-family: var(--font-m);
+  font-size: 0.58rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 0.2rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid rgba(0, 229, 199, 0.45);
+  color: var(--arc);
+  background: rgba(0, 229, 199, 0.1);
+}
+
+.guild-card__window {
+  margin: 0.35rem 0 0;
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
+  color: rgba(196, 184, 212, 0.72);
+}
+
+.guild-standings-wrap {
+  margin: 0;
+  padding: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+}
+
+.guild-standings-table .standings-spacer-head {
+  padding-top: 0.62rem;
+  padding-bottom: 0.62rem;
+  line-height: 0;
+  font-size: 0;
+  color: transparent;
+  user-select: none;
+}
+
+.guild-standings-table .standings-tier-cell,
+.guild-standings-table .standings-xp-cell {
+  padding-top: 0.62rem;
+  padding-bottom: 0.62rem;
+}
+
+.guild-standings-table thead {
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.guild-standings-table th,
+.guild-standings-table td {
+  padding: 0.62rem 0.85rem;
+}
+
+.guild-standings-table .guild-standings-rank {
+  width: 2.2rem;
+  opacity: 0.7;
+  font-variant-numeric: tabular-nums;
+}
+
+.guild-standings-table tbody tr {
+  cursor: default;
+}
+
+.guild-standings-table tbody tr:hover {
+  background: linear-gradient(90deg, rgba(0, 229, 199, 0.06), transparent);
+  box-shadow: none;
+}
+
+.guild-roster-extra-panel {
+  margin: 0;
+}
+
+.guild-standings-wrap--extra {
+  margin-top: 0;
+}
+
+.guild-standings-table--extra {
+  border-top: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.guild-card__members-toggle {
+  width: 100%;
+  margin: 0;
+  border: none;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 0;
+  padding: 0.55rem 0.85rem;
+  font-size: 0.72rem;
+  background: rgba(0, 0, 0, 0.28);
+  text-align: left;
+}
+
+.guild-card--gold .guild-standings-rank {
+  color: #ffd36e;
+  opacity: 1;
+  text-shadow: 0 0 12px rgba(255, 211, 110, 0.45);
+}
+
+.guild-card--silver .guild-standings-rank {
+  color: #d8e4f0;
+  opacity: 1;
+}
+
+.guild-card--bronze .guild-standings-rank {
+  color: #e8a86a;
+  opacity: 1;
+}
+
+.guild-role {
+  display: inline-flex;
+  font-family: var(--font-m);
+  font-size: 0.62rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 0.14rem 0.38rem;
+  border-radius: 999px;
+  border: 1px solid rgba(0, 229, 199, 0.35);
+  color: rgba(255, 255, 255, 0.9);
+  background: rgba(0, 229, 199, 0.08);
+}
+
+.guild-role--leader {
+  border-color: rgba(0, 229, 199, 0.55);
+  color: var(--arc);
+  background: rgba(0, 229, 199, 0.14);
+}
+
+.guild-list-extra-panel {
+  margin-top: 0;
+}
+
+@media (max-width: 639px) {
+  .season-standings-table,
+  .season-standings-table--extra,
+  .guild-standings-table,
+  .guild-standings-table--extra {
+    table-layout: auto;
+    min-width: 21.5rem;
+    font-size: 0.78rem;
+  }
+
+  .season-standings-wrap,
+  .guild-standings-wrap {
+    width: 100%;
+  }
+
+  .season-standings-table th,
+  .season-standings-table td,
+  .guild-standings-table th,
+  .guild-standings-table td {
+    padding: 0.52rem 0.55rem;
+    vertical-align: middle;
+  }
+
+  .season-standings-table th.hide-sm,
+  .season-standings-table td.hide-sm,
+  .guild-standings-table th.hide-sm,
+  .guild-standings-table td.hide-sm {
+    display: none !important;
+    width: 0;
+    max-width: 0;
+    padding: 0;
+    border: 0;
+  }
+
+  .standings-col-player {
+    width: auto;
+    min-width: 0;
+  }
+
+  .standings-col-rank {
+    width: var(--st-col-rank);
+  }
+
+  .standings-col-tier {
+    width: var(--st-col-tier);
+  }
+
+  .standings-col-xp {
+    width: var(--st-col-xp);
+  }
+
+  .standings-col-lv {
+    width: var(--st-col-lv);
+  }
+
+  .season-standings-table .season-standings-rank,
+  .guild-standings-table .guild-standings-rank {
+    width: 1.6rem;
+    padding-right: 0.15rem;
+  }
+
+  .season-standings-table th:nth-child(2),
+  .season-standings-table td:nth-child(2),
+  .guild-standings-table th:nth-child(2),
+  .guild-standings-table td:nth-child(2) {
+    min-width: 6.75rem;
+  }
+
+  .season-standings-table th:nth-child(3),
+  .season-standings-table td:nth-child(3),
+  .guild-standings-table th:nth-child(3),
+  .guild-standings-table td:nth-child(3),
+  .season-standings-table th:nth-child(5),
+  .season-standings-table td:nth-child(5),
+  .season-standings-table th:nth-child(6),
+  .season-standings-table td:nth-child(6),
+  .guild-standings-table th:nth-child(5),
+  .guild-standings-table td:nth-child(5),
+  .guild-standings-table th:nth-child(6),
+  .guild-standings-table td:nth-child(6) {
+    white-space: nowrap;
+  }
+
+  .season-standings-table th:nth-child(5),
+  .season-standings-table td:nth-child(5),
+  .guild-standings-table th:nth-child(5),
+  .guild-standings-table td:nth-child(5) {
+    padding-left: 0.35rem;
+    padding-right: 0.35rem;
+  }
+
+  .season-standings-table th:nth-child(6),
+  .season-standings-table td:nth-child(6),
+  .guild-standings-table th:nth-child(6),
+  .guild-standings-table td:nth-child(6) {
+    padding-left: 0.3rem;
+    padding-right: 0.45rem;
+  }
+
+  .season-standings-table .season-standings-xp,
+  .guild-standings-table .standings-xp-cell {
+    font-size: 0.76rem;
+  }
+
+  .season-standings-table .lv,
+  .guild-standings-table .lv {
+    font-size: 0.82rem;
+    line-height: 1;
+    text-shadow: 0 0 10px rgba(0, 229, 199, 0.28);
+  }
+
+  .season-board__pane--history {
+    margin-top: 1rem;
+    padding-top: 0.85rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .season-card__head {
+    padding: 0.75rem 0.85rem 0.55rem;
+  }
+
+  .season-card__title {
+    font-size: 0.88rem;
+  }
+
+  .season-standings-class {
+    max-width: 5.5rem;
+  }
+
+  .guild-standings-table .standings-spacer-head,
+  .guild-standings-table .standings-tier-cell,
+  .guild-standings-table .standings-xp-cell {
+    padding-top: 0.52rem;
+    padding-bottom: 0.52rem;
+  }
+
+  .guild-card__head {
+    padding: 0.75rem 0.85rem 0.55rem;
+  }
+
+  .guild-card__title {
+    font-size: 0.88rem;
+  }
 }
 
 .timer-offline-tag {
@@ -2848,6 +3557,14 @@ body.full-page-sync--locked {
 .chronicle-panel {
   padding: 1.1rem 1.2rem;
   overflow-x: hidden;
+  border-color: rgba(0, 229, 199, 0.28);
+  background:
+    linear-gradient(155deg, rgba(0, 229, 199, 0.1) 0%, transparent 42%),
+    linear-gradient(330deg, rgba(0, 229, 199, 0.05) 0%, transparent 40%),
+    var(--panel);
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.35) inset,
+    0 12px 40px rgba(0, 0, 0, 0.25);
 }
 
 .chronicle-collapsible {
@@ -2988,6 +3705,14 @@ body.full-page-sync--locked {
     linear-gradient(330deg, rgba(0, 229, 199, 0.06) 0%, transparent 40%),
     var(--panel);
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
+}
+
+.guild-board.treasures-panel {
+  border-color: rgba(0, 229, 199, 0.22);
+  background:
+    linear-gradient(155deg, rgba(0, 229, 199, 0.1) 0%, transparent 45%),
+    linear-gradient(330deg, rgba(0, 229, 199, 0.05) 0%, transparent 40%),
+    var(--panel);
 }
 
 .treasures-grid {

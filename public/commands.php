@@ -38,7 +38,7 @@ $jsonLd = [
   <?php guide_stylesheet_links(); ?>
 </head>
 <body>
-  <main class="inner" style="padding-top:2rem;padding-bottom:2rem;max-width:62rem;">
+  <main class="inner guide-page" style="padding-top:2rem;padding-bottom:2rem;max-width:62rem;">
     <h1 class="h2" style="font-size:1.4rem;">IdleRPG Commands (IRC)</h1>
     <p class="guide-lead">Use commands in <strong>#IdleRPG</strong> on NetIRC. Channel syntax is <span class="mono">!command</span>; account commands are sent by <strong>private message</strong> to the bot without <span class="mono">!</span>.</p>
 
