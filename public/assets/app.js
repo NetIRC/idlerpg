@@ -1466,7 +1466,7 @@
             <th scope="col">#</th>
             <th scope="col">Player</th>
             <th scope="col" class="standings-spacer-head standings-tier-head" aria-hidden="true"></th>
-            <th scope="col" class="hide-sm">Role</th>
+            <th scope="col" class="hide-sm standings-role-head">Role</th>
             <th scope="col" class="standings-spacer-head standings-xp-head" aria-hidden="true"></th>
             <th scope="col" class="guild-standings-lv-head" title="Hero level">L</th>
           </tr>

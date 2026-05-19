@@ -1017,6 +1017,7 @@ body {
 .section-head-row > div:first-child {
   flex: 1;
   min-width: 0;
+  overflow: visible;
 }
 
 .lb-meta {
@@ -1076,27 +1077,33 @@ body {
 }
 
 .h2-mark {
-  display: inline-block;
-  width: 6px;
-  height: 6px;
-  background: var(--arc);
-  transform: rotate(45deg);
-  box-shadow: 0 0 12px var(--arc-glow);
+  --h2-mark-size: 8px;
+  --h2-mark-bg: var(--arc);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: calc(var(--h2-mark-size) * 1.5);
+  min-width: calc(var(--h2-mark-size) * 1.5);
+  height: calc(var(--h2-mark-size) * 1.5);
   flex-shrink: 0;
+  overflow: visible;
+}
+
+.h2-mark::before {
+  content: '';
+  display: block;
+  width: var(--h2-mark-size);
+  height: var(--h2-mark-size);
+  background: var(--h2-mark-bg);
+  transform: rotate(45deg);
 }
 
 .h2-mark-ember {
-  background: var(--ember);
-  box-shadow: 0 0 12px var(--ember-glow);
+  --h2-mark-bg: var(--ember);
 }
 
-.h2-mark-omen {
-  width: 8px;
-  height: 8px;
+.h2-mark-omen::before {
   background: linear-gradient(135deg, #a78bfa, #00e5c7);
-  box-shadow:
-    0 0 14px rgba(167, 139, 250, 0.55),
-    0 0 20px rgba(0, 229, 199, 0.35);
 }
 
 .h2 {
@@ -1110,6 +1117,7 @@ body {
   display: flex;
   align-items: center;
   gap: 0.65rem;
+  overflow: visible;
 }
 
 .search {
@@ -1883,14 +1891,43 @@ body.full-page-sync--locked {
   }
 
   .season-standings-table th.hide-sm,
-  .season-standings-table td.hide-sm,
-  .guild-standings-table th.hide-sm,
-  .guild-standings-table td.hide-sm {
+  .season-standings-table td.hide-sm {
     display: none !important;
     width: 0;
     max-width: 0;
     padding: 0;
     border: 0;
+  }
+
+  .guild-board {
+    --st-col-tier: 0;
+    --st-col-xp: 0;
+  }
+
+  .guild-standings-table .standings-tier-head,
+  .guild-standings-table .standings-tier-cell,
+  .guild-standings-table .standings-xp-head,
+  .guild-standings-table .standings-xp-cell {
+    display: none !important;
+    width: 0 !important;
+    max-width: 0 !important;
+    padding: 0 !important;
+    border: 0;
+  }
+
+  .guild-standings-table th.standings-role-head,
+  .guild-standings-table td.standings-role-cell {
+    display: table-cell !important;
+    width: auto !important;
+    max-width: none !important;
+    padding: 0.52rem 0.35rem !important;
+    white-space: nowrap;
+  }
+
+  .guild-standings-table .guild-role {
+    font-size: 0.58rem;
+    letter-spacing: 0.06em;
+    padding: 0.14rem 0.32rem;
   }
 
   .standings-col-player {
@@ -1929,37 +1966,30 @@ body.full-page-sync--locked {
 
   .season-standings-table th:nth-child(3),
   .season-standings-table td:nth-child(3),
-  .guild-standings-table th:nth-child(3),
-  .guild-standings-table td:nth-child(3),
   .season-standings-table th:nth-child(5),
   .season-standings-table td:nth-child(5),
   .season-standings-table th:nth-child(6),
   .season-standings-table td:nth-child(6),
-  .guild-standings-table th:nth-child(5),
-  .guild-standings-table td:nth-child(5),
-  .guild-standings-table th:nth-child(6),
-  .guild-standings-table td:nth-child(6) {
+  .guild-standings-table th.guild-standings-lv-head,
+  .guild-standings-table td.guild-standings-lv {
     white-space: nowrap;
   }
 
   .season-standings-table th:nth-child(5),
-  .season-standings-table td:nth-child(5),
-  .guild-standings-table th:nth-child(5),
-  .guild-standings-table td:nth-child(5) {
+  .season-standings-table td:nth-child(5) {
     padding-left: 0.35rem;
     padding-right: 0.35rem;
   }
 
   .season-standings-table th:nth-child(6),
   .season-standings-table td:nth-child(6),
-  .guild-standings-table th:nth-child(6),
-  .guild-standings-table td:nth-child(6) {
+  .guild-standings-table th.guild-standings-lv-head,
+  .guild-standings-table td.guild-standings-lv {
     padding-left: 0.3rem;
     padding-right: 0.45rem;
   }
 
-  .season-standings-table .season-standings-xp,
-  .guild-standings-table .standings-xp-cell {
+  .season-standings-table .season-standings-xp {
     font-size: 0.76rem;
   }
 
@@ -1989,8 +2019,7 @@ body.full-page-sync--locked {
   }
 
   .guild-standings-table .standings-spacer-head,
-  .guild-standings-table .standings-tier-cell,
-  .guild-standings-table .standings-xp-cell {
+  .guild-standings-table .standings-tier-cell {
     padding-top: 0.52rem;
     padding-bottom: 0.52rem;
   }
