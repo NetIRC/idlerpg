@@ -1620,8 +1620,31 @@ body.full-page-sync--locked {
   margin-top: 0;
 }
 
-.season-standings-table--extra {
+.season-card > .season-standings-extra-panel.is-collapsed {
+  overflow: hidden;
+}
+
+.season-card > .season-standings-extra-panel.is-collapsed .season-standings-table--extra {
+  border-top: none;
+}
+
+.season-card > .season-standings-extra-panel:not(.is-collapsed) .season-standings-table--extra {
   border-top: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.season-card:has(> .season-standings-extra-panel.is-collapsed) > .season-standings-wrap:first-of-type,
+.season-card:not(:has(> .season-standings-extra-panel)) > .season-standings-wrap {
+  border-radius: 0 0 0.95rem 0.95rem;
+  overflow: hidden;
+}
+
+.season-card:has(> .season-standings-extra-panel:not(.is-collapsed)) > .season-standings-extra-panel {
+  border-radius: 0 0 0.95rem 0.95rem;
+  overflow: hidden;
+}
+
+.season-card:has(> .season-standings-extra-panel:not(.is-collapsed)) > .season-standings-wrap:first-of-type {
+  border-radius: 0;
 }
 
 .season-rank--gold .season-standings-rank {
@@ -2065,10 +2088,30 @@ body.full-page-sync--locked {
     line-height: 1;
   }
 
-  .season-board__pane--history {
+  .season-board__pane--history.is-collapsed {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: none;
+  }
+
+  .season-board__pane--history:not(.is-collapsed) {
     margin-top: 1rem;
     padding-top: 0.85rem;
     border-top: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .season-card > .season-standings-wrap {
+    overflow-x: clip;
+    overflow-y: visible;
+  }
+
+  .season-card .season-standings-table.table {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .season-card .season-standings-table:not(.season-standings-table--extra) tbody tr:last-child td {
+    border-bottom: none;
   }
 
   .season-card__head {
