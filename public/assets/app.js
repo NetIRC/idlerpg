@@ -2091,18 +2091,35 @@
         });
       }
     }
-    const idleGainSec = Math.max(0, Number((timerTrendToday && timerTrendToday.idleGainSec) || 0));
-    if (idleGainSec > 0) {
-      out.push({
-        effectSec: idleGainSec,
-        kind: 'Idle tick',
-        ts: Math.floor(Date.now() / 1000),
-        duelOpponent: '',
-        duelResult: '',
-        synthetic: true,
-      });
-    }
-    return out.reverse();
+    out.sort((a, b) => a.ts - b.ts);
+    return out;
+  }
+
+  /** Internal effectSec (+ = timer shortened) → user-facing timer delta label. */
+  function formatTimerEffectLabel(effectSec) {
+    const sec = Number(effectSec) || 0;
+    if (sec === 0) return '±0s';
+    if (sec > 0) return `−${formatDurationSec(sec)}`;
+    return `+${formatDurationSec(Math.abs(sec))}`;
+  }
+
+  function formatTrendSplit(timerTrendToday) {
+    const ledger = Number(timerTrendToday && timerTrendToday.ledgerEffectSec);
+    const idle = Math.max(0, Number((timerTrendToday && timerTrendToday.idleGainSec) || 0));
+    if (!Number.isFinite(ledger) && idle <= 0) return '';
+    const ledgerLabel = Number.isFinite(ledger) ? formatTimerEffectLabel(ledger) : '—';
+    const idleLabel = idle > 0 ? `−${formatDurationSec(idle)}` : '—';
+    return `<div class="trend-split" aria-label="Today's timer trend breakdown">
+      <div class="trend-split-item">
+        <span class="trend-split-label">Chronicle events</span>
+        <span class="trend-split-value mono">${escapeHtml(ledgerLabel)}</span>
+      </div>
+      <div class="trend-split-item">
+        <span class="trend-split-label">Idle in channel</span>
+        <span class="trend-split-value mono">${escapeHtml(idleLabel)}</span>
+      </div>
+      <p class="trend-split-note">Since midnight · idle counts when online in the game channel with the bot active</p>
+    </div>`;
   }
 
   function summarizeTodayKinds(recentFinds, timerTrendToday, maxItems = 4) {
@@ -2126,7 +2143,7 @@
   function formatHeroTrend(d) {
     const timerTrendToday = d && d.timerTrendToday;
     const dayStartSec = trendDayStartSec(timerTrendToday);
-    const points = extractTrendPoints(d && d.recentFinds, d && d.name, timerTrendToday);
+    const eventPoints = extractTrendPoints(d && d.recentFinds, d && d.name, timerTrendToday);
     const allToday = Array.isArray(d && d.recentFinds)
       ? d.recentFinds.filter((e) => {
           const ts = Number((e && e.ts) || 0);
@@ -2145,8 +2162,8 @@
     const prestigeRank = Math.max(0, Number((d && d.prestigeRank) || 0));
     const seasonTier = Math.max(0, Number((d && d.season && d.season.level) || 0));
     const seasonXp = Math.max(0, Number((d && d.season && d.season.xp) || 0));
-    const signedEvents = points.filter((p) => !p.synthetic).length;
-    const trendMeta = `Idle streak: ${streakHuman} · Timer effects: ${signedEvents}${idleGainSec > 0 ? ` + idle (${formatDurationSec(idleGainSec)})` : ''} · Chronicle lines today: ${allToday}`;
+    const signedEvents = eventPoints.length;
+    const trendMeta = `Idle streak: ${streakHuman} · Signed events: ${signedEvents} · Chronicle lines today: ${allToday}`;
     const trendKpis = [
       `Streak rewards: ${streakRewards}`,
       `Arena wins: ${duelWins}`,
@@ -2161,7 +2178,7 @@
     if (duelToday.rivals.length > 0) {
       trendKpis.push(`Rivals: ${duelToday.rivals.join(', ')}`);
     }
-    if (!points.length) {
+    if (!eventPoints.length && idleGainSec <= 0) {
       return `<div>
         <p class="muted" style="margin:0.6rem 0 0;font-size:0.8rem">Timer trend for today unavailable yet — no timer gains or losses recorded today (idle in channel, quests, penalties, etc.).</p>
         <p class="mono muted-strong" style="margin:0.45rem 0 0;font-size:0.74rem">${escapeHtml(trendMeta)}${eventMix ? ` · event mix: ${escapeHtml(eventMix)}` : ''}</p>
@@ -2171,9 +2188,12 @@
     const apiTotal = Number((timerTrendToday && timerTrendToday.totalEffectSec) || NaN);
     const net = Number.isFinite(apiTotal)
       ? apiTotal
-      : points.reduce((acc, p) => acc + p.effectSec, 0);
-    const maxAbs = Math.max(...points.map((p) => Math.abs(p.effectSec)), 1);
-    const bars = points
+      : eventPoints.reduce((acc, p) => acc + p.effectSec, 0) + idleGainSec;
+    const splitRow = formatTrendSplit(timerTrendToday);
+    const maxAbs = eventPoints.length
+      ? Math.max(...eventPoints.map((p) => Math.abs(p.effectSec)), 1)
+      : 1;
+    const bars = eventPoints
       .map((p) => {
         const gain = p.effectSec > 0;
         const h = Math.max(10, Math.round((Math.abs(p.effectSec) / maxAbs) * 100));
@@ -2181,10 +2201,17 @@
         const duelTip = p.duelOpponent
           ? ` · vs ${p.duelOpponent}${p.duelResult ? ` · ${p.duelResult.toUpperCase()}` : ''}`
           : '';
-        const tip = `${sign}${formatDurationSec(Math.abs(p.effectSec))} · ${p.kind}${duelTip}${p.ts > 0 ? ` · ${formatAgoSec(p.ts)} ago` : ''}`;
+        const agoTip = p.ts > 0 ? ` · ${formatAgoSec(p.ts)} ago` : '';
+        const tip = `${sign}${formatDurationSec(Math.abs(p.effectSec))} · ${p.kind}${duelTip}${agoTip}`;
         return `<span class="trend-bar ${gain ? 'trend-bar--gain' : 'trend-bar--loss'}" style="height:${h}%" title="${escapeHtml(tip)}"></span>`;
       })
       .join('');
+    const barsBlock = eventPoints.length
+      ? `<div class="trend-bars" role="img" aria-label="Today timer events. Green is timer down, red is timer up.">${bars}</div>`
+      : '';
+    const eventsCaption = eventPoints.length
+      ? ''
+      : '<p class="trend-events-caption muted">No signed chronicle events yet — bars appear when quests, HoG, duels, and penalties land.</p>';
     // `net` is positive when the hero gained progress (timer reduced).
     // Convert to timer-delta semantics for user-facing signs.
     const timerDelta = -net;
@@ -2196,7 +2223,9 @@
         <span class="trend-title">Timer trend for today</span>
         <span class="trend-net ${netCls} mono">Net timer ${netSign}${netAbs}</span>
       </div>
-      <div class="trend-bars" role="img" aria-label="Today timer trend bars. Green is timer down, red is timer up.">${bars}</div>
+      ${splitRow}
+      ${barsBlock}
+      ${eventsCaption}
       <p class="mono muted-strong" style="margin:0.45rem 0 0;font-size:0.74rem">${escapeHtml(trendMeta)}${eventMix ? ` · event mix: ${escapeHtml(eventMix)}` : ''}</p>
       <div class="stats-tags recent-ledger-highlights" style="margin-top:0.45rem;">${trendKpis.map((chip) => `<span>${escapeHtml(chip)}</span>`).join('')}</div>
     </div>`;

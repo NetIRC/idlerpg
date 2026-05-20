@@ -4176,9 +4176,51 @@ body.full-page-sync--locked {
   align-items: center;
   justify-content: space-between;
   gap: 0.6rem;
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.35rem;
   min-width: 0;
   flex-wrap: wrap;
+}
+
+.trend-split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.45rem 0.65rem;
+  margin-bottom: 0.55rem;
+  padding: 0.5rem 0.6rem;
+  border-radius: 0.55rem;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(0, 0, 0, 0.22);
+  min-width: 0;
+}
+
+.trend-split-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.trend-split-label {
+  font-size: 0.6rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(196, 184, 212, 0.62);
+}
+
+.trend-split-value {
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: rgba(255, 248, 240, 0.9);
+  letter-spacing: 0.03em;
+}
+
+.trend-split-note {
+  grid-column: 1 / -1;
+  margin: 0.15rem 0 0;
+  font-size: 0.62rem;
+  line-height: 1.4;
+  color: rgba(196, 184, 212, 0.5);
 }
 
 .trend-title {
@@ -4206,6 +4248,12 @@ body.full-page-sync--locked {
 
 .trend-net--flat {
   color: rgba(196, 184, 212, 0.85);
+}
+
+.trend-events-caption {
+  margin: 0 0 0.45rem;
+  font-size: 0.72rem;
+  line-height: 1.4;
 }
 
 .trend-bars {
