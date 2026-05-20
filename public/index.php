@@ -470,7 +470,7 @@ $jsonLdScript = json_encode($jsonLd, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNI
             <p class="lb-meta mono chronicle-sub">Live feed from the bot&rsquo;s ledger &mdash; last <?= (int) $irpgChronicleUiLimit ?> lines. In IRC, <span class="rules-cmd">!chronicle</span> is a shorter one-liner.</p>
           </div>
         </div>
-        <div class="panel chronicle-panel" id="chronicle-root" data-chronicle-limit="<?= (int) $irpgChronicleUiLimit ?>">
+        <div class="panel panel-table chronicle-panel" id="chronicle-root" data-chronicle-limit="<?= (int) $irpgChronicleUiLimit ?>">
           <div class="chronicle-filters">
             <select id="chronicle-kind-filter" class="search">
               <option value="">All kinds</option>
@@ -490,8 +490,42 @@ $jsonLdScript = json_encode($jsonLd, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNI
               <option value="bounty_claim">Bounty</option>
             </select>
             <input id="chronicle-search" class="search" type="search" placeholder="Search player/event..." />
-            <input id="chronicle-since" class="search" type="datetime-local" />
-            <input id="chronicle-until" class="search" type="datetime-local" />
+            <div class="chronicle-date-range">
+              <button
+                type="button"
+                id="chronicle-date-toggle"
+                class="finds-strip-toggle chronicle-date-toggle"
+                aria-expanded="false"
+                aria-controls="chronicle-date-panel"
+              >
+                <span class="finds-chevron" aria-hidden="true"></span>
+                <span class="finds-strip-label">Date range <span class="finds-strip-scope" id="chronicle-date-scope">(optional)</span></span>
+              </button>
+              <div id="chronicle-date-panel" class="chronicle-date-panel finds-collapse-panel is-collapsed">
+                <div class="finds-collapse-panel-inner chronicle-date-panel-inner">
+                  <label class="chronicle-date-field" for="chronicle-since">
+                    <span class="chronicle-date-label mono">From</span>
+                    <input
+                      id="chronicle-since"
+                      class="search"
+                      type="datetime-local"
+                      aria-label="From date and time"
+                      title="Filter events on or after this date and time"
+                    />
+                  </label>
+                  <label class="chronicle-date-field" for="chronicle-until">
+                    <span class="chronicle-date-label mono">To</span>
+                    <input
+                      id="chronicle-until"
+                      class="search"
+                      type="datetime-local"
+                      aria-label="To date and time"
+                      title="Filter events on or before this date and time"
+                    />
+                  </label>
+                </div>
+              </div>
+            </div>
             <button id="chronicle-apply" class="search" type="button">Apply filters</button>
           </div>
           <p class="muted" id="chronicle-placeholder">Pulling realm_events…</p>

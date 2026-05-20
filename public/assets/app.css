@@ -710,7 +710,7 @@ body {
 
 .rules-cmd {
   font-family: var(--font-m);
-  font-size: 0.78em;
+  font-size: inherit;
   color: var(--arc-dim);
   white-space: nowrap;
 }
@@ -875,12 +875,20 @@ body {
   opacity: 0.5;
 }
 
+main.inner {
+  --section-stack-gap: 3rem;
+}
+
+main.inner > .section-rise:has(+ .section-rise) {
+  padding-bottom: var(--section-stack-gap);
+}
+
 .main-grid {
   display: grid;
   grid-template-columns: 1fr;
   row-gap: 1rem;
   column-gap: 0;
-  padding: 2.5rem 0 3rem;
+  padding: 2.5rem 0 var(--section-stack-gap);
 }
 
 .main-grid-header-lb .section-head,
@@ -888,7 +896,7 @@ body {
   margin-bottom: 0;
 }
 
-@media (max-width: 1023px) {
+@media (min-width: 640px) and (max-width: 1023px) {
   .main-grid-header-hero {
     margin-top: 0.75rem;
   }
@@ -916,13 +924,17 @@ body {
     margin-top: 0.15rem;
   }
 
+  main.inner {
+    --section-stack-gap: 2.25rem;
+  }
+
   .main-grid {
     grid-template-columns: 1.12fr 0.88fr;
     grid-template-rows: auto auto;
     column-gap: 2.25rem;
     row-gap: 1rem;
     padding-top: 0.75rem;
-    padding-bottom: 2.25rem;
+    padding-bottom: var(--section-stack-gap);
   }
 
   .main-grid-header-lb {
@@ -1429,10 +1441,8 @@ body.full-page-sync--locked {
 }
 
 .season-card--active {
-  border-color: rgba(0, 229, 199, 0.28);
-  background:
-    linear-gradient(155deg, rgba(0, 229, 199, 0.1) 0%, transparent 42%),
-    rgba(0, 0, 0, 0.34);
+  border-color: rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.32);
 }
 
 .season-card--ended {
@@ -1466,17 +1476,22 @@ body.full-page-sync--locked {
   flex-shrink: 0;
   font-family: var(--font-m);
   font-size: 0.58rem;
+  font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   padding: 0.2rem 0.45rem;
   border-radius: 999px;
-  border: 1px solid rgba(0, 229, 199, 0.45);
+}
+
+.season-card--active .season-card__badge {
+  border: 1px solid rgba(0, 229, 199, 0.48);
   color: var(--arc);
-  background: rgba(0, 229, 199, 0.1);
+  background: rgba(0, 229, 199, 0.14);
+  text-shadow: 0 0 14px rgba(0, 229, 199, 0.32);
 }
 
 .season-card--ended .season-card__badge {
-  border-color: rgba(167, 139, 250, 0.45);
+  border: 1px solid rgba(167, 139, 250, 0.45);
   color: rgba(220, 205, 255, 0.95);
   background: rgba(167, 139, 250, 0.12);
 }
@@ -1593,7 +1608,7 @@ body.full-page-sync--locked {
 }
 
 .season-standings-table tbody tr:hover {
-  background: linear-gradient(90deg, rgba(0, 229, 199, 0.06), transparent);
+  background: rgba(255, 255, 255, 0.04);
   box-shadow: none;
 }
 
@@ -1690,28 +1705,30 @@ body.full-page-sync--locked {
 }
 
 .guild-card {
+  position: relative;
   border-radius: 0.95rem;
-  border: 1px solid rgba(0, 229, 199, 0.28);
-  background:
-    linear-gradient(155deg, rgba(0, 229, 199, 0.1) 0%, transparent 42%),
-    rgba(0, 0, 0, 0.34);
-  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.32);
+  overflow: visible;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
-/* Rank tint on table rows only — card shell stays green like season-card--active */
+.guild-card:has(.guild-roster-extra-panel:not(.is-collapsed)) {
+  z-index: 2;
+}
+
 .guild-card--gold,
 .guild-card--silver,
 .guild-card--bronze {
-  border-color: rgba(0, 229, 199, 0.28);
-  background:
-    linear-gradient(155deg, rgba(0, 229, 199, 0.1) 0%, transparent 42%),
-    rgba(0, 0, 0, 0.34);
+  border-color: rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.32);
 }
 
 .guild-card__head {
   padding: 0.85rem 1rem 0.65rem;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 0.95rem 0.95rem 0 0;
+  overflow: hidden;
 }
 
 .guild-card__title-row {
@@ -1732,7 +1749,7 @@ body.full-page-sync--locked {
 }
 
 .guild-card__tag {
-  color: var(--arc);
+  color: rgba(196, 184, 212, 0.9);
   margin-right: 0.2rem;
 }
 
@@ -1740,13 +1757,36 @@ body.full-page-sync--locked {
   flex-shrink: 0;
   font-family: var(--font-m);
   font-size: 0.58rem;
-  letter-spacing: 0.12em;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   padding: 0.2rem 0.45rem;
   border-radius: 999px;
-  border: 1px solid rgba(0, 229, 199, 0.45);
-  color: var(--arc);
-  background: rgba(0, 229, 199, 0.1);
+  border: 1px solid rgba(196, 184, 212, 0.28);
+  color: rgba(196, 184, 212, 0.88);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.guild-card--gold .guild-card__badge {
+  border-color: rgba(255, 211, 110, 0.55);
+  color: #ffd36e;
+  background: rgba(255, 211, 110, 0.12);
+  text-shadow: 0 0 14px rgba(255, 211, 110, 0.4);
+}
+
+.guild-card--silver .guild-card__badge {
+  border-color: rgba(200, 215, 228, 0.45);
+  color: #d8e4f0;
+  background: rgba(200, 215, 228, 0.1);
+  text-shadow: 0 0 10px rgba(216, 228, 240, 0.28);
+}
+
+.guild-card--bronze .guild-card__badge {
+  border-color: rgba(232, 168, 106, 0.5);
+  color: #e8a86a;
+  background: rgba(232, 168, 106, 0.12);
+  text-shadow: 0 0 10px rgba(232, 168, 106, 0.28);
 }
 
 .guild-card__window {
@@ -1800,7 +1840,7 @@ body.full-page-sync--locked {
 }
 
 .guild-standings-table tbody tr:hover {
-  background: linear-gradient(90deg, rgba(0, 229, 199, 0.06), transparent);
+  background: rgba(255, 255, 255, 0.04);
   box-shadow: none;
 }
 
@@ -1828,6 +1868,26 @@ body.full-page-sync--locked {
   text-align: left;
 }
 
+.guild-card__members-toggle.is-open {
+  position: relative;
+  z-index: 1;
+}
+
+.guild-card:has(.guild-roster-extra-panel.is-collapsed) > .guild-card__members-toggle,
+.guild-card:not(:has(.guild-card__members-toggle)) > .table-wrap:last-child {
+  border-radius: 0 0 0.95rem 0.95rem;
+  overflow: hidden;
+}
+
+.guild-card:has(.guild-roster-extra-panel:not(.is-collapsed)) > .guild-roster-extra-panel {
+  border-radius: 0 0 0.95rem 0.95rem;
+  overflow: hidden;
+}
+
+.guild-card:has(.guild-roster-extra-panel:not(.is-collapsed)) > .guild-card__members-toggle {
+  border-radius: 0;
+}
+
 .guild-card--gold .guild-standings-rank {
   color: #ffd36e;
   opacity: 1;
@@ -1846,21 +1906,27 @@ body.full-page-sync--locked {
 
 .guild-role {
   display: inline-flex;
+  align-items: center;
   font-family: var(--font-m);
   font-size: 0.62rem;
+  font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   padding: 0.14rem 0.38rem;
   border-radius: 999px;
-  border: 1px solid rgba(0, 229, 199, 0.35);
-  color: rgba(255, 255, 255, 0.9);
-  background: rgba(0, 229, 199, 0.08);
+}
+
+.guild-role--member {
+  border: 1px solid rgba(167, 139, 250, 0.35);
+  color: rgba(196, 184, 212, 0.92);
+  background: rgba(120, 100, 160, 0.14);
 }
 
 .guild-role--leader {
-  border-color: rgba(0, 229, 199, 0.55);
+  border: 1px solid rgba(0, 229, 199, 0.48);
   color: var(--arc);
   background: rgba(0, 229, 199, 0.14);
+  text-shadow: 0 0 14px rgba(0, 229, 199, 0.32);
 }
 
 .guild-list-extra-panel {
@@ -1997,7 +2063,6 @@ body.full-page-sync--locked {
   .guild-standings-table .lv {
     font-size: 0.82rem;
     line-height: 1;
-    text-shadow: 0 0 10px rgba(0, 229, 199, 0.28);
   }
 
   .season-board__pane--history {
@@ -2481,13 +2546,21 @@ body.full-page-sync--locked {
     padding-right: calc(1.2rem + env(safe-area-inset-right, 0px));
   }
 
-  /* Rules card: centered on mobile (narrow max-width + auto margins) */
+  .header-grid {
+    gap: 1.2rem;
+  }
+
   .header-rules {
+    margin-top: 0.5rem;
     margin-left: auto;
     margin-right: auto;
     width: 100%;
     max-width: min(24rem, calc(100% - 1.3rem));
     box-sizing: border-box;
+  }
+
+  .main-grid-header-hero {
+    margin-top: 1rem;
   }
 
   .main-grid .section-rise .panel {
@@ -2534,13 +2607,17 @@ body.full-page-sync--locked {
   }
 
   .header {
-    padding: 1rem 0 1.5rem;
+    padding: 1rem 0 1rem;
+  }
+
+  main.inner {
+    --section-stack-gap: 2.25rem;
   }
 
   .main-grid {
     row-gap: 1rem;
     column-gap: 0;
-    padding: 1.75rem 0 2.25rem;
+    padding: 1rem 0 var(--section-stack-gap);
   }
 
   .eyebrow {
@@ -2674,10 +2751,6 @@ body.full-page-sync--locked {
 }
 
 /* --- Realm atlas (interactive world map) --- */
-.realm-atlas-section {
-  padding-bottom: 0.5rem;
-}
-
 .atlas-section-head {
   align-items: flex-start;
 }
@@ -3575,10 +3648,6 @@ body.full-page-sync--locked {
 }
 
 /* --- Realm chronicle (realm_events feed) --- */
-.chronicle-section {
-  padding-bottom: 2.75rem;
-}
-
 .chronicle-sub {
   margin-top: 0.35rem;
 }
@@ -3586,14 +3655,6 @@ body.full-page-sync--locked {
 .chronicle-panel {
   padding: 1.1rem 1.2rem;
   overflow-x: hidden;
-  border-color: rgba(0, 229, 199, 0.28);
-  background:
-    linear-gradient(155deg, rgba(0, 229, 199, 0.1) 0%, transparent 42%),
-    linear-gradient(330deg, rgba(0, 229, 199, 0.05) 0%, transparent 40%),
-    var(--panel);
-  box-shadow:
-    0 0 0 1px rgba(0, 0, 0, 0.35) inset,
-    0 12px 40px rgba(0, 0, 0, 0.25);
 }
 
 .chronicle-collapsible {
@@ -3716,10 +3777,6 @@ body.full-page-sync--locked {
 }
 
 /* Treasures & omen explainer */
-.treasures-section {
-  padding-bottom: 0.5rem;
-}
-
 .treasures-sub {
   margin-top: 0.35rem;
   max-width: 52rem;
@@ -3736,12 +3793,15 @@ body.full-page-sync--locked {
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
 }
 
-.guild-board.treasures-panel {
-  border-color: rgba(0, 229, 199, 0.22);
-  background:
-    linear-gradient(155deg, rgba(0, 229, 199, 0.1) 0%, transparent 45%),
-    linear-gradient(330deg, rgba(0, 229, 199, 0.05) 0%, transparent 40%),
-    var(--panel);
+.treasures-panel.guild-board,
+.treasures-panel.season-board {
+  border: 1px solid rgba(0, 229, 199, 0.15);
+  background: var(--panel);
+  backdrop-filter: blur(20px) saturate(1.2);
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.35) inset,
+    0 24px 48px rgba(0, 0, 0, 0.35),
+    0 0 60px rgba(0, 229, 199, 0.06);
 }
 
 .treasures-grid {
@@ -4177,6 +4237,55 @@ body.full-page-sync--locked {
 .chronicle-filters input[type='datetime-local']::-webkit-calendar-picker-indicator {
   margin: 0;
   opacity: 0.9;
+}
+
+.chronicle-date-range {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  min-width: 0;
+}
+
+.chronicle-date-panel {
+  margin-top: 0.45rem;
+}
+
+.chronicle-date-panel-inner {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.chronicle-date-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.chronicle-date-label {
+  font-size: 0.62rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(196, 184, 212, 0.62);
+}
+
+@media (min-width: 901px) {
+  .chronicle-date-range,
+  .chronicle-date-panel,
+  .chronicle-date-panel-inner,
+  .chronicle-date-field {
+    display: contents;
+  }
+
+  .chronicle-date-toggle,
+  .chronicle-date-label {
+    display: none;
+  }
+
+  .chronicle-date-panel.finds-collapse-panel.is-collapsed {
+    grid-template-rows: none;
+    pointer-events: auto;
+  }
 }
 
 @media (max-width: 900px) {

@@ -22,6 +22,7 @@ import { stripStatusPrefix } from '../irc/channel-style.js';
 import { reservedBotNicksLower } from '../nick-candidates.js';
 import { alignmentIdleHint, alignmentIdleRate, alignmentLabel } from './alignment.js';
 import { durationIt } from './duration.js';
+import { addTimerTrendIdleGain } from './timer-trend.js';
 import { penttl, ttl } from './math.js';
 import { MSG } from './messages.js';
 import { consultOmen, formatChronicleLine, OMEN_COOLDOWN_SEC, omenHintEligible } from './chronicle-omen.js';
@@ -211,7 +212,6 @@ export class GameEngine {
   logout(ircNick: string): { ok: true; announcements: GameAnnouncement[] } | { ok: false; err: string } {
     const p = findOnlineByNickCi(this.db, ircNick);
     if (!p) return { ok: false, err: MSG.activeSessionRequired };
-    insertRealmEvent(this.db, 'logout', p.character_name);
     const pen = this.applyPenaltyAmount(p, 20);
     const now = Math.floor(Date.now() / 1000);
     this.db
@@ -223,6 +223,7 @@ export class GameEngine {
          WHERE id = ?`,
       )
       .run(now, pen, pen, p.id);
+    insertRealmEvent(this.db, 'logout', `${p.character_name} +${durationIt(pen)}`);
     this.resetIdleStreak(p.id);
     return {
       ok: true,
@@ -1037,6 +1038,7 @@ export class GameEngine {
     this.db
       .prepare(`UPDATE players SET pen_mesg = pen_mesg + ?, next_seconds = next_seconds + ? WHERE id = ?`)
       .run(pen, pen, p.id);
+    insertRealmEvent(this.db, 'penalty_mesg', `${p.character_name} +${durationIt(pen)}`);
     this.resetIdleStreak(p.id);
     return [
       {
@@ -1074,6 +1076,7 @@ export class GameEngine {
         `UPDATE players SET pen_nick = pen_nick + ?, next_seconds = next_seconds + ?, irc_nick = ?, userhost = ? WHERE id = ?`,
       )
       .run(pen, pen, newNick, uh, p.id);
+    insertRealmEvent(this.db, 'penalty_nick', `${p.character_name} +${durationIt(pen)}`);
     this.resetIdleStreak(p.id);
     return [{ target: 'notice', nick: newNick, text: `Nick change penalty: +${durationIt(pen)} on your level timer.`, tone: 'loss' }];
   }
@@ -1144,6 +1147,7 @@ export class GameEngine {
          WHERE id = ?`,
       )
       .run(now, pen, pen, p.id);
+    insertRealmEvent(this.db, 'penalty_kick', `${p.character_name} +${durationIt(pen)}`);
     this.resetIdleStreak(p.id);
     return [
       {
@@ -1333,7 +1337,9 @@ export class GameEngine {
           ? 1 + this.cfg.v3GuildIdleBonusPct
           : 1;
       const effectiveRate = rate * prestigeRateMult * guildRateMult;
-      let next = p.next_seconds - dt * effectiveRate;
+      const idleGainSec = dt * effectiveRate;
+      let next = p.next_seconds - idleGainSec;
+      addTimerTrendIdleGain(this.db, p.id, idleGainSec, now);
       let level = p.level;
       const prevLevel = p.level;
       const idled = p.idled + dt;
@@ -1354,6 +1360,7 @@ export class GameEngine {
           const bonus = gainedBands * reward;
           next = Math.max(1, next - bonus);
           streakRewards += gainedBands;
+          insertRealmEvent(this.db, 'streak_reward', `${p.character_name} -${durationIt(bonus)}`);
           // Aggregate streak notices to avoid spammy fixed-interval messaging.
           const pendingKey = `streak_notice_pending_${p.id}`;
           const nextNoticeKey = `streak_notice_next_at_${p.id}`;

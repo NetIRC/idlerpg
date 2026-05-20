@@ -139,6 +139,22 @@ try {
     } catch (Throwable $ignore) {
         $recentFinds = [];
     }
+    $dayStartTs = (int) strtotime('today');
+    $ledgerEffectSec = 0;
+    foreach ($recentFinds as $rf) {
+        $ledgerEffectSec += (int) ($rf['heroEffectSec'] ?? 0);
+    }
+    $idleGainSec = 0;
+    $trendAnchor = irpg_meta_int($pdo, 'timer_trend_anchor_' . $pid);
+    if ($trendAnchor !== null && (int) $trendAnchor === $dayStartTs) {
+        $idleGainSec = max(0, (int) (irpg_meta_int($pdo, 'timer_trend_idle_sec_' . $pid) ?? 0));
+    }
+    $timerTrendToday = [
+        'dayStartTs' => $dayStartTs,
+        'ledgerEffectSec' => $ledgerEffectSec,
+        'idleGainSec' => $idleGainSec,
+        'totalEffectSec' => $ledgerEffectSec + $idleGainSec,
+    ];
     try {
         if ((int) $r['guild_id'] > 0) {
             $gstmt = $pdo->prepare('SELECT tag, name FROM guilds WHERE id = ? LIMIT 1');
@@ -291,6 +307,7 @@ try {
             ];
         }, $medals),
         'recentFinds' => $recentFinds,
+        'timerTrendToday' => $timerTrendToday,
         'idledHours' => round(((int) $r['idled'] / 3600) * 10) / 10,
         'ircNick' => $online ? $r['irc_nick'] : null,
         'stats' => [

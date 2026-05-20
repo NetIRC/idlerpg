@@ -177,7 +177,7 @@ After deploy/startup, verify:
 |---|---|
 | `GET /api/health.php` | JSON includes `"ok": true` |
 | `GET /api/leaderboard.php` | JSON includes leaderboard rows and realm/season previews |
-| `GET /api/player.php?name=<hero>` | JSON includes hero detail, medals, recent activity, and offline/session cause fields |
+| `GET /api/player.php?name=<hero>` | JSON includes hero detail, medals, recent activity, `timerTrendToday` (ledger + idle tick), and offline/session cause fields |
 | `GET /api/chronicle.php` | JSON includes `events` array |
 
 Runtime notes:
@@ -196,6 +196,7 @@ Runtime notes:
 |---|---|
 | Main goal | Gain levels by idling while logged in and present in game channel. |
 | Timer model | `next_seconds` counts down while eligible. |
+| Hero timer trend (web) | Sums signed chronicle effects for today plus idle tick gain tracked in bot meta (`timer_trend_*`). Excludes level-up TTL resets and prestige resets. |
 | Speaking in channel | Adds penalty based on level and message characteristics. |
 | Recognized `!commands` | No speech penalty if command is valid. |
 | Unrecognized `!something` | Treated as normal speech and can be penalized. |
@@ -331,7 +332,7 @@ All API responses are JSON.
 |---|---|---|
 | `/api/health.php` | Service health check | Includes `"ok": true` when healthy. |
 | `/api/leaderboard.php` | Public leaderboard + realm/season slices | Used by web home dashboard. |
-| `/api/player.php?name=...` | Hero detail lookup | Returns hero profile by character name, including `sessionOpen`, `offlineSinceTs`, and `offlineReason`. |
+| `/api/player.php?name=...` | Hero detail lookup | Returns hero profile by character name, including `sessionOpen`, `offlineSinceTs`, `offlineReason`, and `timerTrendToday` (`ledgerEffectSec` from signed chronicle lines plus `idleGainSec` from the bot tick loop). |
 | `/api/chronicle.php` | Realm event feed | Supports filters such as `limit`, `kind`, `search`, `since`, `until` (includes `part`, `quit`, `netsplit` kinds). |
 | `/api/php-diag.php` | PHP runtime diagnostics | Local-only by default; non-local access requires explicit `IRPG_PHP_DIAG_ENABLED=true`. |
 

@@ -618,6 +618,8 @@
   const chronicleSearchEl = document.getElementById('chronicle-search');
   const chronicleSinceEl = document.getElementById('chronicle-since');
   const chronicleUntilEl = document.getElementById('chronicle-until');
+  const chronicleDatePanelEl = document.getElementById('chronicle-date-panel');
+  const chronicleDateScopeEl = document.getElementById('chronicle-date-scope');
   const chronicleApplyEl = document.getElementById('chronicle-apply');
   const seasonCurrentExpandEl = document.getElementById('season-current-expand');
   const seasonHistoryToggleEl = document.getElementById('season-history-toggle');
@@ -1107,6 +1109,10 @@
     daily_trial_win: 'Daily trial win',
     daily_trial_lose: 'Daily trial loss',
     bounty_claim: 'Bounty',
+    penalty_mesg: 'Chat penalty',
+    penalty_kick: 'Kick penalty',
+    penalty_nick: 'Nick penalty',
+    streak_reward: 'Streak reward',
     world_boss_start: 'World boss start',
     world_boss_slay: 'World boss slain',
     world_boss_fail: 'World boss fail',
@@ -1121,6 +1127,32 @@
 
   function chronicleKindLabel(k) {
     return CHRONICLE_KIND[k] || k;
+  }
+
+  function chronicleDateScopeLabel() {
+    const since = chronicleSinceEl?.value?.trim() || '';
+    const until = chronicleUntilEl?.value?.trim() || '';
+    if (!since && !until) return '(optional)';
+    const fmt = (raw) => {
+      const d = new Date(raw);
+      return Number.isFinite(d.getTime())
+        ? d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+        : '';
+    };
+    const parts = [];
+    if (since) {
+      const s = fmt(since);
+      if (s) parts.push(`from ${s}`);
+    }
+    if (until) {
+      const u = fmt(until);
+      if (u) parts.push(`to ${u}`);
+    }
+    return parts.length ? `(${parts.join(' · ')})` : '(optional)';
+  }
+
+  function syncChronicleDateScope() {
+    if (chronicleDateScopeEl) chronicleDateScopeEl.textContent = chronicleDateScopeLabel();
   }
 
   function realmEventKindClass(kind) {
@@ -1615,6 +1647,12 @@
     </tr>`;
   }
 
+  function seasonCurrentRanksScope(expanded) {
+    if (!expanded) return '(top 3)';
+    const n = seasonCurrentRows.length;
+    return n > 0 ? `(top ${n})` : '(top 3)';
+  }
+
   function renderSeasonStandingsTable(rows, rosterExpanded, panelId) {
     if (!rows.length) {
       return '<p class="season-empty mono muted">No standings recorded yet.</p>';
@@ -1761,9 +1799,7 @@
       seasonCurrentExpandEl.setAttribute('aria-expanded', seasonCurrentExpanded ? 'true' : 'false');
       seasonCurrentExpandEl.setAttribute('aria-controls', 'season-roster-extra-current');
       const scopeEl = seasonCurrentExpandEl.querySelector('.finds-strip-scope');
-      if (scopeEl) {
-        scopeEl.textContent = seasonCurrentExpanded ? '(showing all)' : '(top 3)';
-      }
+      if (scopeEl) scopeEl.textContent = seasonCurrentRanksScope(seasonCurrentExpanded);
     }
 
     if (seasonHistoryToggleEl) {
@@ -1994,9 +2030,9 @@
     return null;
   }
 
-  function summarizeDuelToday(recentFinds, heroName) {
+  function summarizeDuelToday(recentFinds, heroName, timerTrendToday) {
     if (!Array.isArray(recentFinds) || !recentFinds.length) return { wins: 0, losses: 0, rivals: [] };
-    const dayStartSec = Math.floor(new Date().setHours(0, 0, 0, 0) / 1000);
+    const dayStartSec = trendDayStartSec(timerTrendToday);
     let wins = 0;
     let losses = 0;
     const rivals = new Set();
@@ -2026,36 +2062,52 @@
     return normalizeName(actor) === hero;
   }
 
-  function extractTrendPoints(recentFinds, heroName) {
-    if (!Array.isArray(recentFinds) || !recentFinds.length) return [];
-    const dayStartMs = new Date().setHours(0, 0, 0, 0);
-    const dayStartSec = Math.floor(dayStartMs / 1000);
+  function trendDayStartSec(timerTrendToday) {
+    const apiStart = Number(timerTrendToday && timerTrendToday.dayStartTs);
+    if (Number.isFinite(apiStart) && apiStart > 0) return Math.floor(apiStart);
+    return Math.floor(new Date().setHours(0, 0, 0, 0) / 1000);
+  }
+
+  function extractTrendPoints(recentFinds, heroName, timerTrendToday) {
+    const dayStartSec = trendDayStartSec(timerTrendToday);
     const out = [];
-    for (const e of recentFinds) {
-      const ts = Number((e && e.ts) || 0);
-      if (!Number.isFinite(ts) || ts < dayStartSec) continue;
-      const apiEffect = Number((e && e.heroEffectSec) || 0);
-      const effectSec =
-        Number.isFinite(apiEffect) && apiEffect !== 0
-          ? apiEffect
-          : parseHeroSignedDurationEffectSec(e && e.detail, heroName);
-      if (effectSec === 0) continue;
-      const duel = parseDuelMeta(e, heroName);
+    if (Array.isArray(recentFinds) && recentFinds.length) {
+      for (const e of recentFinds) {
+        const ts = Number((e && e.ts) || 0);
+        if (!Number.isFinite(ts) || ts < dayStartSec) continue;
+        const apiEffect = Number((e && e.heroEffectSec) || 0);
+        const effectSec =
+          Number.isFinite(apiEffect) && apiEffect !== 0
+            ? apiEffect
+            : parseHeroSignedDurationEffectSec(e && e.detail, heroName);
+        if (effectSec === 0) continue;
+        const duel = parseDuelMeta(e, heroName);
+        out.push({
+          effectSec,
+          kind: chronicleKindLabel((e && e.kind) || ''),
+          ts,
+          duelOpponent: duel && duel.opponent ? duel.opponent : '',
+          duelResult: duel && duel.result ? duel.result : '',
+        });
+      }
+    }
+    const idleGainSec = Math.max(0, Number((timerTrendToday && timerTrendToday.idleGainSec) || 0));
+    if (idleGainSec > 0) {
       out.push({
-        effectSec,
-        kind: chronicleKindLabel((e && e.kind) || ''),
-        ts,
-        duelOpponent: duel && duel.opponent ? duel.opponent : '',
-        duelResult: duel && duel.result ? duel.result : '',
+        effectSec: idleGainSec,
+        kind: 'Idle tick',
+        ts: Math.floor(Date.now() / 1000),
+        duelOpponent: '',
+        duelResult: '',
+        synthetic: true,
       });
     }
     return out.reverse();
   }
 
-  function summarizeTodayKinds(recentFinds, maxItems = 4) {
+  function summarizeTodayKinds(recentFinds, timerTrendToday, maxItems = 4) {
     if (!Array.isArray(recentFinds) || !recentFinds.length) return '';
-    const dayStartMs = new Date().setHours(0, 0, 0, 0);
-    const dayStartSec = Math.floor(dayStartMs / 1000);
+    const dayStartSec = trendDayStartSec(timerTrendToday);
     const counts = new Map();
     for (const e of recentFinds) {
       const ts = Number((e && e.ts) || 0);
@@ -2072,26 +2124,29 @@
   }
 
   function formatHeroTrend(d) {
-    const points = extractTrendPoints(d && d.recentFinds, d && d.name);
+    const timerTrendToday = d && d.timerTrendToday;
+    const dayStartSec = trendDayStartSec(timerTrendToday);
+    const points = extractTrendPoints(d && d.recentFinds, d && d.name, timerTrendToday);
     const allToday = Array.isArray(d && d.recentFinds)
       ? d.recentFinds.filter((e) => {
           const ts = Number((e && e.ts) || 0);
           if (!Number.isFinite(ts)) return false;
-          const dayStartSec = Math.floor(new Date().setHours(0, 0, 0, 0) / 1000);
           return ts >= dayStartSec;
         }).length
       : 0;
     const streakSec = Math.max(0, Number((d && d.idleStreakSec) || 0));
     const streakHuman = formatDurationSec(streakSec);
-    const eventMix = summarizeTodayKinds(d && d.recentFinds);
-    const duelToday = summarizeDuelToday(d && d.recentFinds, d && d.name);
+    const idleGainSec = Math.max(0, Number((timerTrendToday && timerTrendToday.idleGainSec) || 0));
+    const eventMix = summarizeTodayKinds(d && d.recentFinds, timerTrendToday);
+    const duelToday = summarizeDuelToday(d && d.recentFinds, d && d.name, timerTrendToday);
     const streakRewards = Math.max(0, Number((d && d.streakRewardCount) || 0));
     const duelWins = Math.max(0, Number((d && d.duelWins) || 0));
     const gauntletWins = Math.max(0, Number((d && d.gauntletWins) || 0));
     const prestigeRank = Math.max(0, Number((d && d.prestigeRank) || 0));
     const seasonTier = Math.max(0, Number((d && d.season && d.season.level) || 0));
     const seasonXp = Math.max(0, Number((d && d.season && d.season.xp) || 0));
-    const trendMeta = `Idle streak: ${streakHuman} · Signed events: ${points.length} · Total events today: ${allToday}`;
+    const signedEvents = points.filter((p) => !p.synthetic).length;
+    const trendMeta = `Idle streak: ${streakHuman} · Timer effects: ${signedEvents}${idleGainSec > 0 ? ` + idle (${formatDurationSec(idleGainSec)})` : ''} · Chronicle lines today: ${allToday}`;
     const trendKpis = [
       `Streak rewards: ${streakRewards}`,
       `Arena wins: ${duelWins}`,
@@ -2108,12 +2163,15 @@
     }
     if (!points.length) {
       return `<div>
-        <p class="muted" style="margin:0.6rem 0 0;font-size:0.8rem">Timer trend for today unavailable yet — no signed gain/loss events today.</p>
+        <p class="muted" style="margin:0.6rem 0 0;font-size:0.8rem">Timer trend for today unavailable yet — no timer gains or losses recorded today (idle in channel, quests, penalties, etc.).</p>
         <p class="mono muted-strong" style="margin:0.45rem 0 0;font-size:0.74rem">${escapeHtml(trendMeta)}${eventMix ? ` · event mix: ${escapeHtml(eventMix)}` : ''}</p>
         <div class="stats-tags recent-ledger-highlights" style="margin-top:0.45rem;">${trendKpis.map((chip) => `<span>${escapeHtml(chip)}</span>`).join('')}</div>
       </div>`;
     }
-    const net = points.reduce((acc, p) => acc + p.effectSec, 0);
+    const apiTotal = Number((timerTrendToday && timerTrendToday.totalEffectSec) || NaN);
+    const net = Number.isFinite(apiTotal)
+      ? apiTotal
+      : points.reduce((acc, p) => acc + p.effectSec, 0);
     const maxAbs = Math.max(...points.map((p) => Math.abs(p.effectSec)), 1);
     const bars = points
       .map((p) => {
@@ -2529,8 +2587,32 @@
     });
   }
 
+  if (chronicleSinceEl) {
+    chronicleSinceEl.addEventListener('change', syncChronicleDateScope);
+    chronicleSinceEl.addEventListener('input', syncChronicleDateScope);
+  }
+  if (chronicleUntilEl) {
+    chronicleUntilEl.addEventListener('change', syncChronicleDateScope);
+    chronicleUntilEl.addEventListener('input', syncChronicleDateScope);
+  }
+  syncChronicleDateScope();
+
   if (chronicleRoot) {
     chronicleRoot.addEventListener('click', (ev) => {
+      const dateBtn = ev.target.closest('.chronicle-date-toggle');
+      if (dateBtn && chronicleRoot.contains(dateBtn) && chronicleDatePanelEl) {
+        const willOpen = chronicleDatePanelEl.classList.contains('is-collapsed');
+        if (willOpen) {
+          chronicleDatePanelEl.classList.remove('is-collapsed');
+          dateBtn.classList.add('is-open');
+          dateBtn.setAttribute('aria-expanded', 'true');
+        } else {
+          chronicleDatePanelEl.classList.add('is-collapsed');
+          dateBtn.classList.remove('is-open');
+          dateBtn.setAttribute('aria-expanded', 'false');
+        }
+        return;
+      }
       const btn = ev.target.closest('.chronicle-strip-toggle');
       if (!btn || !chronicleRoot.contains(btn)) return;
       const wrap = document.getElementById('chronicle-list-wrap');
@@ -2574,14 +2656,14 @@
         seasonCurrentExpandEl.setAttribute('aria-expanded', 'true');
         seasonCurrentExpanded = true;
         const scope = seasonCurrentExpandEl.querySelector('.finds-strip-scope');
-        if (scope) scope.textContent = '(showing all)';
+        if (scope) scope.textContent = seasonCurrentRanksScope(true);
       } else {
         panel.classList.add('is-collapsed');
         seasonCurrentExpandEl.classList.remove('is-open');
         seasonCurrentExpandEl.setAttribute('aria-expanded', 'false');
         seasonCurrentExpanded = false;
         const scope = seasonCurrentExpandEl.querySelector('.finds-strip-scope');
-        if (scope) scope.textContent = '(top 3)';
+        if (scope) scope.textContent = seasonCurrentRanksScope(false);
       }
     });
   }

@@ -60,6 +60,10 @@ const CHRONICLE_KIND_LABEL: Record<string, string> = {
   daily_trial_win: 'Daily trial',
   daily_trial_lose: 'Daily trial',
   bounty_claim: 'Bounty',
+  penalty_mesg: 'Chat pen.',
+  penalty_kick: 'Kick',
+  penalty_nick: 'Nick',
+  streak_reward: 'Streak',
   world_boss_start: 'World boss',
   world_boss_slay: 'World boss',
   world_boss_fail: 'World boss',
@@ -152,7 +156,7 @@ export function consultOmen(
     const ns = Math.max(30, p.next_seconds * 0.998);
     const gain = Math.max(0, p.next_seconds - ns);
     db.prepare('UPDATE players SET next_seconds = ?, idle_streak_sec = 0 WHERE id = ?').run(ns, p.id);
-    insertRealmEvent(db, 'omen_boon', p.character_name);
+    insertRealmEvent(db, 'omen_boon', `${p.character_name} -${durationIt(gain)}`);
     return {
       text: `🜁 Omen (favorable): -${durationIt(gain)} effective gain. Next level in ${durationIt(ns)}.`,
       tone: 'gain',
@@ -162,7 +166,7 @@ export function consultOmen(
     const ns = p.next_seconds * 1.004;
     const loss = Math.max(0, ns - p.next_seconds);
     db.prepare('UPDATE players SET next_seconds = ?, idle_streak_sec = 0 WHERE id = ?').run(ns, p.id);
-    insertRealmEvent(db, 'omen_curse', p.character_name);
+    insertRealmEvent(db, 'omen_curse', `${p.character_name} +${durationIt(loss)}`);
     return {
       text: `🜁 Omen (unfavorable): +${durationIt(loss)} effective loss. Next level in ${durationIt(ns)}.`,
       tone: 'loss',
