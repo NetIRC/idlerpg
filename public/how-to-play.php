@@ -65,6 +65,7 @@ $jsonLd = [
       <li>Recognized <span class="mono">!commands</span> (see below) do not add that speech penalty.</li>
       <li>Unrecognized <span class="mono">!something</span> lines count as normal chat.</li>
     </ul>
+    <p class="guide-note">Standard time per level uses <span class="mono">rpbase</span> and <span class="mono">rpstep</span> on this shard — see <strong>Level timer formula</strong> below for the exact curve and sample levels (L0, L10, L60, L61…).</p>
 
     <h2 class="h2" style="font-size:1.05rem;">5) Essential commands</h2>
     <?php

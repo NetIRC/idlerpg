@@ -149,6 +149,10 @@ function guide_faq_entities(): array
             'a' => 'You must be logged in, your nick must stay visible in ' . $ch . ', and the bot must be online. Base level timer starts at ' . guide_format_duration((int) $c['rpbase']) . '. Normal channel chat adds penalty; recognized !commands do not.',
         ],
         [
+            'q' => 'How long is each level if I stay idle?',
+            'a' => 'Standard idle time is rpbase × rpstep^L seconds up to L60, then +1 day per level above 60 (no hero level cap). See the Level timer formula section on How to Play, Commands, or FAQ for this shard\'s numbers and examples.',
+        ],
+        [
             'q' => 'Do I need LOGIN after PART or QUIT?',
             'a' => 'No. PART or QUIT IRC suspends your session; rejoin ' . $ch . ' to resume. LOGIN is required after LOGOUT, kick, admin reset, or expired netsplit grace.' . $graceNote,
         ],

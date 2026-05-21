@@ -270,6 +270,28 @@ function guide_format_duration(int $sec): string
     return $m . 'm';
 }
 
+/** Standard seconds until next level — mirrors {@see ttl} in src/game/math.ts}. */
+function guide_ttl_seconds(int $level, array $cfg): int
+{
+    $base = (int) $cfg['rpbase'];
+    $step = (float) $cfg['rpstep'];
+    if ($level <= 60) {
+        return (int) floor($base * ($step ** $level));
+    }
+    return (int) floor($base * ($step ** 60) + 86400 * ($level - 60));
+}
+
+/** Chat penalty scale at a level — mirrors {@see penttl} in src/game/math.ts}. */
+function guide_penttl_seconds(int $level, array $cfg): int
+{
+    $base = (int) $cfg['rpbase'];
+    $step = (float) $cfg['rppenstep'];
+    if ($level <= 60) {
+        return (int) floor($base * ($step ** $level));
+    }
+    return (int) floor($base * ($step ** 60) + 86400 * ($level - 60));
+}
+
 function guide_normalize_channel(string $raw, string $fallback): string
 {
     $t = trim($raw);
@@ -403,8 +425,54 @@ function guide_render_tuning_table(string $title, array $rows): void
 }
 
 /** @param array<string, mixed> $cfg */
+function guide_render_level_timer_formula(array $cfg): void
+{
+    $base = (int) $cfg['rpbase'];
+    $step = (string) $cfg['rpstep'];
+    $penStep = (string) $cfg['rppenstep'];
+    $baseLabel = htmlspecialchars(guide_format_duration($base), ENT_QUOTES, 'UTF-8');
+    $stepEsc = htmlspecialchars($step, ENT_QUOTES, 'UTF-8');
+    $penStepEsc = htmlspecialchars($penStep, ENT_QUOTES, 'UTF-8');
+
+    echo '<h2 class="h2" style="font-size:1.05rem;">Level timer formula</h2>';
+    echo '<p class="guide-note">While you stay idle in the game channel, your personal countdown shrinks toward zero. When it hits zero you level up and the bot adds the <strong>standard idle time</strong> for your new level (shown on <span class="mono">!time</span> / the web leaderboard as time remaining). Bonuses, penalties, duels, and events change your <em>current</em> timer — the table below is the baseline with no modifiers.</p>';
+    echo '<p class="guide-formula mono">Standard idle to reach the next level (hero at level L → L+1):<br />'
+        . 'L ≤ 60: floor(rpbase × rpstep<sup>L</sup>)<br />'
+        . 'L &gt; 60: floor(rpbase × rpstep<sup>60</sup>) + 86&nbsp;400 × (L − 60) seconds</p>';
+    echo '<p class="guide-note">This realm: rpbase = ' . $baseLabel . ', rpstep = ' . $stepEsc . '. There is <strong>no maximum hero level</strong> at 60 — that breakpoint only changes how fast the standard timer grows.</p>';
+
+    $sampleLevels = [0, 1, 5, 10, 25, 50, 60, 61, 62];
+    echo '<h3 class="cmd-ref-group">Standard idle time (this shard)</h3>';
+    echo '<div class="cmd-ref-wrap">';
+    echo '<table class="cmd-ref cmd-ref--settings"><colgroup><col class="cmd-ref-col-label" /><col class="cmd-ref-col-value" /></colgroup>';
+    echo '<thead><tr><th scope="col">Hero level (L)</th><th scope="col">Idle to reach L+1</th></tr></thead><tbody>';
+    foreach ($sampleLevels as $lv) {
+        $sec = guide_ttl_seconds($lv, $cfg);
+        $lvEsc = htmlspecialchars((string) $lv, ENT_QUOTES, 'UTF-8');
+        $durEsc = htmlspecialchars(guide_format_duration($sec), ENT_QUOTES, 'UTF-8');
+        echo "<tr><td>L{$lvEsc}</td><td class=\"mono\">{$durEsc}</td></tr>";
+    }
+    echo '</tbody></table></div>';
+
+    echo '<h3 class="cmd-ref-group">Channel chat penalty scale</h3>';
+    echo '<p class="guide-formula mono">Penalty unit at level L (before message length):<br />'
+        . 'L ≤ 60: floor(rpbase × rppenstep<sup>L</sup>)<br />'
+        . 'L &gt; 60: floor(rpbase × rppenstep<sup>60</sup>) + 86&nbsp;400 × (L − 60) seconds</p>';
+    echo '<p class="guide-note">Applied as floor((message_length × penttl(L)) / rpbase), capped by the shard penalty limit. Recognized <span class="mono">!commands</span> skip this speech penalty.</p>';
+    echo '<p class="guide-note">This realm: rppenstep = ' . $penStepEsc . '.</p>';
+
+    if (($cfg['v3ModeEnabled'] ?? false) && ($cfg['v3PrestigeEnabledLive'] ?? false)) {
+        $min = (int) ($cfg['v3PrestigeMinLevel'] ?? 60);
+        echo '<p class="guide-note"><strong>Prestige (optional):</strong> at L' . htmlspecialchars((string) $min, ENT_QUOTES, 'UTF-8')
+            . '+ you may run <span class="mono">!prestige now</span> to reset to L0 for a permanent idle bonus. You can also keep climbing past L' . htmlspecialchars((string) $min, ENT_QUOTES, 'UTF-8') . ' without rebirth.</p>';
+    }
+}
+
+/** @param array<string, mixed> $cfg */
 function guide_render_shard_tuning(array $cfg): void
 {
+    guide_render_level_timer_formula($cfg);
+
     echo '<h2 class="h2" style="font-size:1.05rem;">Realm settings</h2>';
     echo '<div class="cmd-ref-wrap cmd-ref-wrap--settings">';
 
