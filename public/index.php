@@ -220,6 +220,7 @@ $jsonLdScript = json_encode($jsonLd, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNI
             <h2 class="h2"><span class="h2-mark" aria-hidden="true"></span> Leaderboard</h2>
             <p id="lb-meta" class="lb-meta mono" aria-live="polite">
               <span id="last-updated" class="lb-meta-updated">—</span>
+              <span class="lb-meta-legend muted-strong" title="Heroes who completed prestige rebirth"> · <span class="prestige-glyph" aria-hidden="true">👑</span> prestige rebirth</span>
             </p>
           </div>
           <input type="search" id="q" class="search" placeholder="Filter by name or class..." autocomplete="off" />
@@ -285,7 +286,7 @@ $jsonLdScript = json_encode($jsonLd, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNI
             <h2 class="h2"><span class="h2-mark h2-mark-ember" aria-hidden="true"></span> Realm atlas</h2>
             <p class="lb-meta mono atlas-sub">
               The realm forgets noise but remembers altitude: <strong>silence lifts you toward the pole</strong>, where the oldest idlers loom like constellations.
-              Drift the parchment with the pointer; <strong>linger on a name</strong> and the ledger whispers back. <strong>Cyan halos</strong> mark who still breathes in-channel.
+              Drift the parchment with the pointer; <strong>linger on a name</strong> and the ledger whispers back. <strong>Cyan halos</strong> mark who still breathes in-channel. <span class="prestige-glyph" aria-hidden="true">👑</span> marks prestige rebirth rank.
             </p>
           </div>
         </div>

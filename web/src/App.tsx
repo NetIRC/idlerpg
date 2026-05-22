@@ -10,6 +10,7 @@ type Row = {
   nextHuman: string;
   online: boolean;
   idledHours: number;
+  prestigeRank?: number;
 };
 
 type Detail = Row & {
@@ -20,6 +21,8 @@ type Detail = Row & {
   offlineReason?: string | null;
   trinket?: string | null;
   stats: Record<string, number>;
+  prestigeRank?: number;
+  prestigePoints?: number;
 };
 
 async function fetchLb(): Promise<{ rows: Row[]; botOnline: boolean; botLastSeenMs: number | null }> {
@@ -192,8 +195,16 @@ export default function App() {
                   >
                     <td className="px-4 py-3 font-mono text-dust/60">{i + 1}</td>
                     <td className="px-4 py-3 font-medium text-white">
-                      <span className="inline-flex items-center gap-2">
-                        {r.name}
+                      <span className="inline-flex items-center gap-1.5">
+                        <span>{r.name}</span>
+                        {(r.prestigeRank ?? 0) > 0 && (
+                          <span
+                            className="inline-flex items-center leading-none text-[0.92em] text-ember/90"
+                            title={`Prestige rank ${r.prestigeRank}`}
+                          >
+                            👑
+                          </span>
+                        )}
                         {r.online && (
                           <span className="h-2 w-2 rounded-full bg-arc shadow-[0_0_10px_rgba(0,229,199,0.8)]" title="Online" />
                         )}
@@ -226,7 +237,17 @@ export default function App() {
             {sel && (
               <div className="space-y-4">
                 <div>
-                  <div className="font-display text-2xl font-bold text-white">{sel.name}</div>
+                  <div className="inline-flex items-center gap-1.5 font-display text-2xl font-bold text-white">
+                    <span>{sel.name}</span>
+                    {(sel.prestigeRank ?? 0) > 0 && (
+                      <span
+                        className="inline-flex items-center leading-none text-[0.92em] text-ember/90"
+                        title={`Prestige rank ${sel.prestigeRank}`}
+                      >
+                        👑
+                      </span>
+                    )}
+                  </div>
                   <div className="mt-1 text-sm text-dust/80">
                     L<span className="font-mono text-arc">{sel.level}</span> · {sel.class}
                   </div>

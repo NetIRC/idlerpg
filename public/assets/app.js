@@ -734,7 +734,11 @@
       }
     }
     const label = g.querySelector('.atlas-marker-label');
-    if (label) label.setAttribute('x', (r0 + 6).toFixed(2));
+    const labelX = r0 + 6;
+    if (label) {
+      label.setAttribute('x', labelX.toFixed(2));
+      label.setAttribute('y', '0');
+    }
   }
 
   function updateAtlasWorldTransform() {
@@ -846,7 +850,7 @@
     const on = p.online
       ? '<span class="tt-pill tt-pill--online">Online</span>'
       : '<span class="tt-pill tt-pill--offline">Offline</span>';
-    return `<div class="tt-name">${escapeHtml(p.name)}</div><div class="tt-row">${on}<span class="tt-level mono">L${escapeHtml(String(p.level))}</span></div><div class="tt-class">${escapeHtml(p.class)}</div><div class="tt-timer mono">⏳ ${escapeHtml(p.nextHuman || '')}</div><div class="tt-hint mono">Click → hero sheet</div>`;
+    return `<div class="tt-name">${formatPlayerIdentityHtml(p)}</div><div class="tt-row">${on}<span class="tt-level mono">L${escapeHtml(String(p.level))}</span></div><div class="tt-class">${escapeHtml(p.class)}</div><div class="tt-timer mono">⏳ ${escapeHtml(p.nextHuman || '')}</div><div class="tt-hint mono">Click → hero sheet</div>`;
   }
 
   function showAtlasTooltipFromPlayer(p, clientX, clientY) {
@@ -961,8 +965,11 @@
       const jitterA = ((hash32(p.name) % 360) * Math.PI) / 180 / 12;
       const a = rank * GOLDEN_ANGLE + jitterA;
       const spread = 200 + Math.sqrt(rank + 1) * 76;
-      const displayName = p.name.length > 24 ? `${p.name.slice(0, 22)}…` : p.name;
-      const estNameW = Math.min(150, 10 + displayName.length * 6.2);
+      const hasPrestige = Math.max(0, Number(p.prestigeRank) || 0) > 0;
+      const displayNameBase = p.name.length > 24 ? `${p.name.slice(0, 22)}…` : p.name;
+      const atlasNameTextW = Math.min(140, displayNameBase.length * 6.2);
+      const atlasCrownW = 20;
+      const estNameW = Math.min(150, 10 + atlasNameTextW + (hasPrestige ? atlasCrownW + 5 : 0));
       let x = 500 + Math.cos(a) * spread * 1.02;
       const h0 = hash32(p.name);
       x += (h0 % 29) - 14 + stackX;
@@ -1005,11 +1012,18 @@
       }
       placedPoints.push({ x, y, minGap });
       const g = document.createElementNS(NS, 'g');
-      g.setAttribute('class', 'atlas-marker-g' + (p.online ? ' is-online' : '') + (selectedName === p.name ? ' is-selected' : ''));
+      g.setAttribute(
+        'class',
+        'atlas-marker-g' +
+          (p.online ? ' is-online' : '') +
+          (selectedName === p.name ? ' is-selected' : '') +
+          (hasPrestige ? ' has-prestige' : ''),
+      );
       g.dataset.wx = String(x);
       g.dataset.wy = String(y);
       g.dataset.r0 = String(rad);
       g.dataset.nameW = String(estNameW);
+      g.dataset.nameTextW = String(atlasNameTextW);
 
       const hit = document.createElementNS(NS, 'rect');
       hit.setAttribute('class', 'atlas-marker-hit');
@@ -1028,10 +1042,22 @@
       g.appendChild(c);
 
       const label = document.createElementNS(NS, 'text');
-      label.setAttribute('class', 'atlas-marker-label');
+      label.setAttribute('class', 'atlas-marker-label' + (hasPrestige ? ' has-prestige-mark' : ''));
       label.setAttribute('text-anchor', 'start');
       label.setAttribute('dominant-baseline', 'middle');
-      label.textContent = displayName;
+      label.setAttribute('y', '0');
+      const nameTspan = document.createElementNS(NS, 'tspan');
+      nameTspan.setAttribute('class', 'atlas-marker-name');
+      nameTspan.textContent = displayNameBase;
+      label.appendChild(nameTspan);
+      if (hasPrestige) {
+        const crownTspan = document.createElementNS(NS, 'tspan');
+        crownTspan.setAttribute('class', 'atlas-marker-prestige');
+        crownTspan.setAttribute('dx', '5');
+        crownTspan.setAttribute('dy', '-3.2');
+        crownTspan.textContent = '👑';
+        label.appendChild(crownTspan);
+      }
       g.appendChild(label);
 
       syncAtlasMarkerGeometry(g);
@@ -1471,12 +1497,9 @@
   function renderGuildMemberRow(m, rank) {
     const role = String(m.role || 'member').toLowerCase() === 'leader' ? 'leader' : 'member';
     const roleLabel = role === 'leader' ? 'Leader' : 'Member';
-    const name = escapeHtml(String(m.name || 'Unknown'));
-    const dotClass = m.online ? 'dot dot--online' : 'dot dot--offline';
-    const dotTitle = m.online ? 'Online' : 'Offline';
     return `<tr class="guild-standings-row">
       <td class="mono guild-standings-rank">${rank}</td>
-      <td><span class="player-presence player-presence--dot-left"><span class="${dotClass}" title="${dotTitle}" aria-hidden="true"></span><strong class="player-presence__name">${name}</strong></span></td>
+      <td>${formatPlayerPresenceCell(m)}</td>
       <td class="mono standings-tier-cell" aria-hidden="true"></td>
       <td class="hide-sm standings-role-cell"><span class="guild-role guild-role--${role}">${roleLabel}</span></td>
       <td class="mono standings-xp-cell" aria-hidden="true"></td>
@@ -1622,9 +1645,6 @@
 
 
   function renderSeasonStandingsRow(r, rank) {
-    const dotClass = r && r.online ? 'dot dot--online' : 'dot dot--offline';
-    const dotTitle = r && r.online ? 'Online' : 'Offline';
-    const name = escapeHtml(String((r && r.name) || 'Unknown'));
     const tier = Number((r && r.tier) || 0);
     const xp = Number((r && r.xp) || 0);
     const heroLevel = Number((r && r.level) || 0);
@@ -1639,7 +1659,7 @@
             : '';
     return `<tr class="season-standings-row${rankMod}">
       <td class="mono season-standings-rank">${rank}</td>
-      <td><span class="player-presence player-presence--dot-left"><span class="${dotClass}" title="${dotTitle}" aria-hidden="true"></span><strong class="player-presence__name">${name}</strong></span></td>
+      <td>${formatPlayerPresenceCell(r)}</td>
       <td class="mono season-standings-tier">${tier}</td>
       <td class="hide-sm season-standings-class">${heroClass || '—'}</td>
       <td class="mono season-standings-xp">${xp}</td>
@@ -1856,14 +1876,12 @@
     list.forEach((p, i) => {
       const tr = document.createElement('tr');
       tr.dataset.name = p.name;
-      const dotClass = p.online ? 'dot dot--online' : 'dot dot--offline';
-      const dotTitle = p.online ? 'Online' : 'Offline';
       const timerCell = p.online
         ? `<span class="timer-line">${escapeHtml(p.nextHuman)}</span>`
         : '<span class="timer-offline-tag">Offline</span>';
       tr.innerHTML = `
         <td class="mono" style="opacity:0.55">${i + 1}</td>
-        <td><span class="player-presence player-presence--dot-left"><span class="${dotClass}" title="${dotTitle}" aria-hidden="true"></span><strong class="player-presence__name" style="color:#fff">${escapeHtml(p.name)}</strong></span></td>
+        <td>${formatPlayerPresenceCell(p, 'color:#fff')}</td>
         <td class="lv">${p.level}</td>
         <td class="hide-sm" style="opacity:0.85">${escapeHtml(p.class)}</td>
         <td class="timer">${timerCell}</td>`;
@@ -1878,6 +1896,25 @@
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;');
+  }
+
+  function formatPrestigeBadgeHtml(rankRaw) {
+    const rank = Math.max(0, Number(rankRaw) || 0);
+    if (rank < 1) return '';
+    const title = `Prestige rank ${rank}`;
+    return `<span class="prestige-badge" title="${escapeHtml(title)}" aria-label="${escapeHtml(title)}">👑</span>`;
+  }
+
+  function formatPlayerIdentityHtml(p, nameStyle) {
+    const styleAttr = nameStyle ? ` style="${nameStyle}"` : '';
+    const name = escapeHtml(String((p && p.name) || 'Unknown'));
+    return `<span class="player-presence__identity"><strong class="player-presence__name"${styleAttr}>${name}</strong>${formatPrestigeBadgeHtml(p.prestigeRank)}</span>`;
+  }
+
+  function formatPlayerPresenceCell(p, nameStyle) {
+    const dotClass = p && p.online ? 'dot dot--online' : 'dot dot--offline';
+    const dotTitle = p && p.online ? 'Online' : 'Offline';
+    return `<span class="player-presence player-presence--dot-left"><span class="${dotClass}" title="${dotTitle}" aria-hidden="true"></span>${formatPlayerIdentityHtml(p, nameStyle)}</span>`;
   }
 
   function escapeRegex(s) {
@@ -2438,8 +2475,14 @@
         Number.isFinite(Number(d.createdAt)) && Number(d.createdAt) > 0
           ? new Date(Number(d.createdAt) * 1000).toLocaleDateString()
           : 'N/A';
+      const prestigeRankNum = Math.max(0, Number(d.prestigeRank || 0));
+      const prestigePointsNum = Math.max(0, Number(d.prestigePoints || 0));
+      const prestigeCell =
+        prestigeRankNum > 0
+          ? `Rank ${prestigeRankNum} · points ${prestigePointsNum}`
+          : `Rank 0 · points ${prestigePointsNum}`;
       detailWrite(`
-        <div class="detail-name">${escapeHtml(d.name)}</div>
+        <div class="detail-name">${formatPlayerIdentityHtml(d)}</div>
         <p class="detail-sub">L<span class="mono" style="color:var(--arc)">${d.level}</span> · ${escapeHtml(d.class)}</p>
         <div class="dl-grid">
           <div class="dl-item"><dt>Level timer</dt><dd class="arc">${escapeHtml(d.nextHuman)}</dd></div>
@@ -2452,7 +2495,7 @@
           <div class="dl-item"><dt>Idle streak</dt><dd>${escapeHtml(streakHuman)}</dd></div>
           <div class="dl-item"><dt>Streak rewards</dt><dd>${streakRewards}</dd></div>
           <div class="dl-item"><dt>Guild</dt><dd>${escapeHtml(guildLabel)}</dd></div>
-          <div class="dl-item"><dt>Prestige</dt><dd>Rank ${Number(d.prestigeRank || 0)} · points ${Number(d.prestigePoints || 0)}</dd></div>
+          <div class="dl-item"><dt>Prestige</dt><dd>${prestigeCell}</dd></div>
           <div class="dl-item"><dt>Relic</dt><dd>${escapeHtml(relicLabel)}</dd></div>
           <div class="dl-item"><dt>Season</dt><dd>${escapeHtml(seasonLabel)}</dd></div>
           <div class="dl-item"><dt>Bounty</dt><dd>${escapeHtml(bountyLabel)}</dd></div>

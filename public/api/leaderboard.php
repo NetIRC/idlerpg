@@ -54,7 +54,8 @@ try {
             $memberRows = [];
             if ($gidRow && isset($gidRow['id'])) {
                 $mstmt = $pdo->prepare(
-                    'SELECT p.character_name, p.online, p.level, m.role
+                    'SELECT p.character_name, p.online, p.level, m.role,
+                            COALESCE(p.prestige_rank, 0) AS prestige_rank
                      FROM guild_members m
                      JOIN players p ON p.id = m.player_id
                      WHERE m.guild_id = ?
@@ -71,6 +72,7 @@ try {
                     'role' => (string) ($m['role'] ?? 'member'),
                     'online' => ((int) ($m['online'] ?? 0)) === 1,
                     'level' => (int) ($m['level'] ?? 0),
+                    'prestigeRank' => (int) ($m['prestige_rank'] ?? 0),
                 ];
             }
             $guildPreview[] = [
@@ -113,7 +115,8 @@ try {
             ];
             if ($seasonId > 0) {
                 $pst = $pdo->prepare(
-                    'SELECT p.character_name, p.class, p.level, p.online, psp.xp, psp.updated_at
+                    'SELECT p.character_name, p.class, p.level, p.online, psp.xp, psp.updated_at,
+                            COALESCE(p.prestige_rank, 0) AS prestige_rank
                      FROM player_season_progress psp
                      JOIN players p ON p.id = psp.player_id
                      WHERE psp.season_id = ?
@@ -132,6 +135,7 @@ try {
                         'xp' => $xp,
                         'tier' => (int) floor($xp / $tierXp),
                         'updatedAt' => (int) ($s['updated_at'] ?? 0),
+                        'prestigeRank' => (int) ($s['prestige_rank'] ?? 0),
                     ];
                 }
             }
@@ -144,7 +148,8 @@ try {
         $allSeasons = $sstAll ? $sstAll->fetchAll(PDO::FETCH_ASSOC) : [];
         if (is_array($allSeasons)) {
             $topStmt = $pdo->prepare(
-                'SELECT p.character_name, p.class, p.level, p.online, psp.xp, psp.updated_at
+                'SELECT p.character_name, p.class, p.level, p.online, psp.xp, psp.updated_at,
+                        COALESCE(p.prestige_rank, 0) AS prestige_rank
                  FROM player_season_progress psp
                  JOIN players p ON p.id = psp.player_id
                  WHERE psp.season_id = ?
@@ -169,6 +174,7 @@ try {
                         'xp' => $xp,
                         'tier' => (int) floor($xp / $tierXp),
                         'updatedAt' => (int) ($t['updated_at'] ?? 0),
+                        'prestigeRank' => (int) ($t['prestige_rank'] ?? 0),
                     ];
                 }
                 $seasonStandings[] = [
