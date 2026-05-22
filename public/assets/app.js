@@ -675,6 +675,63 @@
     return Number.isFinite(n) ? n : 0;
   }
 
+  const ATLAS_LABEL_GAP = 6;
+  const ATLAS_CROWN_GAP = 5;
+  /** Vertical nudge (SVG px) for dot vs measured name box center. */
+  const ATLAS_NAME_Y_NUDGE = 0.65;
+  /** Crown sits on name cap-line (fraction from name bbox top; below 0.5 = higher). */
+  const ATLAS_CROWN_CAP_RATIO = 0.34;
+  const ATLAS_CROWN_Y_LIFT = -0.05;
+
+  function atlasNameMidY(nameTspan, label) {
+    const measureEl = nameTspan || label;
+    if (!measureEl) return ATLAS_NAME_Y_NUDGE;
+    try {
+      const box = measureEl.getBBox();
+      if (Number.isFinite(box.height) && box.height > 0) {
+        return box.y + box.height / 2 + ATLAS_NAME_Y_NUDGE;
+      }
+    } catch {
+      /* fall through */
+    }
+    return ATLAS_NAME_Y_NUDGE;
+  }
+
+  /** Separate crown text — cap-line anchor from name bbox (emoji bbox ≠ visual center). */
+  function syncAtlasCrownPosition(g) {
+    const crown = g.querySelector('.atlas-marker-crown');
+    const nameTspan = g.querySelector('.atlas-marker-name');
+    const label = g.querySelector('.atlas-marker-label');
+    if (!crown || !nameTspan || !label) return;
+    const r0 = parseFloat(g.dataset.r0 || '4');
+    const labelX = r0 + ATLAS_LABEL_GAP;
+    crown.setAttribute('text-anchor', 'start');
+    crown.setAttribute('dominant-baseline', 'central');
+    crown.setAttribute('alignment-baseline', 'middle');
+    try {
+      const nameBox = nameTspan.getBBox();
+      if (!Number.isFinite(nameBox.height) || nameBox.height <= 0) return;
+      const targetY = nameBox.y + nameBox.height * ATLAS_CROWN_CAP_RATIO + ATLAS_CROWN_Y_LIFT;
+      const crownX = labelX + nameBox.width + ATLAS_CROWN_GAP;
+      crown.setAttribute('x', crownX.toFixed(2));
+      crown.setAttribute('y', targetY.toFixed(2));
+      const crownBox = crown.getBBox();
+      if (Number.isFinite(crownBox.height) && crownBox.height > 0) {
+        const crownMid = crownBox.y + crownBox.height / 2;
+        crown.setAttribute('y', (targetY + (targetY - crownMid)).toFixed(2));
+      }
+    } catch {
+      crown.setAttribute('x', (labelX + 40).toFixed(2));
+      crown.setAttribute('y', '0');
+    }
+  }
+
+  function atlasMarkerDotCenterY(g) {
+    const nameTspan = g.querySelector('.atlas-marker-name');
+    const label = g.querySelector('.atlas-marker-label');
+    return atlasNameMidY(nameTspan, label);
+  }
+
   function ensureAtlasDefs() {
     const defs = document.getElementById('atlas-defs');
     if (!defs || defs.dataset.defsVer === '2') return;
@@ -711,9 +768,31 @@
     const core = g.querySelector('.atlas-marker-core');
     const halo = g.querySelector('.atlas-marker-halo');
     const ring = g.querySelector('.atlas-marker-ring');
-    if (core) core.setAttribute('r', r0.toFixed(2));
-    if (halo) halo.setAttribute('r', (r0 + 5.5).toFixed(2));
-    if (ring) ring.setAttribute('r', (r0 + 4).toFixed(2));
+    const label = g.querySelector('.atlas-marker-label');
+    const labelX = r0 + ATLAS_LABEL_GAP;
+    if (label) {
+      label.setAttribute('x', labelX.toFixed(2));
+      label.setAttribute('y', '0');
+      label.setAttribute('dominant-baseline', 'central');
+      label.setAttribute('alignment-baseline', 'middle');
+    }
+    const cy = atlasMarkerDotCenterY(g);
+    const cyText = cy.toFixed(2);
+    if (core) {
+      core.setAttribute('cx', '0');
+      core.setAttribute('cy', cyText);
+      core.setAttribute('r', r0.toFixed(2));
+    }
+    if (halo) {
+      halo.setAttribute('cx', '0');
+      halo.setAttribute('cy', cyText);
+      halo.setAttribute('r', (r0 + 5.5).toFixed(2));
+    }
+    if (ring) {
+      ring.setAttribute('cx', '0');
+      ring.setAttribute('cy', cyText);
+      ring.setAttribute('r', (r0 + 4).toFixed(2));
+    }
     const hit = g.querySelector('.atlas-marker-hit');
     if (hit) {
       const tag = hit.tagName && hit.tagName.toLowerCase();
@@ -724,21 +803,22 @@
         const hitW = hr + pad + nameW;
         const hitH = Math.max(hr * 2, 16);
         hit.setAttribute('x', (-hr).toFixed(2));
-        hit.setAttribute('y', (-hitH / 2).toFixed(2));
+        hit.setAttribute('y', (cy - hitH / 2).toFixed(2));
         hit.setAttribute('width', hitW.toFixed(2));
         hit.setAttribute('height', hitH.toFixed(2));
         hit.setAttribute('rx', Math.min(10, hitH / 2).toFixed(2));
       } else {
         const hr = Math.max(12, r0 * 1.8);
+        hit.setAttribute('cx', '0');
+        hit.setAttribute('cy', cyText);
         hit.setAttribute('r', hr.toFixed(2));
       }
     }
-    const label = g.querySelector('.atlas-marker-label');
-    const labelX = r0 + 6;
-    if (label) {
-      label.setAttribute('x', labelX.toFixed(2));
-      label.setAttribute('y', '0');
-    }
+    syncAtlasCrownPosition(g);
+  }
+
+  function remeasureAtlasMarkers() {
+    document.querySelectorAll('#atlas-markers .atlas-marker-g').forEach(syncAtlasMarkerGeometry);
   }
 
   function updateAtlasWorldTransform() {
@@ -746,7 +826,7 @@
     if (scenery) {
       scenery.removeAttribute('transform');
     }
-    document.querySelectorAll('#atlas-markers .atlas-marker-g').forEach(syncAtlasMarkerGeometry);
+    remeasureAtlasMarkers();
   }
 
   /** Tooltip must sit under <body>: ancestors with filter/overflow can break position:fixed placement. */
@@ -763,6 +843,15 @@
     if (!svg) return;
     atlasUiBound = true;
     ensureAtlasTooltipPortal();
+    if (!window.__irpgAtlasRemeasureBound) {
+      window.__irpgAtlasRemeasureBound = true;
+      window.addEventListener('resize', () => {
+        window.requestAnimationFrame(remeasureAtlasMarkers);
+      });
+      window.addEventListener('orientationchange', () => {
+        window.setTimeout(remeasureAtlasMarkers, 120);
+      });
+    }
   }
 
   /**
@@ -1050,15 +1139,14 @@
       nameTspan.setAttribute('class', 'atlas-marker-name');
       nameTspan.textContent = displayNameBase;
       label.appendChild(nameTspan);
-      if (hasPrestige) {
-        const crownTspan = document.createElementNS(NS, 'tspan');
-        crownTspan.setAttribute('class', 'atlas-marker-prestige');
-        crownTspan.setAttribute('dx', '5');
-        crownTspan.setAttribute('dy', '-3.2');
-        crownTspan.textContent = '👑';
-        label.appendChild(crownTspan);
-      }
       g.appendChild(label);
+
+      if (hasPrestige) {
+        const crown = document.createElementNS(NS, 'text');
+        crown.setAttribute('class', 'atlas-marker-crown');
+        crown.textContent = '👑';
+        g.appendChild(crown);
+      }
 
       syncAtlasMarkerGeometry(g);
 
@@ -1086,6 +1174,9 @@
     });
 
     updateAtlasWorldTransform();
+    window.requestAnimationFrame(() => {
+      remeasureAtlasMarkers();
+    });
   }
 
   let atlasRenderRaf = 0;

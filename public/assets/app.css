@@ -1415,6 +1415,8 @@ body.full-page-sync--locked {
 
 .atlas-sub .prestige-glyph {
   margin: 0 0.08rem;
+  vertical-align: -0.2em;
+  transform: translateY(-0.26em);
 }
 
 .timer-line {
@@ -3350,7 +3352,7 @@ body.full-page-sync--locked {
   fill: rgba(255, 214, 150, 0.98);
 }
 
-.realm-atlas-svg .atlas-marker-label .atlas-marker-prestige {
+.realm-atlas-svg .atlas-marker-crown {
   font-family: 'Segoe UI Emoji', 'Apple Color Emoji', 'Noto Color Emoji', var(--font-m);
   font-size: 14px;
   font-weight: 700;
@@ -3358,9 +3360,13 @@ body.full-page-sync--locked {
   paint-order: stroke fill;
   stroke: rgba(0, 0, 0, 0.75);
   stroke-width: 3px;
+  pointer-events: none;
+  dominant-baseline: central;
+  alignment-baseline: middle;
+  text-anchor: start;
 }
 
-.realm-atlas-svg .atlas-marker-g.is-online .atlas-marker-label .atlas-marker-prestige {
+.realm-atlas-svg .atlas-marker-g.is-online .atlas-marker-crown {
   fill: rgba(255, 236, 188, 1);
   stroke: rgba(0, 0, 0, 0.65);
 }
@@ -3397,6 +3403,15 @@ body.full-page-sync--locked {
   paint-order: stroke fill;
   stroke: rgba(0, 0, 0, 0.62);
   stroke-width: 3.4px;
+  pointer-events: none;
+  dominant-baseline: central;
+  alignment-baseline: middle;
+  text-anchor: start;
+}
+
+.realm-atlas-svg .atlas-marker-core,
+.realm-atlas-svg .atlas-marker-halo,
+.realm-atlas-svg .atlas-marker-ring {
   pointer-events: none;
 }
 
@@ -4376,6 +4391,16 @@ body.full-page-sync--locked {
 }
 
 @media (max-width: 640px) {
+  .realm-atlas-svg .atlas-marker-label {
+    font-size: 12px;
+    stroke-width: 3px;
+  }
+
+  .realm-atlas-svg .atlas-marker-crown {
+    font-size: 13px;
+    stroke-width: 2.6px;
+  }
+
   .trend-bars {
     gap: 0.14rem;
     min-height: 58px;
