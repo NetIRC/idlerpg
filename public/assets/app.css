@@ -1575,10 +1575,10 @@ body.full-page-sync--locked {
 .season-board {
   /* Shared standings grid (Guild + Season); L columns stay aligned when stacked */
   --st-col-rank: 1.75rem;
-  --st-col-tier: 2.35rem;
+  --st-col-tier: 3.35rem;
   --st-col-class: 0;
-  --st-col-xp: 3.15rem;
-  --st-col-lv: 2.5rem;
+  --st-col-xp: 2.15rem;
+  --st-col-lv: 1.5rem;
 }
 
 .season-standings-table,
