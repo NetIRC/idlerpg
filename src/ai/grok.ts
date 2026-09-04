@@ -9,7 +9,7 @@ type GrokResult =
 const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
 
 function cleanLoreText(raw: string): string {
-  const line = raw.replace(/\s+/g, ' ').trim();
+  const line = raw.replace(/<think>[\s\S]*?<\/think>/gi, '').replace(/\s+/g, ' ').trim();
   if (!line) return 'The realm is quiet. Even fate declines to comment.';
   if (line.length <= 320) return line;
   return `${line.slice(0, 317)}...`;
@@ -49,6 +49,7 @@ async function requestGrokLine(
         model: cfg.aiGrokModel,
         temperature: 0.7,
         max_tokens: cfg.aiMaxTokens,
+        reasoning_effort: /qwen/i.test(cfg.aiGrokModel) ? 'none' : undefined,
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt },
