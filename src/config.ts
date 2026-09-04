@@ -193,7 +193,7 @@ const schema = z.object({
   /** Optional AI lore integration via Groq (assistive only, never gameplay-critical). */
   aiEnabled: z.boolean().default(false),
   aiGrokApiKey: z.string().optional().default('').transform((s: string) => (s ?? '').trim()),
-  aiGrokModel: z.string().default('llama-3.1-8b-instant'),
+  aiGrokModel: z.string().default('qwen/qwen3.6-27b'),
   aiTimeoutMs: z.coerce.number().int().min(1000).max(30000).default(8000),
   aiMaxTokens: z.coerce.number().int().min(32).max(512).default(120),
   aiLoreCooldownSec: z.coerce.number().int().min(0).max(3600).default(45),
