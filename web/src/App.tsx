@@ -280,6 +280,7 @@ export default function App() {
                               return `Offline${suffix} · session paused`;
                             }
                             if (reason === 'logout') return `Offline${suffix} · logged out (LOGIN required)`;
+                            if (reason === 'netsplit_expired') return `Offline${suffix} · netsplit grace expired (LOGIN required)`;
                             if (reason === 'kick') return `Offline${suffix} · kicked (rejoin + LOGIN required)`;
                             return `Offline${suffix}`;
                           })()}

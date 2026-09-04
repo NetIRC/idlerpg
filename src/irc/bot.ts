@@ -56,6 +56,14 @@ function normNick(n: string): string {
   return stripStatusPrefix(n);
 }
 
+function nickInChannel(nick: string): boolean {
+  if (namesInChannel.has(nick)) return true;
+  for (const n of namesInChannel) {
+    if (bot.caseCompare(n, nick)) return true;
+  }
+  return false;
+}
+
 const bot = new Client();
 
 function isPrivateToMe(target: string | undefined): boolean {
@@ -361,8 +369,10 @@ bot.on('quit', (event) => {
 bot.on('nick', (event) => {
   const oldN = normNick(event.nick);
   const newN = normNick(event.new_nick);
-  if (namesInChannel.has(oldN)) {
-    namesInChannel.delete(oldN);
+  if (nickInChannel(oldN)) {
+    for (const n of [...namesInChannel]) {
+      if (bot.caseCompare(n, oldN)) namesInChannel.delete(n);
+    }
     namesInChannel.add(newN);
   }
   for (const a of engine.onNick(oldN, newN)) {
@@ -409,7 +419,7 @@ function tryPublicChannelCommand(fromNick: string, text: string): boolean {
   const trimmed = text.trim();
   const m = /^!([a-z]+)(.*)$/i.exec(trimmed);
   if (!m) return false;
-  engine.resumeSuspendedSessionOnJoin(fromNick);
+  engine.resumeSuspendedSessionOnJoin(fromNick, { allowStaleRecover: false });
   const sub = m[1]!.toLowerCase();
   const rest = (m[2] ?? '').trim();
   const replyPfx = chanReplyPrefix(fromNick);
@@ -572,7 +582,7 @@ bot.on('message', (event) => {
   cmd = cmd.replace(/^[.\\/]+/, '');
   const rest = parts.slice(1);
 
-  const inChan = namesInChannel.has(from);
+  const inChan = nickInChannel(from);
   const uh = `${event.nick}!${event.ident}@${event.hostname}`;
 
   if (cmd === 'cmds' || cmd === 'commands') {

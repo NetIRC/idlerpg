@@ -293,7 +293,13 @@ export class GameEngine {
       const graceKey = this.netsplitGraceKey(r.id);
       const graceUntil = Math.max(0, metaGetInt(this.db, graceKey) ?? 0);
       if (graceUntil > 0 && now > graceUntil) {
-        this.db.prepare('UPDATE players SET session_open = 0 WHERE id = ?').run(r.id);
+        this.db
+          .prepare(
+            `UPDATE players
+             SET session_open = 0, last_offline_reason = 'netsplit_expired'
+             WHERE id = ? AND online = 0`,
+          )
+          .run(r.id);
         metaSetInt(this.db, graceKey, 0);
         continue;
       }
@@ -318,13 +324,19 @@ export class GameEngine {
     const now = Math.floor(Date.now() / 1000);
     const rows = this.db
       .prepare(
-        `SELECT id, character_name, irc_nick, last_offline_at
+        `SELECT id, character_name, irc_nick, last_offline_at, last_offline_reason
          FROM players
          WHERE online = 0 AND session_open = 0 AND irc_nick != ''
          ORDER BY last_offline_at DESC, id DESC
          LIMIT 600`,
       )
-      .all() as { id: number; character_name: string; irc_nick: string; last_offline_at: number }[];
+      .all() as {
+      id: number;
+      character_name: string;
+      irc_nick: string;
+      last_offline_at: number;
+      last_offline_reason: string;
+    }[];
     if (!rows.length) return 0;
     const upd = this.db.prepare(
       `UPDATE players
@@ -333,7 +345,10 @@ export class GameEngine {
     );
     let restored = 0;
     for (const r of rows) {
-      if (!this.canAutoRecoverJoin(r.character_name, r.last_offline_at, now)) continue;
+      if (
+        !this.canAutoRecoverJoin(r.character_name, r.last_offline_at, now, r.last_offline_reason)
+      )
+        continue;
       for (const inChan of channelNicks) {
         if (!nickEquals(r.irc_nick, inChan)) continue;
         upd.run(inChan, r.id);
@@ -346,8 +361,9 @@ export class GameEngine {
 
   /**
    * When a player rejoins the game channel after PART: restore `online` if their session was only suspended.
+   * Stale recovery is JOIN/reconnect only — public !commands must not reopen an explicit close.
    */
-  resumeSuspendedSessionOnJoin(ircNick: string): boolean {
+  resumeSuspendedSessionOnJoin(ircNick: string, opts?: { allowStaleRecover?: boolean }): boolean {
     const now = Math.floor(Date.now() / 1000);
     const row = this.db
       .prepare(
@@ -358,7 +374,13 @@ export class GameEngine {
       const graceKey = this.netsplitGraceKey(row.id);
       const graceUntil = Math.max(0, metaGetInt(this.db, graceKey) ?? 0);
       if (graceUntil > 0 && now > graceUntil) {
-        this.db.prepare(`UPDATE players SET session_open = 0 WHERE id = ?`).run(row.id);
+        this.db
+          .prepare(
+            `UPDATE players
+             SET session_open = 0, last_offline_reason = 'netsplit_expired'
+             WHERE id = ? AND online = 0`,
+          )
+          .run(row.id);
         metaSetInt(this.db, graceKey, 0);
         return false;
       }
@@ -369,6 +391,8 @@ export class GameEngine {
       return true;
     }
 
+    if (opts?.allowStaleRecover === false) return false;
+
     /**
      * Safety recovery: older rows (or prior behavior) can end up with session_open=0
      * after QUIT/disconnect without an explicit LOGOUT. If no explicit close marker exists
@@ -376,15 +400,25 @@ export class GameEngine {
      */
     const stale = this.db
       .prepare(
-        `SELECT id, character_name, last_offline_at
+        `SELECT id, character_name, last_offline_at, last_offline_reason
          FROM players
          WHERE online = 0 AND session_open = 0 AND irc_nick != '' AND irc_nick COLLATE NOCASE = ?
          ORDER BY last_offline_at DESC, id DESC
          LIMIT 1`,
       )
-      .get(ircNick) as { id: number; character_name: string; last_offline_at: number } | undefined;
+      .get(ircNick) as
+      | { id: number; character_name: string; last_offline_at: number; last_offline_reason: string }
+      | undefined;
     if (!stale) return false;
-    if (!this.canAutoRecoverJoin(stale.character_name, stale.last_offline_at, now)) return false;
+    if (
+      !this.canAutoRecoverJoin(
+        stale.character_name,
+        stale.last_offline_at,
+        now,
+        stale.last_offline_reason,
+      )
+    )
+      return false;
     this.db
       .prepare(
         `UPDATE players
@@ -395,21 +429,42 @@ export class GameEngine {
     return true;
   }
 
-  private canAutoRecoverJoin(characterName: string, offlineAt: number, now: number): boolean {
+  /** Session ended on purpose — must not be revived by stale-session repair while nick stays in channel. */
+  private static readonly EXPLICIT_SESSION_CLOSE_REASONS = new Set([
+    'logout',
+    'kick',
+    'admin_forcelogout',
+    'admin_resetpass',
+    'netsplit',
+    'netsplit_expired',
+  ]);
+
+  private canAutoRecoverJoin(
+    characterName: string,
+    offlineAt: number,
+    now: number,
+    lastOfflineReason = '',
+  ): boolean {
     if (!characterName.trim()) return false;
     if (!Number.isFinite(offlineAt) || offlineAt <= 0) return false;
+    const reason = lastOfflineReason.trim().toLowerCase();
+    if (GameEngine.EXPLICIT_SESSION_CLOSE_REASONS.has(reason)) return false;
     // Do not auto-recover very old rows.
     if (now - offlineAt > 7 * 24 * 3600) return false;
+    const since = Math.max(0, offlineAt - 15);
     const explicit = this.db
       .prepare(
         `SELECT ts FROM realm_events
-         WHERE kind IN ('logout', 'admin_forcelogout', 'admin_resetpass')
-           AND detail COLLATE NOCASE = ?
+         WHERE kind IN ('logout', 'admin_forcelogout', 'admin_resetpass', 'penalty_kick')
+           AND (
+             detail COLLATE NOCASE = ?
+             OR detail COLLATE NOCASE LIKE ? || ' +%'
+           )
            AND ts >= ?
          ORDER BY id DESC
          LIMIT 1`,
       )
-      .get(characterName, Math.max(0, offlineAt - 15)) as { ts: number } | undefined;
+      .get(characterName, characterName, since) as { ts: number } | undefined;
     return !explicit;
   }
 
@@ -1068,17 +1123,25 @@ export class GameEngine {
 
   onNick(oldNick: string, newNick: string): GameAnnouncement[] {
     const p = findOnlineByNickCi(this.db, oldNick);
-    if (!p) return [];
-    const pen = this.applyPenaltyAmount(p, 30);
-    const uh = p.userhost ? p.userhost.replace(/^[^!]+/, newNick) : '';
-    this.db
-      .prepare(
-        `UPDATE players SET pen_nick = pen_nick + ?, next_seconds = next_seconds + ?, irc_nick = ?, userhost = ? WHERE id = ?`,
-      )
-      .run(pen, pen, newNick, uh, p.id);
-    insertRealmEvent(this.db, 'penalty_nick', `${p.character_name} +${durationIt(pen)}`);
-    this.resetIdleStreak(p.id);
-    return [{ target: 'notice', nick: newNick, text: `Nick change penalty: +${durationIt(pen)} on your level timer.`, tone: 'loss' }];
+    if (p) {
+      const pen = this.applyPenaltyAmount(p, 30);
+      const uh = p.userhost ? p.userhost.replace(/^[^!]+/, newNick) : '';
+      this.db
+        .prepare(
+          `UPDATE players SET pen_nick = pen_nick + ?, next_seconds = next_seconds + ?, irc_nick = ?, userhost = ? WHERE id = ?`,
+        )
+        .run(pen, pen, newNick, uh, p.id);
+      insertRealmEvent(this.db, 'penalty_nick', `${p.character_name} +${durationIt(pen)}`);
+      this.resetIdleStreak(p.id);
+      clearIrcNickConflicts(this.db, newNick, p.id);
+      return [{ target: 'notice', nick: newNick, text: `Nick change penalty: +${durationIt(pen)} on your level timer.`, tone: 'loss' }];
+    }
+    const linked = findPlayerByIrcNickCi(this.db, oldNick);
+    if (!linked) return [];
+    const uh = linked.userhost ? linked.userhost.replace(/^[^!]+/, newNick) : '';
+    this.db.prepare(`UPDATE players SET irc_nick = ?, userhost = ? WHERE id = ?`).run(newNick, uh, linked.id);
+    clearIrcNickConflicts(this.db, newNick, linked.id);
+    return [];
   }
 
   onPartQuit(ircNick: string, kind: 'part' | 'quit' | 'netsplit'): GameAnnouncement[] {
@@ -1189,7 +1252,13 @@ export class GameEngine {
       const key = this.netsplitGraceKey(row.id);
       const until = Math.max(0, metaGetInt(this.db, key) ?? 0);
       if (until <= 0 || now < until) continue;
-      this.db.prepare('UPDATE players SET session_open = 0 WHERE id = ? AND online = 0').run(row.id);
+      this.db
+        .prepare(
+          `UPDATE players
+           SET session_open = 0, last_offline_reason = 'netsplit_expired'
+           WHERE id = ? AND online = 0`,
+        )
+        .run(row.id);
       metaSetInt(this.db, key, 0);
     }
   }

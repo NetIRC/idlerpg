@@ -42,6 +42,7 @@ const CHRONICLE_KIND_LABEL: Record<string, string> = {
   part: 'Part',
   quit: 'Quit',
   netsplit: 'Netsplit',
+  netsplit_expired: 'Netsplit',
   admin_resetpass: 'Admin',
   admin_forcelogout: 'Admin',
   admin_delete: 'Admin',

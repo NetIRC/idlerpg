@@ -1208,6 +1208,7 @@
     part: 'Part',
     quit: 'Quit',
     netsplit: 'Netsplit',
+    netsplit_expired: 'Netsplit',
     admin_resetpass: 'Admin',
     admin_forcelogout: 'Admin',
     admin_delete: 'Admin',
@@ -2042,6 +2043,8 @@
       }
     } else if (reason === 'logout') {
       sessionHint = 'Logged out from this hero. LOGIN is required again. If you are already in channel, send LOGIN by private message.';
+    } else if (reason === 'netsplit_expired') {
+      sessionHint = 'Netsplit grace expired. Rejoin the game channel, then LOGIN again by private message.';
     } else if (reason === 'kick') {
       sessionHint = 'Kicked from the game channel. Rejoin the channel, then LOGIN again by private message.';
     } else if (reason === 'admin_forcelogout') {
