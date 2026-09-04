@@ -78,7 +78,7 @@ function guide_pm_commands(): array
     return [
         ['group' => 'Account', 'cmd' => 'REGISTER', 'args' => '<Name> <password> <class...>', 'desc' => 'Create a hero while your nick is in ' . $ch . '. Password = one word; class may contain spaces.'],
         ['group' => 'Account', 'cmd' => 'LOGIN', 'args' => '<Name> <password>', 'desc' => 'Open a game session (required after LOGOUT, kick, or admin session reset).'],
-        ['group' => 'Account', 'cmd' => 'LOGOUT', 'args' => '', 'desc' => 'Close session immediately (~' . (string) $c['penLogoutMult'] . '× base penalty on level timer); LOGIN required to return.'],
+        ['group' => 'Account', 'cmd' => 'LOGOUT', 'args' => '', 'desc' => 'Close session immediately (no timer penalty); LOGIN required to return.'],
 
         ['group' => 'Help', 'cmd' => 'HELP', 'args' => '', 'desc' => 'PM help page 1 (register/login).'],
         ['group' => 'Help', 'cmd' => 'CMDS', 'args' => '', 'desc' => 'PM help page 2 (full command list).'],
@@ -158,7 +158,7 @@ function guide_faq_entities(): array
         ],
         [
             'q' => 'What is the difference between QUIT and LOGOUT?',
-            'a' => 'QUIT is an IRC disconnect (penalty ~' . (string) $c['penQuitMult'] . '× base) — session stays suspended. LOGOUT is a PM command (~' . (string) $c['penLogoutMult'] . '× base) — session closes and you must LOGIN again.',
+            'a' => 'QUIT is an IRC disconnect (penalty ~' . (string) $c['penQuitMult'] . '× base) — session stays suspended. LOGOUT is a PM command (no timer penalty) — session closes and you must LOGIN again.',
         ],
         [
             'q' => 'What if I PART and then QUIT IRC?',

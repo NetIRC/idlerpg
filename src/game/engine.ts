@@ -151,7 +151,7 @@ export class GameEngine {
           `Session opened: character "${name}" is linked to ${nick}.`,
           `Remain in ${this.cfg.ircChannel} (visible in /names) or your level timer will not advance.`,
           `Idling in channel counts toward the next level. Lines starting with ! are free; normal chat adds time to your level timer.`,
-          `First milestone: ~${durationIt(this.cfg.rpbase)} to level 1. PM HELP for commands. LOGOUT applies a small timer cost.`,
+          `First milestone: ~${durationIt(this.cfg.rpbase)} to level 1. PM HELP for commands. LOGOUT closes the session (LOGIN required to return).`,
         ].join(' '),
       },
     ];
@@ -212,18 +212,16 @@ export class GameEngine {
   logout(ircNick: string): { ok: true; announcements: GameAnnouncement[] } | { ok: false; err: string } {
     const p = findOnlineByNickCi(this.db, ircNick);
     if (!p) return { ok: false, err: MSG.activeSessionRequired };
-    const pen = this.applyPenaltyAmount(p, 20);
     const now = Math.floor(Date.now() / 1000);
     this.db
       .prepare(
         `UPDATE players
          SET online = 0, session_open = 0, last_offline_at = ?,
-             last_offline_reason = 'logout',
-             pen_logout = pen_logout + ?, next_seconds = next_seconds + ?
+             last_offline_reason = 'logout'
          WHERE id = ?`,
       )
-      .run(now, pen, pen, p.id);
-    insertRealmEvent(this.db, 'logout', `${p.character_name} +${durationIt(pen)}`);
+      .run(now, p.id);
+    insertRealmEvent(this.db, 'logout', p.character_name);
     this.resetIdleStreak(p.id);
     return {
       ok: true,
@@ -231,8 +229,8 @@ export class GameEngine {
         {
           target: 'notice',
           nick: ircNick,
-          text: `Logged out from "${p.character_name}". Logout cost: +${durationIt(pen)} on your level timer. Use LOGIN when you return.`,
-          tone: 'loss',
+          text: `Logged out from "${p.character_name}". Session closed; no timer penalty. Use LOGIN when you return.`,
+          tone: 'neutral',
         },
       ],
     };
@@ -755,7 +753,7 @@ export class GameEngine {
     }
     return (
       'PM only, from your nick in the game channel. REGISTER <CharacterName> <password> <class…> — password = one word; class may be multiple words. ' +
-      'LOGIN <CharacterName> <password>. LOGOUT ends session (small level-timer cost). Forgot password: ask a channel admin. CMDS for page 2.'
+      'LOGIN <CharacterName> <password>. LOGOUT ends session (no timer penalty; LOGIN required to return). Forgot password: ask a channel admin. CMDS for page 2.'
     );
   }
 
@@ -1603,7 +1601,7 @@ function loginSuccessNotice(channel: string, row: PlayerRow): string {
   return [
     `Session open: "${row.character_name}" · L${row.level} ${row.class}.`,
     `Stay in ${channel} so your level timer advances. Next level in ${d}.`,
-    `PM HELP for commands. LOGOUT applies a small level-timer cost.`,
+    `PM HELP for commands. LOGOUT closes the session (LOGIN required to return).`,
   ].join(' ');
 }
 

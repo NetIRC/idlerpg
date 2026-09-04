@@ -342,7 +342,7 @@ function guide_runtime_config(): array
 
         'penPartMult' => 200,
         'penQuitMult' => 20,
-        'penLogoutMult' => 20,
+        'penLogoutMult' => 0,
         'duelMaxLevelGap' => 11,
         'duelCooldownSec' => 5 * 3600,
         'duelPairCooldownSec' => 20 * 3600,
@@ -491,7 +491,7 @@ function guide_render_shard_tuning(array $cfg): void
     guide_render_tuning_table('Leaving & logout', [
         ['label' => 'PART multiplier', 'value' => (string) $cfg['penPartMult'] . '× base penalty'],
         ['label' => 'QUIT IRC multiplier', 'value' => (string) $cfg['penQuitMult'] . '× base penalty'],
-        ['label' => 'LOGOUT multiplier', 'value' => (string) $cfg['penLogoutMult'] . '× base penalty'],
+        ['label' => 'LOGOUT multiplier', 'value' => 'none (session close only)'],
     ]);
 
     guide_render_tuning_table('Action cooldowns', [

@@ -14,7 +14,7 @@ const LINES = [
   'Need all commands? !cmds is your friend.',
   'Quest points only count while you are online and visible in channel.',
   'Parting while logged in can hurt your timer. The ledger notices.',
-  'Logout also has a timer cost. Use it when needed, not by reflex.',
+  'LOGOUT closes the session. Use LOGIN when you return.',
   'Lucky hour can flip your pace. Keep an eye on !realm.',
   'Hand of God is generous until it is not.',
   'Duel is optional. Regret is not.',

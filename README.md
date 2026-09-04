@@ -291,7 +291,7 @@ PM commands map to channel equivalents plus account/admin actions:
 | `HELP` / `CMDS` | - | PM help pages. |
 | `REGISTER` | `Name Password Class...` | Create hero/account. |
 | `LOGIN` | `Name Password` | Open game session. |
-| `LOGOUT` | - | Close session with logout penalty. |
+| `LOGOUT` | - | Close session (no timer penalty); LOGIN required to return. |
 | `PING` | - | Liveness/version ping. |
 | `STATS`, `TOP`, `WHOAMI`, `TIME`, `RECORDS`, `QUEST` | optional args | Same purpose as channel forms. |
 | `BOUNTY`, `SEASON`, `BOSS`, `GUILD`, `RELIC`, `PRESTIGE` | optional args | Same purpose as channel forms. |
